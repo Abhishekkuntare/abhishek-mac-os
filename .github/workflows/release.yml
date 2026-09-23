@@ -15,13 +15,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
+
+      - name: Show environment
+        run: |
+          node --version
+          npm --version
+          git --version
 
       - name: Install dependencies
         run: npm ci
@@ -29,8 +35,28 @@ jobs:
       - name: Build renderer
         run: npm run build:renderer
 
-      - name: Build and publish Windows installer
-        run: npm run package:win -- --publish always
+      - name: Build Windows installer
+        run: npm run package:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List release files
+        shell: pwsh
+        run: |
+          Write-Host "========== RELEASE DIRECTORY =========="
+          Get-ChildItem -Path release -Recurse |
+            Select-Object FullName, Length
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Abhishek OS ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            release/ABHISHEK-OS-Setup.exe
+            release/ABHISHEK-OS-Setup.exe.blockmap
+            release/latest.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
