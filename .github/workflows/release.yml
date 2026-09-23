@@ -1,0 +1,52 @@
+```yaml
+name: Build and Release Abhishek OS
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build Windows Application
+    runs-on: windows-latest
+
+    steps:
+      # Checkout source
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Install dependencies
+      - name: Install dependencies
+        run: npm ci
+
+      # Build React application
+      - name: Build renderer
+        run: npm run build:renderer
+
+      # Build Windows NSIS installer
+      - name: Build Windows installer
+        run: npm run package:win
+
+      # Create GitHub Release
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/ABHISHEK-OS-Setup.exe
+            release/ABHISHEK-OS-Setup.exe.blockmap
+            release/latest.yml
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
