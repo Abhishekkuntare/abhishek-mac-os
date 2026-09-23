@@ -1,0 +1,38 @@
+{
+  "appId": "com.abhishekkuntare.abhishekos",
+  "productName": "Abhishek OS",
+  "copyright": "Copyright © 2026 Abhishek Kuntare",
+  "asar": true,
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist/**/*",
+    "electron-main.mjs",
+    "electron-preload.cjs",
+    "package.json"
+  ],
+  "extraMetadata": {
+    "main": "electron-main.mjs"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "artifactName": "ABHISHEK-OS-Setup.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Abhishek OS",
+    "deleteAppDataOnUninstall": false,
+    "runAfterFinish": true
+  }
+}

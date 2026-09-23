@@ -1,0 +1,53 @@
+{
+  "name": "abhishek-os-desktop",
+  "private": true,
+  "version": "1.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 3000 --host 0.0.0.0",
+    "build": "vite build",
+    "build:renderer": "vite build",
+    "preview": "vite preview",
+    "electron:dev": "electron .",
+    "clean": "node scripts/clean.mjs",
+
+    "package:win": "electron-builder --win nsis --x64 --config electron-builder.json",
+
+    "dist:win": "npm run clean && npm run build:renderer && npm run package:win",
+
+    "dist:portable": "npm run clean && npm run build:renderer && electron-builder --win portable --x64 --config electron-builder.json",
+
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google/genai": "^2.4.0",
+    "@monaco-editor/react": "^4.7.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.1",
+    "canvas-confetti": "^1.9.4",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "vite": "^8.3.0"
+  },
+  "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "autoprefixer": "^10.4.21",
+    "electron": "^44.4.2",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.21.0",
+    "typescript": "^7.0.2"
+  },
+  "description": "Abhishek OS — a macOS-inspired desktop application built with React and Electron.",
+  "author": "Abhishek Kuntare",
+  "main": "electron-main.mjs"
+}

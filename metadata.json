@@ -1,0 +1,6 @@
+{
+  "name": "Abhishek OS",
+  "description": "A desktop experience built for you. Complete modern operating system environment with window management, dock, Finder, Control Center, Spotlight, and native applications.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
