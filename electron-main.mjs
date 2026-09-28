@@ -1,3 +1,4 @@
+
 import {
   app,
   BrowserWindow,
@@ -6,11 +7,16 @@ import {
   nativeTheme,
 } from 'electron';
 
+import electronUpdater from 'electron-updater';
+
+
+
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import http from 'node:http';
 
+const { autoUpdater } = electronUpdater;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -19,9 +25,9 @@ const isDev = !app.isPackaged;
 let mainWindow = null;
 let viteProcess = null;
 
-/* -------------------------------------------------------
+/* =========================================================
    WAIT FOR VITE
-------------------------------------------------------- */
+========================================================= */
 
 function waitForServer(url, timeout = 30000) {
   const started = Date.now();
@@ -62,9 +68,9 @@ function waitForServer(url, timeout = 30000) {
   });
 }
 
-/* -------------------------------------------------------
+/* =========================================================
    DEVELOPMENT SERVER
-------------------------------------------------------- */
+========================================================= */
 
 async function startDevServer() {
   const port =
@@ -78,8 +84,14 @@ async function startDevServer() {
     'vite.js'
   );
 
-  console.log('Starting Vite development server...');
-  console.log('Vite:', viteCli);
+  console.log(
+    '[Abhishek OS] Starting Vite development server...'
+  );
+
+  console.log(
+    '[Abhishek OS] Vite:',
+    viteCli
+  );
 
   viteProcess = spawn(
     process.execPath,
@@ -104,14 +116,14 @@ async function startDevServer() {
 
   viteProcess.on('error', (error) => {
     console.error(
-      'Vite process error:',
+      '[Abhishek OS] Vite process error:',
       error
     );
   });
 
   viteProcess.on('exit', (code, signal) => {
     console.log(
-      `Vite exited: code=${code}, signal=${signal}`
+      `[Abhishek OS] Vite exited: code=${code}, signal=${signal}`
     );
   });
 
@@ -122,9 +134,214 @@ async function startDevServer() {
   return url;
 }
 
-/* -------------------------------------------------------
+/* =========================================================
+   SEND UPDATE EVENT TO REACT
+========================================================= */
+
+function sendUpdateEvent(channel, payload = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send(
+    'app:update',
+    {
+      channel,
+      ...payload,
+    }
+  );
+}
+
+/* =========================================================
+   AUTOMATIC UPDATE SYSTEM
+========================================================= */
+
+function setupAutoUpdater() {
+  /*
+   * Never run the updater while developing.
+   */
+  if (!app.isPackaged) {
+    console.log(
+      '[Abhishek OS] Auto updater disabled in development.'
+    );
+
+    return;
+  }
+
+  console.log(
+    '[Abhishek OS] Automatic updater enabled.'
+  );
+
+  /*
+   * Download updates automatically in the background.
+   */
+  autoUpdater.autoDownload = true;
+
+  /*
+   * Install the downloaded update when the
+   * application quits/restarts.
+   */
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  /*
+   * Don't install silently while the application
+   * is being used.
+   */
+  autoUpdater.allowPrerelease = false;
+
+  /* -------------------------------------------------------
+     CHECKING
+  ------------------------------------------------------- */
+
+  autoUpdater.on(
+    'checking-for-update',
+    () => {
+      console.log(
+        '[Abhishek OS] Checking for updates...'
+      );
+
+      sendUpdateEvent(
+        'checking'
+      );
+    }
+  );
+
+  /* -------------------------------------------------------
+     UPDATE AVAILABLE
+  ------------------------------------------------------- */
+
+  autoUpdater.on(
+    'update-available',
+    (info) => {
+      console.log(
+        '[Abhishek OS] Update available:',
+        info.version
+      );
+
+      sendUpdateEvent(
+        'available',
+        {
+          version: info.version,
+        }
+      );
+    }
+  );
+
+  /* -------------------------------------------------------
+     NO UPDATE
+  ------------------------------------------------------- */
+
+  autoUpdater.on(
+    'update-not-available',
+    (info) => {
+      console.log(
+        '[Abhishek OS] Already up to date:',
+        info.version
+      );
+
+      sendUpdateEvent(
+        'not-available',
+        {
+          version: info.version,
+        }
+      );
+    }
+  );
+
+  /* -------------------------------------------------------
+     DOWNLOAD PROGRESS
+  ------------------------------------------------------- */
+
+  autoUpdater.on(
+    'download-progress',
+    (progress) => {
+      const percent = Math.round(
+        progress.percent
+      );
+
+      console.log(
+        `[Abhishek OS] Downloading update: ${percent}%`
+      );
+
+      sendUpdateEvent(
+        'downloading',
+        {
+          percent,
+          transferred: progress.transferred,
+          total: progress.total,
+          bytesPerSecond:
+            progress.bytesPerSecond,
+        }
+      );
+    }
+  );
+
+  /* -------------------------------------------------------
+     UPDATE DOWNLOADED
+  ------------------------------------------------------- */
+
+  autoUpdater.on(
+    'update-downloaded',
+    (info) => {
+      console.log(
+        '[Abhishek OS] Update downloaded:',
+        info.version
+      );
+
+      sendUpdateEvent(
+        'downloaded',
+        {
+          version: info.version,
+        }
+      );
+    }
+  );
+
+  /* -------------------------------------------------------
+     UPDATE ERROR
+  ------------------------------------------------------- */
+
+  autoUpdater.on(
+    'error',
+    (error) => {
+      console.error(
+        '[Abhishek OS] Auto update error:',
+        error
+      );
+
+      sendUpdateEvent(
+        'error',
+        {
+          message:
+            error?.message ||
+            'Unable to update Abhishek OS.',
+        }
+      );
+    }
+  );
+
+  /*
+   * Wait until the application has fully loaded
+   * before checking GitHub.
+   *
+   * This prevents update activity from affecting
+   * the startup experience.
+   */
+  setTimeout(() => {
+    autoUpdater
+      .checkForUpdates()
+      .catch((error) => {
+        console.error(
+          '[Abhishek OS] Update check failed:',
+          error
+        );
+      });
+  }, 10000);
+}
+
+/* =========================================================
    CREATE WINDOW
-------------------------------------------------------- */
+========================================================= */
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
@@ -142,6 +359,9 @@ async function createWindow() {
 
     title: 'Abhishek OS',
 
+    // Application icon
+    icon: path.join(__dirname, 'build', 'icon.ico'),
+
     webPreferences: {
       preload: path.join(
         __dirname,
@@ -158,9 +378,9 @@ async function createWindow() {
     },
   });
 
-  /* -----------------------------------------------------
+  /* =======================================================
      WINDOW EVENTS
-  ----------------------------------------------------- */
+  ======================================================= */
 
   mainWindow.on(
     'ready-to-show',
@@ -176,9 +396,9 @@ async function createWindow() {
     }
   );
 
-  /* -----------------------------------------------------
+  /* =======================================================
      EXTERNAL LINKS
-  ----------------------------------------------------- */
+  ======================================================= */
 
   mainWindow.webContents.setWindowOpenHandler(
     ({ url }) => {
@@ -192,23 +412,24 @@ async function createWindow() {
     }
   );
 
-  /* -----------------------------------------------------
+  /* =======================================================
      DEVELOPMENT
-  ----------------------------------------------------- */
+  ======================================================= */
 
   if (isDev) {
     try {
-      const url = await startDevServer();
+      const url =
+        await startDevServer();
 
       console.log(
-        'Development renderer:',
+        '[Abhishek OS] Development renderer:',
         url
       );
 
       await mainWindow.loadURL(url);
     } catch (error) {
       console.error(
-        'Failed to start development server:',
+        '[Abhishek OS] Failed to start development server:',
         error
       );
 
@@ -218,18 +439,9 @@ async function createWindow() {
     return;
   }
 
-  /* -----------------------------------------------------
+  /* =======================================================
      PRODUCTION
-     
-     THIS IS THE IMPORTANT PART.
-     
-     Electron loads the NEW dist/index.html
-     that was created by:
-     
-     npm run build:renderer
-     
-     electron-builder then packages this dist folder.
-  ----------------------------------------------------- */
+  ======================================================= */
 
   const productionIndex = path.join(
     __dirname,
@@ -238,7 +450,7 @@ async function createWindow() {
   );
 
   console.log(
-    'Production renderer:',
+    '[Abhishek OS] Production renderer:',
     productionIndex
   );
 
@@ -248,36 +460,41 @@ async function createWindow() {
     );
 
     console.log(
-      'Abhishek OS production renderer loaded successfully.'
+      '[Abhishek OS] Production renderer loaded successfully.'
     );
   } catch (error) {
     console.error(
-      'FAILED TO LOAD PRODUCTION RENDERER:',
+      '[Abhishek OS] FAILED TO LOAD PRODUCTION RENDERER:',
       error
     );
 
     app.quit();
   }
 
-  /* -----------------------------------------------------
-     RENDERER LOAD DEBUG
-  ----------------------------------------------------- */
+  /* =======================================================
+     RENDERER DEBUG
+  ======================================================= */
 
   mainWindow.webContents.on(
     'did-finish-load',
     () => {
       console.log(
-        'Renderer finished loading.'
+        '[Abhishek OS] Renderer finished loading.'
       );
 
       console.log(
-        'Packaged:',
+        '[Abhishek OS] Packaged:',
         app.isPackaged
       );
 
       console.log(
-        'App path:',
+        '[Abhishek OS] App path:',
         app.getAppPath()
+      );
+
+      console.log(
+        '[Abhishek OS] Version:',
+        app.getVersion()
       );
     }
   );
@@ -291,7 +508,7 @@ async function createWindow() {
       validatedURL
     ) => {
       console.error(
-        'Renderer failed to load:',
+        '[Abhishek OS] Renderer failed to load:',
         {
           errorCode,
           errorDescription,
@@ -302,16 +519,16 @@ async function createWindow() {
   );
 }
 
-/* -------------------------------------------------------
+/* =========================================================
    ELECTRON READY
-------------------------------------------------------- */
+========================================================= */
 
 app.whenReady().then(async () => {
   nativeTheme.themeSource = 'dark';
 
-  /* -----------------------------------------------------
+  /* =======================================================
      WINDOW CONTROLS
-  ----------------------------------------------------- */
+  ======================================================= */
 
   ipcMain.handle(
     'window:minimize',
@@ -354,9 +571,9 @@ app.whenReady().then(async () => {
     }
   );
 
-  /* -----------------------------------------------------
+  /* =======================================================
      EXTERNAL URL
-  ----------------------------------------------------- */
+  ======================================================= */
 
   ipcMain.handle(
     'app:openExternal',
@@ -372,9 +589,9 @@ app.whenReady().then(async () => {
     }
   );
 
-  /* -----------------------------------------------------
+  /* =======================================================
      APP INFORMATION
-  ----------------------------------------------------- */
+  ======================================================= */
 
   ipcMain.handle(
     'app:platform',
@@ -386,15 +603,90 @@ app.whenReady().then(async () => {
     () => app.getVersion()
   );
 
-  /* -----------------------------------------------------
-     CREATE APP
-  ----------------------------------------------------- */
+  /* =======================================================
+     UPDATE CONTROLS
+  ======================================================= */
+
+  /*
+   * Allow React to manually check for an update.
+   */
+
+  ipcMain.handle(
+    'app:checkForUpdates',
+    async () => {
+      if (!app.isPackaged) {
+        return {
+          success: false,
+          reason: 'development',
+        };
+      }
+
+      try {
+        const result =
+          await autoUpdater.checkForUpdates();
+
+        return {
+          success: true,
+          version:
+            result?.updateInfo?.version ||
+            null,
+        };
+      } catch (error) {
+        console.error(
+          '[Abhishek OS] Manual update check failed:',
+          error
+        );
+
+        return {
+          success: false,
+          error:
+            error?.message ||
+            'Update check failed.',
+        };
+      }
+    }
+  );
+
+  /*
+   * Restart the application and install the
+   * downloaded update.
+   */
+
+  ipcMain.handle(
+    'app:installUpdate',
+    () => {
+      if (!app.isPackaged) {
+        return false;
+      }
+
+      console.log(
+        '[Abhishek OS] Installing update and restarting...'
+      );
+
+      autoUpdater.quitAndInstall(
+        false,
+        true
+      );
+
+      return true;
+    }
+  );
+
+  /* =======================================================
+     CREATE APPLICATION
+  ======================================================= */
 
   await createWindow();
 
-  /* -----------------------------------------------------
+  /* =======================================================
+     START AUTOMATIC UPDATER
+  ======================================================= */
+
+  setupAutoUpdater();
+
+  /* =======================================================
      MACOS
-  ----------------------------------------------------- */
+  ======================================================= */
 
   app.on(
     'activate',
@@ -409,9 +701,9 @@ app.whenReady().then(async () => {
   );
 });
 
-/* -------------------------------------------------------
+/* =========================================================
    CLOSE
-------------------------------------------------------- */
+========================================================= */
 
 app.on(
   'window-all-closed',
@@ -429,9 +721,9 @@ app.on(
   }
 );
 
-/* -------------------------------------------------------
+/* =========================================================
    BEFORE QUIT
-------------------------------------------------------- */
+========================================================= */
 
 app.on(
   'before-quit',

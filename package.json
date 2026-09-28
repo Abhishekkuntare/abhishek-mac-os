@@ -1,8 +1,11 @@
 {
   "name": "abhishek-os-desktop",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.4",
   "type": "module",
+  "description": "Abhishek OS — a macOS-inspired desktop application built with React and Electron.",
+  "author": "Abhishek Kuntare",
+  "main": "electron-main.mjs",
   "scripts": {
     "dev": "vite --port 3000 --host 0.0.0.0",
     "build": "vite build",
@@ -36,15 +39,13 @@
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
-    "electron": "^44.4.2",
-    "electron-builder": "^26.0.12",
-    "esbuild": "^0.28.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
-    "typescript": "^7.0.2"
-  },
-  "description": "Abhishek OS — a macOS-inspired desktop application built with React and Electron.",
-  "author": "Abhishek Kuntare",
-  "main": "electron-main.mjs"
+    "typescript": "^7.0.2",
+    "electron": "^44.4.2",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.28.0"
+  }
 }

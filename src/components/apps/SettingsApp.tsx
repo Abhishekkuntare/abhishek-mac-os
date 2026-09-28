@@ -102,6 +102,15 @@ interface PhotoLibraryItem {
 
 const PHOTO_LIBRARY_KEY = 'abhishek-os-photos';
 
+
+interface BatteryManager extends EventTarget {
+  charging: boolean;
+  level: number;
+  chargingTime: number;
+  dischargingTime: number;
+}
+
+
 const ACCENTS: {
   id: AccentColor;
   label: string;
@@ -568,8 +577,8 @@ export const SettingsApp: React.FC = () => {
   const [scheduledFocus, setScheduledFocus] =
     useState(false);
 
-  const [batteryPercentage, setBatteryPercentage] =
-    useState(94);
+  // const [batteryPercentage, setBatteryPercentage] =
+  //   useState(94);
 
   const [lowPowerMode, setLowPowerMode] =
     useState(false);
@@ -767,6 +776,9 @@ export const SettingsApp: React.FC = () => {
   /* ==========================================================
      RENDER
   ========================================================== */
+
+
+  const [batteryPercentage, setBatteryPercentage] = useState<number>( Math.max( 0, Math.min( 100, settings.batteryLevel ?? 0, ), ), ); const [batteryCharging, setBatteryCharging] = useState<boolean>( settings.batteryCharging ?? false, ); useEffect(() => { let batteryManager: BatteryManager | null = null; const updateBattery = () => { if (!batteryManager) return; const percentage = Math.round( batteryManager.level * 100, ); const charging = batteryManager.charging; setBatteryPercentage(percentage); setBatteryCharging(charging); updateSettings({ batteryLevel: percentage, batteryCharging: charging, }); }; const setupBattery = async () => { try { if ( typeof navigator === 'undefined' || !('getBattery' in navigator) ) { return; } batteryManager = await ( navigator as Navigator & { getBattery: () => Promise<BatteryManager>; } ).getBattery(); updateBattery(); batteryManager.addEventListener( 'levelchange', updateBattery, ); batteryManager.addEventListener( 'chargingchange', updateBattery, ); } catch (error) { console.warn( 'Unable to read real laptop battery:', error, ); } }; setupBattery(); return () => { if (!batteryManager) return; batteryManager.removeEventListener( 'levelchange', updateBattery, ); batteryManager.removeEventListener( 'chargingchange', updateBattery, ); }; }, [updateSettings]);
 
   return (
     <div
@@ -2897,183 +2909,8 @@ export const SettingsApp: React.FC = () => {
                 BATTERY
             ================================================= */}
 
-            {activeTab === 'battery' && (
-              <motion.div
-                key="battery"
-                variants={pageVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="space-y-6 max-w-3xl"
-              >
-                <PageHeader
-                  title="Battery"
-                  description="Monitor simulated battery status and power management."
-                  icon={Battery}
-                />
-
-                <SectionCard className="p-6">
-                  <div className="flex flex-col sm:flex-row items-center gap-8">
-                    <div className="relative w-40 h-40">
-                      <svg
-                        viewBox="0 0 160 160"
-                        className="w-full h-full -rotate-90"
-                      >
-                        <circle
-                          cx="80"
-                          cy="80"
-                          r="68"
-                          fill="none"
-                          stroke="rgba(255,255,255,0.08)"
-                          strokeWidth="12"
-                        />
-
-                        <motion.circle
-                          cx="80"
-                          cy="80"
-                          r="68"
-                          fill="none"
-                          stroke="rgb(52,211,153)"
-                          strokeWidth="12"
-                          strokeLinecap="round"
-                          strokeDasharray={2 * Math.PI * 68}
-                          animate={{
-                            strokeDashoffset:
-                              2 *
-                              Math.PI *
-                              68 *
-                              (1 -
-                                batteryPercentage /
-                                  100),
-                          }}
-                          transition={{
-                            duration: 0.5,
-                          }}
-                        />
-                      </svg>
-
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <BatteryCharging className="w-5 h-5 text-emerald-400 mb-1" />
-
-                        <div className="text-3xl font-black">
-                          {batteryPercentage}%
-                        </div>
-
-                        <div className="text-[9px] text-slate-500">
-                          Battery
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 text-center sm:text-left">
-                      <div className="flex items-center justify-center sm:justify-start gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-
-                        <span className="font-black text-sm">
-                          Good Battery Health
-                        </span>
-                      </div>
-
-                      <div className="text-xs text-slate-400 mt-2">
-                        Approximately{' '}
-                        {Math.max(
-                          1,
-                          Math.round(
-                            batteryPercentage *
-                              0.064,
-                          ),
-                        )}{' '}
-                        hours remaining
-                      </div>
-
-                      <div className="text-[10px] text-emerald-400 mt-2">
-                        Battery is operating normally.
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-7">
-                    <div className="flex justify-between text-[10px] mb-2">
-                      <span className="text-slate-500">
-                        Simulated Battery Level
-                      </span>
-
-                      <span className="font-mono text-emerald-400">
-                        {batteryPercentage}%
-                      </span>
-                    </div>
-
-                    <input
-                      type="range"
-                      min="1"
-                      max="100"
-                      value={batteryPercentage}
-                      onChange={e =>
-                        setBatteryPercentage(
-                          Number(e.target.value),
-                        )
-                      }
-                      className="w-full accent-emerald-400"
-                    />
-                  </div>
-                </SectionCard>
-
-                <SectionCard className="p-2">
-                  <SettingRow
-                    icon={Zap}
-                    title="Low Power Mode"
-                    description="Reduce animations and background activity to extend battery life."
-                  >
-                    <Toggle
-                      enabled={lowPowerMode}
-                      accent="amber"
-                      onChange={() => {
-                        setLowPowerMode(
-                          prev => !prev,
-                        );
-
-                        sound.playToggle(
-                          !lowPowerMode,
-                        );
-                      }}
-                    />
-                  </SettingRow>
-
-                  <SettingRow
-                    icon={BatteryCharging}
-                    title="Optimized Battery Charging"
-                    description="Reduce battery aging by learning your charging routine."
-                  >
-                    <Toggle
-                      enabled={optimizedCharging}
-                      accent="green"
-                      onChange={() => {
-                        setOptimizedCharging(
-                          prev => !prev,
-                        );
-
-                        sound.playClick();
-                      }}
-                    />
-                  </SettingRow>
-
-                  <SettingRow
-                    icon={Power}
-                    title="Power Saving When Idle"
-                    description="Lower display activity when the system is not being used."
-                  >
-                    <Toggle
-                      enabled={true}
-                      accent="green"
-                      onChange={() =>
-                        sound.playClick()
-                      }
-                    />
-                  </SettingRow>
-                </SectionCard>
-              </motion.div>
-            )}
-
+       
+       {activeTab === 'battery' && ( <motion.div key="battery" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="space-y-6 max-w-3xl" > <PageHeader title="Battery" description="Monitor your laptop's current battery status and power management." icon={Battery} /> <SectionCard className="p-6"> <div className="flex flex-col sm:flex-row items-center gap-8"> <div className="relative w-40 h-40"> <svg viewBox="0 0 160 160" className="w-full h-full -rotate-90" > <circle cx="80" cy="80" r="68" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="12" /> <motion.circle cx="80" cy="80" r="68" fill="none" stroke={ batteryPercentage <= 20 ? 'rgb(248,113,113)' : batteryPercentage <= 40 ? 'rgb(251,191,36)' : 'rgb(52,211,153)' } strokeWidth="12" strokeLinecap="round" strokeDasharray={2 * Math.PI * 68} animate={{ strokeDashoffset: 2 * Math.PI * 68 * (1 - batteryPercentage / 100), }} transition={{ duration: 0.5, }} /> </svg> <div className="absolute inset-0 flex flex-col items-center justify-center"> {batteryCharging ? ( <BatteryCharging className={`w-5 h-5 mb-1 ${ batteryPercentage <= 20 ? 'text-red-400' : batteryPercentage <= 40 ? 'text-amber-400' : 'text-emerald-400' }`} /> ) : ( <Battery className={`w-5 h-5 mb-1 ${ batteryPercentage <= 20 ? 'text-red-400' : batteryPercentage <= 40 ? 'text-amber-400' : 'text-emerald-400' }`} /> )} <div className="text-3xl font-black"> {batteryPercentage}% </div> <div className="text-[9px] text-slate-500"> {batteryCharging ? 'Charging' : 'Battery'} </div> </div> </div> <div className="flex-1 text-center sm:text-left"> <div className="flex items-center justify-center sm:justify-start gap-2"> <CheckCircle2 className={`w-4 h-4 ${ batteryPercentage <= 20 ? 'text-red-400' : batteryPercentage <= 40 ? 'text-amber-400' : 'text-emerald-400' }`} /> <span className="font-black text-sm"> {batteryPercentage <= 20 ? 'Low Battery' : batteryCharging ? 'Battery Charging' : 'Good Battery Health'} </span> </div> <div className="text-xs text-slate-400 mt-2"> {batteryCharging ? `Currently charging at ${batteryPercentage}%` : 'Running on battery power'} </div> <div className={`text-[10px] mt-2 ${ batteryPercentage <= 20 ? 'text-red-400' : batteryPercentage <= 40 ? 'text-amber-400' : 'text-emerald-400' }`} > {batteryCharging ? 'Your laptop is connected to power.' : batteryPercentage <= 20 ? 'Connect your charger soon.' : 'Battery is operating normally.'} </div> </div> </div> <div className="mt-7"> <div className="flex justify-between text-[10px] mb-2"> <span className="text-slate-500"> Current Battery Level </span> <span className={`font-mono ${ batteryPercentage <= 20 ? 'text-red-400' : batteryPercentage <= 40 ? 'text-amber-400' : 'text-emerald-400' }`} > {batteryPercentage}% </span> </div> <div className="relative h-2 w-full overflow-hidden rounded-full bg-white/[0.08]"> <motion.div className={`absolute left-0 top-0 h-full rounded-full ${ batteryPercentage <= 20 ? 'bg-red-400' : batteryPercentage <= 40 ? 'bg-amber-400' : 'bg-emerald-400' }`} animate={{ width: `${batteryPercentage}%`, }} transition={{ duration: 0.5, }} /> </div> <div className="flex justify-between mt-2 text-[9px] text-slate-600"> <span>0%</span> <span>50%</span> <span>100%</span> </div> </div> </SectionCard> <SectionCard className="p-2"> <SettingRow icon={Zap} title="Low Power Mode" description="Reduce animations and background activity to extend battery life." > <Toggle enabled={lowPowerMode} accent="amber" onChange={() => { setLowPowerMode(prev => !prev); sound.playToggle( !lowPowerMode, ); }} /> </SettingRow> <SettingRow icon={BatteryCharging} title="Optimized Battery Charging" description="Reduce battery aging by learning your charging routine." > <Toggle enabled={optimizedCharging} accent="green" onChange={() => { setOptimizedCharging( prev => !prev, ); sound.playClick(); }} /> </SettingRow> <SettingRow icon={Power} title="Power Saving When Idle" description="Lower display activity when the system is not being used." > <Toggle enabled={true} accent="green" onChange={() => sound.playClick() } /> </SettingRow> </SectionCard> </motion.div> )}
             {/* =================================================
                 ABOUT
             ================================================= */}

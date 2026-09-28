@@ -7,20 +7,30 @@
     "output": "release",
     "buildResources": "build"
   },
+  "publish": {
+    "provider": "github",
+    "owner": "Abhishekkuntare",
+    "repo": "abhishek-mac-os",
+    "releaseType": "release"
+  },
   "files": [
     "dist/**/*",
     "electron-main.mjs",
     "electron-preload.cjs",
-    "package.json"
+    "package.json",
+    "assets/icon.ico"
   ],
   "extraMetadata": {
     "main": "electron-main.mjs"
   },
   "win": {
+    "icon": "build/icon.ico",
     "target": [
       {
         "target": "nsis",
-        "arch": ["x64"]
+        "arch": [
+          "x64"
+        ]
       }
     ],
     "artifactName": "ABHISHEK-OS-Setup.${ext}"
@@ -32,6 +42,8 @@
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
     "shortcutName": "Abhishek OS",
+    "installerIcon": "build/icon.ico",
+    "uninstallerIcon": "build/icon.ico",
     "deleteAppDataOnUninstall": false,
     "runAfterFinish": true
   }

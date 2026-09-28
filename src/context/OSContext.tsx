@@ -297,8 +297,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       return stored
         ? JSON.parse(stored)
         : Object.values(APP_REGISTRY)
-            .filter(a => a.inDock)
-            .map(a => a.id);
+          .filter(a => a.inDock)
+          .map(a => a.id);
     } catch {
       return Object.values(APP_REGISTRY)
         .filter(a => a.inDock)
@@ -338,7 +338,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const updated = { ...prev, ...fields };
       try {
         localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updated));
-      } catch {}
+      } catch { }
       return updated;
     });
   }, []);
@@ -348,7 +348,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const updated = { ...prev, ...fields };
       try {
         localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
-      } catch {}
+      } catch { }
       return updated;
     });
   }, []);
@@ -357,7 +357,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setCurrentWallpaper(wp);
     try {
       localStorage.setItem(STORAGE_KEYS.WALLPAPER, JSON.stringify(wp));
-    } catch {}
+    } catch { }
   }, []);
 
   const uploadCustomWallpaper = useCallback((dataUrl: string, name: string) => {
@@ -379,7 +379,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setHasCompletedSetup(true);
     try {
       localStorage.setItem(STORAGE_KEYS.SETUP_DONE, 'true');
-    } catch {}
+    } catch { }
 
     // Boot chime!
     sound.playStartup();
@@ -427,6 +427,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   const restartSystem = useCallback(() => {
     setShowPowerDialog(false);
+    setIsShuttingDown(false);
+    setIsSleeping(false);
+    setIsLocked(false);
     setIsBooting(true);
     setWindows([]);
     setTimeout(() => {
@@ -436,8 +439,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, []);
 
   const shutdownSystem = useCallback(() => {
-    setIsShuttingDown(true);
     setShowPowerDialog(false);
+    setIsSleeping(false); setIsLocked(false); setWindows([]); setIsShuttingDown(true);
   }, []);
 
   const cancelShutdown = useCallback(() => {
@@ -666,7 +669,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const updated = [...prev, newSpace];
       try {
         localStorage.setItem(STORAGE_KEYS.SPACES, JSON.stringify(updated));
-      } catch {}
+      } catch { }
       return updated;
     });
   }, []);
@@ -678,7 +681,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         const updated = prev.filter(s => s.id !== id);
         try {
           localStorage.setItem(STORAGE_KEYS.SPACES, JSON.stringify(updated));
-        } catch {}
+        } catch { }
         return updated;
       });
       // Move any windows on that space to the first space
@@ -699,7 +702,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const updated = exists ? prev.filter(id => id !== appId) : [...prev, appId];
       try {
         localStorage.setItem(STORAGE_KEYS.DOCK_APPS, JSON.stringify(updated));
-      } catch {}
+      } catch { }
       return updated;
     });
   }, []);
@@ -708,7 +711,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setDockAppIds(newOrder);
     try {
       localStorage.setItem(STORAGE_KEYS.DOCK_APPS, JSON.stringify(newOrder));
-    } catch {}
+    } catch { }
   }, []);
 
   const moveDockApp = useCallback((sourceIndex: number, targetIndex: number) => {
@@ -727,7 +730,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       updated.splice(targetIndex, 0, movedItem);
       try {
         localStorage.setItem(STORAGE_KEYS.DOCK_APPS, JSON.stringify(updated));
-      } catch {}
+      } catch { }
       return updated;
     });
   }, []);
@@ -736,9 +739,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const toggleFullscreen = useCallback(() => {
     sound.playClick();
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      document.documentElement.requestFullscreen().catch(() => { });
     } else {
-      document.exitFullscreen().catch(() => {});
+      document.exitFullscreen().catch(() => { });
     }
   }, []);
 
