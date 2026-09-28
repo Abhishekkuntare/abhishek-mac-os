@@ -1,7 +1,7 @@
 {
   "name": "abhishek-os-desktop",
   "private": true,
-  "version": "1.0.4",
+  "version": "1.0.5",
   "type": "module",
   "description": "Abhishek OS — a macOS-inspired desktop application built with React and Electron.",
   "author": "Abhishek Kuntare",
