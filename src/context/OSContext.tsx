@@ -595,6 +595,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setIsLocked(true);
     setShowControlCenter(false);
     setShowPowerDialog(false);
+    setShowAboutModal(false);
+    setShowSpotlight(false);
+    setShowNotificationCenter(false);
+    setShowMissionControl(false);
+    setShowAppSwitcher(false);
+    setShowCommandPalette(false);
+    setQuickLookFile(null);
   }, []);
 
   const unlockSystem = useCallback((enteredPin?: string) => {
@@ -1115,6 +1122,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isLocked) return;
+
       const isMod = e.ctrlKey || e.metaKey;
 
       if (
@@ -1255,6 +1264,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     };
   }, [
     windows,
+    isLocked,
     activeSpaceId,
     showSpotlight,
     showCommandPalette,

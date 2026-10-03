@@ -99,39 +99,41 @@ function OSWorkspace() {
       data-low-power={settings.lowPowerMode}
       className="relative h-screen w-screen overflow-hidden bg-black font-sans text-slate-100 select-none"
     >
-      {/* Desktop Background, Widgets & Desktop Icon Grid */}
-      <Desktop />
+      <div className={isLocked ? 'hidden' : 'contents'}>
+        {/* Desktop Background, Widgets & Desktop Icon Grid */}
+        <Desktop />
 
-      {/* Active Application Windows */}
-      <WindowManager />
+        {/* Active Application Windows */}
+        <WindowManager />
 
-      <AppSwitcher />
+        <AppSwitcher />
 
-      {/* Top System Menu Bar */}
-      {hasCompletedSetup && !isLocked && !isSleeping && <MenuBar />}
+        {/* Top System Menu Bar */}
+        {hasCompletedSetup && !isSleeping && <MenuBar />}
 
-      {/* Bottom Floating Glass Dock */}
-      <Dock />
+        {/* Bottom Floating Glass Dock */}
+        <Dock />
 
-      {/* System Flyout Panels & Modals */}
-      <ControlCenter />
+        {/* System Flyout Panels & Modals */}
+        <ControlCenter />
 
-      <Spotlight />
+        <Spotlight />
 
-      <NotificationCenter />
+        <NotificationCenter />
 
-      <MissionControl />
+        <MissionControl />
 
-      <PowerDialog />
+        <PowerDialog />
 
-      <AboutModal />
+        <AboutModal />
 
-      <QuickLookModal />
+        <QuickLookModal />
 
-      {/* First-time Onboarding Setup Wizard */}
-      {!hasCompletedSetup && <OnboardingModal />}
+        {/* First-time Onboarding Setup Wizard */}
+        {!hasCompletedSetup && <OnboardingModal />}
 
-      {hasCompletedSetup && <LocalAccessPrompt />}
+        {hasCompletedSetup && <LocalAccessPrompt />}
+      </div>
 
       {/**
        * -------------------------------------------------------

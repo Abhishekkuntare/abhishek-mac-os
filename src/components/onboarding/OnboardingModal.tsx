@@ -1747,6 +1747,7 @@ import {
 import { useOS } from '../../context/OSContext';
 import { UserProfile, SystemSettings, AccentColor, ThemeMode } from '../../types/desktop';
 import { sound } from '../../services/soundService';
+import { MascotMark } from '../system/MascotMark';
 
 // Cute cartoon / 3D character avatars.
 // These are self-contained SVG characters, so they work offline and don't
@@ -2423,9 +2424,7 @@ export const OnboardingModal: React.FC = () => {
         {/* Step Indicator */}
         <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-6">
           <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-sky-400" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2L2 22h4.5l2-4.5h7l2 4.5H22L12 2zm0 6l2.3 5.5h-4.6L12 8z" />
-            </svg>
+            <MascotMark className="h-6 w-6" styleId={0} color="#159eff" />
             <span className="text-xs font-extrabold uppercase tracking-widest text-slate-300">
               Abhishek OS
             </span>
@@ -2715,245 +2714,24 @@ export const OnboardingModal: React.FC = () => {
       "
                 >
 
-                  {/* ===================================================
-          3D CORE
-         =================================================== */}
-
+                  {/* Brand mascot: the default preset follows the pointer and reacts to hover. */}
                   <motion.div
-                    initial={{
-                      opacity: 0,
-                      scale: 0.55,
-                      rotateX: 35,
-                      rotateY: -25,
-                    }}
-                    animate={{
-                      opacity: 1,
-                      scale: 1,
-                      rotateX: 0,
-                      rotateY: 0,
-                    }}
+                    initial={{ opacity: 0, scale: 0.86, y: 12 }}
+                    animate={{ opacity: 1, scale: 1, y: [0, -4, 0] }}
                     transition={{
-                      duration: 1.1,
-                      delay: 0.2,
-                      ease: [0.16, 1, 0.3, 1],
+                      opacity: { duration: 0.55, delay: 0.2 },
+                      scale: { duration: 0.55, delay: 0.2, ease: [0.16, 1, 0.3, 1] },
+                      y: { duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 0.75 },
                     }}
-                    whileHover={{
-                      scale: 1.025,
-                      rotateY: 5,
-                      rotateX: -3,
-                    }}
-                    style={{
-                      transformStyle: "preserve-3d",
-                      perspective: 1200,
-                    }}
-                    className="
-          relative
-          mb-9
-        "
+                    whileHover={{ scale: 1.07, rotate: 2, y: -5 }}
+                    className="relative mb-7"
                   >
-
-                    {/* outer orbital ring */}
-                    <motion.div
-                      animate={{
-                        rotate: 360,
-                      }}
-                      transition={{
-                        duration: 20,
-                        repeat: Infinity,
-                        ease: "linear",
-                      }}
-                      className="
-            absolute
-            -inset-10
-            rounded-full
-            border
-            border-sky-400/[0.08]
-            border-t-sky-300/50
-            border-r-indigo-400/20
-          "
+                    <div className="pointer-events-none absolute inset-3 rounded-[30%] bg-sky-400/20 blur-2xl" />
+                    <MascotMark
+                      className="relative z-10 h-32 w-32 drop-shadow-[0_18px_32px_rgba(21,158,255,0.24)]"
+                      styleId={0}
+                      color="#159eff"
                     />
-
-                    {/* second orbital ring */}
-                    <motion.div
-                      animate={{
-                        rotate: -360,
-                      }}
-                      transition={{
-                        duration: 27,
-                        repeat: Infinity,
-                        ease: "linear",
-                      }}
-                      className="
-            absolute
-            -inset-14
-            rounded-full
-            border
-            border-purple-400/[0.05]
-            border-b-purple-400/30
-          "
-                    />
-
-                    {/* orbital dots */}
-                    <motion.div
-                      animate={{
-                        rotate: 360,
-                      }}
-                      transition={{
-                        duration: 8,
-                        repeat: Infinity,
-                        ease: "linear",
-                      }}
-                      className="
-            absolute
-            -inset-10
-          "
-                    >
-                      <span
-                        className="
-              absolute
-              left-1/2
-              top-0
-              h-1.5
-              w-1.5
-              -translate-x-1/2
-              rounded-full
-              bg-sky-300
-              shadow-[0_0_15px_rgba(56,189,248,.9)]
-            "
-                      />
-                    </motion.div>
-
-                    {/* core glow */}
-                    <motion.div
-                      animate={{
-                        scale: [0.9, 1.12, 0.9],
-                        opacity: [0.25, 0.5, 0.25],
-                      }}
-                      transition={{
-                        duration: 3.5,
-                        repeat: Infinity,
-                        ease: "easeInOut",
-                      }}
-                      className="
-            absolute
-            -inset-12
-            rounded-full
-            bg-gradient-to-br
-            from-sky-400/20
-            via-indigo-500/10
-            to-purple-500/15
-            blur-[40px]
-          "
-                    />
-
-                    {/* =================================================
-            GLASS CORE
-           ================================================= */}
-
-                    <div
-                      className="
-            relative
-            h-[126px]
-            w-[126px]
-            rounded-[36px]
-            border
-            border-white/[0.16]
-            bg-gradient-to-br
-            from-white/[0.10]
-            via-white/[0.035]
-            to-white/[0.015]
-            p-[1.5px]
-            shadow-[0_35px_100px_rgba(0,0,0,.65),0_0_60px_rgba(56,189,248,.10)]
-            backdrop-blur-2xl
-          "
-                    >
-
-                      <div
-                        className="
-              relative
-              flex
-              h-full
-              w-full
-              items-center
-              justify-center
-              overflow-hidden
-              rounded-[34px]
-              bg-[#060a12]
-            "
-                      >
-
-                        {/* glass shine */}
-                        <motion.div
-                          animate={{
-                            x: ["-130%", "130%"],
-                          }}
-                          transition={{
-                            duration: 4.5,
-                            repeat: Infinity,
-                            repeatDelay: 2,
-                            ease: "easeInOut",
-                          }}
-                          className="
-                pointer-events-none
-                absolute
-                -inset-y-10
-                w-12
-                rotate-[25deg]
-                bg-white/[0.07]
-                blur-md
-              "
-                        />
-
-                        {/* inner gradient */}
-                        <div
-                          className="
-                pointer-events-none
-                absolute
-                inset-0
-                bg-[radial-gradient(circle_at_50%_35%,rgba(56,189,248,.12),transparent_48%)]
-              "
-                        />
-
-                        {/* logo */}
-                        <motion.svg
-                          animate={{
-                            y: [0, -3, 0],
-                          }}
-                          transition={{
-                            duration: 4,
-                            repeat: Infinity,
-                            ease: "easeInOut",
-                          }}
-                          className="
-                relative
-                z-10
-                h-[62px]
-                w-[62px]
-                text-sky-300
-                drop-shadow-[0_0_24px_rgba(56,189,248,.75)]
-              "
-                          viewBox="0 0 24 24"
-                          fill="currentColor"
-                        >
-                          <path d="M12 2L2 22h4.5l2.25-5h6.5l2.25 5H22L12 2zm0 6.3 1.9 5.2h-3.8L12 8.3z" />
-                        </motion.svg>
-
-                        {/* bottom glass reflection */}
-                        <div
-                          className="
-                pointer-events-none
-                absolute
-                bottom-0
-                left-0
-                right-0
-                h-12
-                bg-gradient-to-t
-                from-sky-400/[0.06]
-                to-transparent
-              "
-                        />
-                      </div>
-                    </div>
                   </motion.div>
 
                   {/* ===================================================
