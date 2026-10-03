@@ -1832,11 +1832,20 @@ export const Desktop: React.FC = () => {
     }
   };
 
-  const handleOpenItem = (itemId: string, type: string, file?: VirtualFile) => {
+  const handleOpenItem = (
+    itemId: string,
+    type: string,
+    file?: VirtualFile,
+    appId?: string,
+  ) => {
 
     sound.playClick();
 
-    if (itemId === 'icon-finder') {
+    if (appId) {
+
+      openApp(appId);
+
+    } else if (itemId === 'icon-finder') {
 
       openApp('finder');
 
@@ -2393,7 +2402,12 @@ export const Desktop: React.FC = () => {
 
                 if (dragTrackerRef.current?.hasMoved) return;
 
-                handleOpenItem(item.id, item.type, 'file' in item ? item.file : undefined);
+                handleOpenItem(
+                  item.id,
+                  item.type,
+                  'file' in item ? item.file : undefined,
+                  item.isSystem ? item.appId : undefined,
+                );
 
               }}
 
@@ -2662,7 +2676,12 @@ export const Desktop: React.FC = () => {
                       shortcut="Enter"
                       accent="text-sky-300"
                       onClick={() => {
-                        handleOpenItem(targetItem.id, targetItem.type);
+                        handleOpenItem(
+                          targetItem.id,
+                          targetItem.type,
+                          undefined,
+                          targetItem.isSystem ? targetItem.appId : undefined,
+                        );
                         closeMenu();
                       }}
                     />

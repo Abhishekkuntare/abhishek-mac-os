@@ -37,7 +37,7 @@ jobs:
         run: npm run build:renderer
 
       - name: Build Windows installer
-        run: npm run package:win
+        run: npm run package:exe
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

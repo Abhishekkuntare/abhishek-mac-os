@@ -172,16 +172,18 @@ Build the renderer:
 npm run build:renderer
 ```
 
-Build the Windows installer:
+Build the Windows installer and Microsoft Store package:
 
 ```bash
 npm run package:win
 ```
 
-Build the Microsoft Store MSIX submission package on Windows after setting `APPX_IDENTITY_NAME`, `APPX_PUBLISHER`, and `APPX_PUBLISHER_DISPLAY_NAME` to the exact values from Partner Center:
+This creates both `ABHISHEK-OS-Setup.exe` and `ABHISHEK-OS-Setup.appx` in `release/`. The Store package uses this app's Partner Center identity by default. If the identity changes, override it with `APPX_IDENTITY_NAME`, `APPX_PUBLISHER`, and `APPX_PUBLISHER_DISPLAY_NAME` using the exact values from Partner Center.
+
+To build only the standalone Windows installer:
 
 ```bash
-npm run package:store
+npm run package:exe
 ```
 
 ---

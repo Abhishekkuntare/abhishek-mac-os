@@ -1,9 +1,9 @@
 const baseConfig = require('./electron-builder.json');
 
 const requiredSettings = {
-  APPX_IDENTITY_NAME: process.env.APPX_IDENTITY_NAME,
-  APPX_PUBLISHER: process.env.APPX_PUBLISHER,
-  APPX_PUBLISHER_DISPLAY_NAME: process.env.APPX_PUBLISHER_DISPLAY_NAME,
+  APPX_IDENTITY_NAME: process.env.APPX_IDENTITY_NAME || 'AbhishekKuntare.AbhishekOS',
+  APPX_PUBLISHER: process.env.APPX_PUBLISHER || 'CN=03596C97-E693-49A7-93D8-765D130ED2D0',
+  APPX_PUBLISHER_DISPLAY_NAME: process.env.APPX_PUBLISHER_DISPLAY_NAME || 'Abhishek Kuntare',
 };
 
 const missingSettings = Object.entries(requiredSettings)
