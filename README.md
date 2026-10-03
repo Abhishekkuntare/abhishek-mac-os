@@ -26,7 +26,7 @@ The project combines a familiar desktop workflow with a responsive interface, bu
 * 📱 Responsive layouts
 * ✨ Animated and glass-inspired interface
 * 🔄 Automatic application updates
-* 🔐 Verified release and code-signing infrastructure
+* 🔐 Authenticode-signed Windows releases (after code-signing approval)
 
 Features may evolve as the project develops.
 
@@ -64,45 +64,29 @@ Screenshots and demonstrations are available in the repository and project relea
 
 ## 🚀 Download
 
-Official releases are published through GitHub Releases:
+The current Windows installer is distributed through GitHub Releases and is not Authenticode-signed. Windows may show an **Unknown publisher** or SmartScreen warning.
 
 **[Download Abhishek OS](https://abhishek-operating-system.netlify.app)**
 
-Only download Abhishek OS from the official repository or official project release pages.
+The project is preparing a Microsoft Store MSIX package. Once the app passes Store certification and is published, install it from its Microsoft Store listing to receive a Microsoft-signed package. The Store listing is not available yet.
 
-Before installing a release, users should verify that the release belongs to the official Abhishek OS repository.
+Only download direct installers from the official project release pages.
 
 ---
 
 ## 🔐 Code signing policy
 
-Abhishek OS uses automated build and release infrastructure to produce its official Windows releases.
+The Microsoft Store can sign an MSIX package during certification at no charge. This signing applies only to apps installed through the Store; it does not sign the standalone EXE published on GitHub.
 
-**Free code signing provided by SignPath.io, certificate by SignPath Foundation.**
+The project must first create a free Microsoft Store developer account, reserve the app name, and complete Store certification. Once its identity variables are configured, the release workflow builds the MSIX submission package and retains it as a GitHub Actions artifact for upload to Partner Center. Until then, GitHub releases continue to publish only the unsigned EXE. Publication to the Store is a separate, manual Partner Center submission.
 
-The purpose of code signing is to provide users with a verifiable relationship between the published Windows binary and the project's source repository.
+Configure these GitHub Actions repository variables after reserving the app name:
 
-### Signing roles
+* `APPX_IDENTITY_NAME`
+* `APPX_PUBLISHER`
+* `APPX_PUBLISHER_DISPLAY_NAME`
 
-**Committers and reviewers:**
-Abhishek Kuntare
-
-**Approvers:**
-Abhishek Kuntare
-
-The project maintainer is responsible for reviewing source-code and build changes and approving official release artifacts for signing.
-
-Project source repository:
-
-https://github.com/Abhishekkuntare/abhishek-mac-os
-
-Official releases:
-
-https://github.com/Abhishekkuntare/abhishek-mac-os/releases
-
-All official signed release artifacts are produced from the project's source repository and automated build process.
-
-Every release intended for signing must correspond to a published project release and must be reviewed by the project maintainer before signing.
+Get the exact package identity and publisher values from the app's **App identity** page in Partner Center. Do not substitute guessed values: the package identity must match the reserved Store listing. The local `npm run package:store` command uses the same variables.
 
 ---
 
@@ -194,30 +178,34 @@ Build the Windows installer:
 npm run package:win
 ```
 
+Build the Microsoft Store MSIX submission package on Windows after setting `APPX_IDENTITY_NAME`, `APPX_PUBLISHER`, and `APPX_PUBLISHER_DISPLAY_NAME` to the exact values from Partner Center:
+
+```bash
+npm run package:store
+```
+
 ---
 
 ## 📦 Release process
 
-Official Windows releases are built through GitHub Actions.
-
-The release process generally follows:
+Each tagged release continues to publish the standalone EXE and updater metadata to GitHub Releases. That EXE remains unsigned. The same workflow also builds an MSIX package and uploads it as a workflow artifact; a maintainer must download that artifact and submit it to Partner Center for validation and Store certification.
 
 ```text
 Source Code
-    ↓
-GitHub Repository
     ↓
 GitHub Actions
     ↓
 Renderer Build
     ↓
-Electron Packaging
-    ↓
-Windows Installer
-    ↓
-Code Signing
-    ↓
-GitHub Release
+ ┌─────────────────────────────┬─────────────────────────────────┐
+ │ NSIS EXE                    │ Microsoft Store MSIX            │
+ │ GitHub Release, unsigned    │ Actions artifact for Partner    │
+ │                             │ Center submission               │
+ └─────────────────────────────┴─────────────────────────────────┘
+                                      ↓
+                        Partner Center certification
+                                      ↓
+                              Microsoft Store
 ```
 
 Release artifacts are published through the official GitHub Releases page.
@@ -226,9 +214,7 @@ Release artifacts are published through the official GitHub Releases page.
 
 ## 🔄 Automatic Updates
 
-Abhishek OS supports automatic updates for supported Windows releases.
-
-The application uses the official release metadata and artifacts published through the project's GitHub Releases infrastructure.
+The standalone Windows installer uses the project's GitHub Releases for automatic updates. Microsoft Store installations receive updates through the Microsoft Store; the app's built-in updater is disabled for Store-packaged installs.
 
 Users should not need to manually uninstall the application to receive supported application updates.
 

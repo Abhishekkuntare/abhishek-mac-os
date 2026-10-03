@@ -94,7 +94,11 @@ function OSWorkspace() {
    * booting and not shutting down.
    */
   return (
-    <div data-ui-density={settings.uiStyle} className="relative h-screen w-screen overflow-hidden bg-black font-sans text-slate-100 select-none">
+    <div
+      data-ui-density={settings.uiStyle}
+      data-low-power={settings.lowPowerMode}
+      className="relative h-screen w-screen overflow-hidden bg-black font-sans text-slate-100 select-none"
+    >
       {/* Desktop Background, Widgets & Desktop Icon Grid */}
       <Desktop />
 
@@ -150,7 +154,9 @@ function OSWorkspace() {
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-[2147483647] bg-black transition-opacity duration-200"
-        style={{ opacity: Math.max(0, Math.min(1, (100 - settings.brightness) / 100)) }}
+        style={{
+        opacity: Math.max(0, Math.min(1, (100 - Math.min(settings.brightness, settings.lowPowerMode ? 55 : 100)) / 100)),
+        }}
       />
     </div>
   );

@@ -6,6 +6,7 @@ on:
       - "v*.*.*"
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
@@ -40,12 +41,50 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check Microsoft Store package identity
+        id: store-identity
+        shell: pwsh
+        env:
+          APPX_IDENTITY_NAME: ${{ vars.APPX_IDENTITY_NAME }}
+          APPX_PUBLISHER: ${{ vars.APPX_PUBLISHER }}
+          APPX_PUBLISHER_DISPLAY_NAME: ${{ vars.APPX_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          $required = @(
+            "APPX_IDENTITY_NAME",
+            "APPX_PUBLISHER",
+            "APPX_PUBLISHER_DISPLAY_NAME"
+          )
+          $missing = @($required | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) })
+          if ($missing.Count -gt 0) {
+            "configured=false" >> $env:GITHUB_OUTPUT
+            Write-Host "::warning::Microsoft Store package identity is not configured. The unsigned GitHub EXE will still be released, but the MSIX build is skipped. After reserving the app name in Partner Center, add these repository variables: $($missing -join ', ')."
+          } else {
+            "configured=true" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Build Microsoft Store package
+        if: steps.store-identity.outputs.configured == 'true'
+        run: npm run package:store
+        env:
+          APPX_IDENTITY_NAME: ${{ vars.APPX_IDENTITY_NAME }}
+          APPX_PUBLISHER: ${{ vars.APPX_PUBLISHER }}
+          APPX_PUBLISHER_DISPLAY_NAME: ${{ vars.APPX_PUBLISHER_DISPLAY_NAME }}
+
       - name: List release files
         shell: pwsh
         run: |
           Write-Host "========== RELEASE DIRECTORY =========="
           Get-ChildItem -Path release -Recurse |
             Select-Object FullName, Length
+
+      - name: Upload unsigned Microsoft Store submission package
+        if: steps.store-identity.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: abhishek-os-store-package-${{ github.ref_name }}
+          path: release/*.appx
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -55,8 +94,6 @@ jobs:
           generate_release_notes: true
           files: |
             release/ABHISHEK-OS-Setup.exe
-            release/ABHISHEK-OS-Setup.exe.blockmap
             release/latest.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

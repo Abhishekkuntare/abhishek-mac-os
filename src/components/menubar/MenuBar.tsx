@@ -5,8 +5,6 @@ import {
   WifiOff,
   Volume2,
   VolumeX,
-  Battery,
-  BatteryCharging,
   Search,
   Sliders,
   Bell,
@@ -33,6 +31,7 @@ import {
 import { useOS } from '../../context/OSContext';
 import { sound } from '../../services/soundService';
 import { MascotMark } from '../system/MascotMark';
+import { BatteryStatusIcon } from '../system/BatteryStatusIcon';
 
 export const MenuBar: React.FC = () => {
   const {
@@ -1004,31 +1003,50 @@ export const MenuBar: React.FC = () => {
               : 'Wi-Fi: Disconnected'
           }
         >
-          {settings.wifiEnabled ? (
-            <Wifi className="w-3.5 h-3.5" />
-          ) : (
-            <WifiOff className="w-3.5 h-3.5 text-slate-400" />
-          )}
+          <span className="relative inline-flex h-5 w-5 items-center justify-center">
+            {settings.wifiEnabled ? (
+              <motion.span
+                animate={settings.wifiConnected ? { opacity: [0.72, 1, 0.72], scale: [0.96, 1.04, 0.96] } : { opacity: 1, scale: 1 }}
+                transition={settings.wifiConnected ? { duration: 2.2, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
+                className={settings.wifiConnected ? 'text-sky-200' : 'text-slate-400'}
+              >
+                <Wifi className="h-3.5 w-3.5" />
+              </motion.span>
+            ) : (
+              <WifiOff className="h-3.5 w-3.5 text-slate-500" />
+            )}
+            {settings.wifiConnected && (
+              <motion.span
+                animate={{ opacity: [0.55, 1, 0.55], scale: [0.8, 1.15, 0.8] }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_6px_rgba(52,211,153,.8)]"
+              />
+            )}
+          </span>
         </button>
 
         {/* Battery */}
-        <div
-          className="flex items-center gap-1 px-1 py-0.5 rounded-md hover:bg-white/10 cursor-pointer"
-          title={`Battery: ${settings.batteryLevel}% ${
-            settings.batteryCharging ? '(Charging)' : ''
-          }`}
+        <button
+          type="button"
+          className="electron-no-drag flex items-center gap-1 px-1 py-0.5 rounded-md hover:bg-white/10 transition-colors"
+          title={
+            settings.batteryAvailable
+              ? `Battery: ${settings.batteryLevel}%${settings.batteryCharging ? ' (Charging)' : settings.batteryPlugged ? ' (Plugged in)' : ''}`
+              : 'Battery status unavailable on this device'
+          }
           onClick={() => openApp('settings')}
         >
-          <span className="text-[11px] font-mono">
-            {settings.batteryLevel}%
-          </span>
-
-          {settings.batteryCharging ? (
-            <BatteryCharging className="w-3.5 h-3.5 text-emerald-400" />
-          ) : (
-            <Battery className="w-3.5 h-3.5" />
+          {settings.batteryAvailable && (
+            <span className="text-[11px] font-mono">{settings.batteryLevel}%</span>
           )}
-        </div>
+          <BatteryStatusIcon
+            level={settings.batteryLevel}
+            charging={settings.batteryCharging}
+            plugged={settings.batteryPlugged}
+            style={settings.batteryIconStyle}
+            className="h-[17px] w-[22px]"
+          />
+        </button>
 
         {/* Live Date & Time */}
         <button

@@ -5,6 +5,7 @@ export type AnimationLevel = 'full' | 'reduced' | 'minimal';
 export type DockPosition = 'top' | 'bottom' | 'left' | 'right';
 export type DockSize = 'small' | 'medium' | 'large';
 export type CursorStyle = 'system' | 'arrow' | 'crosshair';
+export type BatteryIconStyle = 'classic' | 'rounded' | 'square' | 'circle';
 
 export interface UserProfile {
   fullName: string;
@@ -143,6 +144,10 @@ export interface SystemSettings {
   airDropEnabled: boolean;
   batteryLevel: number;
   batteryCharging: boolean;
+  batteryPlugged: boolean;
+  batteryAvailable: boolean;
+  batteryIconStyle: BatteryIconStyle;
+  lowPowerMode: boolean;
   language: string;
   region: string;
   clock24h: boolean;

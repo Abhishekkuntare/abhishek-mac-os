@@ -1654,7 +1654,7 @@ export const Dock: React.FC = () => {
           ? bounds.top + bounds.height / 2
           : bounds.left + bounds.width / 2;
         const distance = Math.abs(pointerAxis - center);
-        const scale = settings.dockMagnification && draggedAppId === null
+        const scale = settings.dockMagnification && !settings.lowPowerMode && draggedAppId === null
           ? 1 + 0.48 * Math.exp(-(distance * distance) / (2 * radius * radius))
           : 1;
 

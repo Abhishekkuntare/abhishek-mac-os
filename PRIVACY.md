@@ -147,15 +147,3 @@ The effective date at the beginning of this document indicates the current versi
 For privacy-related questions concerning Abhishek OS, contact the project maintainer through the official GitHub repository:
 
 https://github.com/Abhishekkuntare/abhishek-mac-os
-
----
-
-## 13. SignPath Foundation
-
-For purposes of the SignPath Foundation code-signing requirements, the project provides this privacy policy to document its data-handling practices.
-
-The project also maintains a separate:
-
-**[Code signing policy](README.md#-code-signing-policy)**
-
-Free code signing provided by SignPath.io, certificate by SignPath Foundation.

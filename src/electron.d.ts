@@ -61,6 +61,13 @@ declare global {
     memoryTotalBytes: number | null;
   }
 
+  interface SystemBatteryStatus {
+    available: boolean;
+    level: number;
+    charging: boolean;
+    plugged: boolean;
+  }
+
   interface CodeExecutionRequest {
     language: 'javascript' | 'python' | 'c' | 'cpp' | 'java';
     code: string;
@@ -92,6 +99,7 @@ declare global {
       platform: () => Promise<string>;
       version: () => Promise<string>;
       getConnectivityState: () => Promise<ConnectivityState>;
+      getBatteryStatus: () => Promise<SystemBatteryStatus>;
       setWifiEnabled: (enabled: boolean) => Promise<ConnectivityState>;
       setBluetoothEnabled: (enabled: boolean) => Promise<ConnectivityState>;
       scanWifiNetworks: () => Promise<NearbyWifiNetwork[]>;
@@ -124,6 +132,8 @@ declare global {
       runCode: (request: CodeExecutionRequest) => Promise<CodeExecutionResult>;
       installCodeRuntime: (language: 'cpp' | 'java') => Promise<string>;
       ghostAIIsConfigured: () => Promise<boolean>;
+      ghostAISetApiKey: (apiKey: string) => Promise<boolean>;
+      ghostAIRemoveApiKey: () => Promise<boolean>;
       ghostAIChat: (request: {
         model: string;
         messages: GhostAIMessage[];

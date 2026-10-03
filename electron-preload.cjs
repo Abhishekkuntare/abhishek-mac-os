@@ -73,6 +73,9 @@ contextBridge.exposeInMainWorld(
         'system:getConnectivityState'
       ),
 
+    getBatteryStatus: () =>
+      ipcRenderer.invoke('system:getBatteryStatus'),
+
     setWifiEnabled: (enabled) =>
       ipcRenderer.invoke('system:setWifiEnabled', enabled),
 
@@ -174,6 +177,12 @@ contextBridge.exposeInMainWorld(
 
     ghostAIIsConfigured: () =>
       ipcRenderer.invoke('ghost-ai:isConfigured'),
+
+    ghostAISetApiKey: (apiKey) =>
+      ipcRenderer.invoke('ghost-ai:setApiKey', apiKey),
+
+    ghostAIRemoveApiKey: () =>
+      ipcRenderer.invoke('ghost-ai:removeApiKey'),
 
     ghostAIChat: (request) =>
       ipcRenderer.invoke('ghost-ai:chat', request),

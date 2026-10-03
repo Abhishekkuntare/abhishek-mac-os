@@ -2283,7 +2283,10 @@ export const Desktop: React.FC = () => {
 
       {settings.liveWallpapers && currentWallpaper.isLive && currentWallpaper.liveType ? (
 
-        <LiveWallpaper type={currentWallpaper.liveType} performanceMode={settings.performanceMode} />
+        <LiveWallpaper
+          type={currentWallpaper.liveType}
+          performanceMode={settings.lowPowerMode ? 'batterySaver' : settings.performanceMode}
+        />
 
       ) : (
 

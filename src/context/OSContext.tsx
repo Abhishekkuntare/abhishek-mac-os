@@ -68,8 +68,12 @@ const DEFAULT_SETTINGS: SystemSettings = {
   bluetoothDeviceName: '',
   doNotDisturb: false,
   airDropEnabled: true,
-  batteryLevel: 94,
-  batteryCharging: true,
+  batteryLevel: 0,
+  batteryCharging: false,
+  batteryPlugged: false,
+  batteryAvailable: false,
+  batteryIconStyle: 'classic',
+  lowPowerMode: false,
   language: 'English',
   region: 'India',
   clock24h: false,
@@ -508,6 +512,31 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     void syncConnectivity();
     const timer = window.setInterval(() => void syncConnectivity(), 10000);
     return () => window.clearInterval(timer);
+  }, [updateSettings]);
+
+  useEffect(() => {
+    let active = true;
+    const syncBatteryStatus = async () => {
+      try {
+        const status = await window.electronAPI?.getBatteryStatus?.();
+        if (!status || !active) return;
+        updateSettings({
+          batteryAvailable: status.available,
+          batteryLevel: status.available ? status.level : 0,
+          batteryCharging: status.available && status.charging,
+          batteryPlugged: status.available && status.plugged,
+        });
+      } catch (error) {
+        console.warn('[OS] Could not read host battery status:', error);
+      }
+    };
+
+    void syncBatteryStatus();
+    const timer = window.setInterval(() => void syncBatteryStatus(), 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, [updateSettings]);
 
   const setWallpaper = useCallback((wp: Wallpaper) => {

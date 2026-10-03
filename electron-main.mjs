@@ -9,6 +9,7 @@ import {
   clipboard,
   net,
   protocol,
+  safeStorage,
 } from 'electron';
 
 import electronUpdater from 'electron-updater';
@@ -32,6 +33,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, '.env'), quiet: true });
 
 const isDev = !app.isPackaged;
+const isStorePackage = process.windowsStore;
 protocol.registerSchemesAsPrivileged([{
   scheme: 'abhishek-local',
   privileges: {
@@ -59,6 +61,7 @@ const localFoldersFile = () => path.join(app.getPath('userData'), 'local-folders
 const fullAccessFile = () => path.join(app.getPath('userData'), 'full-filesystem-access.json');
 const appTrashDirectory = () => path.join(app.getPath('userData'), 'file-trash');
 const appTrashManifest = () => path.join(app.getPath('userData'), 'file-trash.json');
+const geminiApiKeyFile = () => path.join(app.getPath('userData'), 'gemini-api-key.enc');
 const assertTrustedFilesFrame = event => {
   if (
     event.sender !== mainWindow?.webContents ||
@@ -124,7 +127,64 @@ ipcMain.handle('ghost-ai:isConfigured', event => {
   ) {
     throw new Error('Ghost AI is only available to the Abhishek OS desktop window.');
   }
-  return Boolean(process.env.GEMINI_API_KEY?.trim());
+  return getGeminiApiKey().then(apiKey => Boolean(apiKey));
+});
+
+const getGeminiApiKey = async () => {
+  const environmentKey = process.env.GEMINI_API_KEY?.trim();
+  if (environmentKey) return environmentKey;
+
+  let encryptedKey;
+  try {
+    encryptedKey = await fs.readFile(geminiApiKeyFile());
+  } catch (error) {
+    if (error?.code === 'ENOENT') return '';
+    throw new Error('Could not read the saved Gemini API key from this Windows account.', { cause: error });
+  }
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('Windows secure storage is unavailable. Restart Windows and try again.');
+  }
+  try {
+    return safeStorage.decryptString(encryptedKey).trim();
+  } catch (error) {
+    throw new Error('The saved Gemini API key could not be decrypted. Remove it and save the key again.', { cause: error });
+  }
+};
+
+ipcMain.handle('ghost-ai:setApiKey', async (event, apiKey) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Ghost AI settings are only available to the Abhishek OS desktop window.');
+  }
+  if (typeof apiKey !== 'string' || !apiKey.trim() || apiKey.trim().length > 512) {
+    throw new Error('Enter a valid Gemini API key (1–512 characters).');
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('Windows secure credential storage is unavailable. The API key was not saved.');
+  }
+
+  await fs.writeFile(geminiApiKeyFile(), safeStorage.encryptString(apiKey.trim()));
+  return true;
+});
+
+ipcMain.handle('ghost-ai:removeApiKey', async event => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Ghost AI settings are only available to the Abhishek OS desktop window.');
+  }
+  try {
+    await fs.unlink(geminiApiKeyFile());
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      throw new Error('Could not remove the saved Gemini API key.', { cause: error });
+    }
+  }
+  return true;
 });
 
 ipcMain.handle('ghost-ai:chat', async (event, request) => {
@@ -135,9 +195,9 @@ ipcMain.handle('ghost-ai:chat', async (event, request) => {
     throw new Error('Ghost AI is only available to the Abhishek OS desktop window.');
   }
 
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const apiKey = await getGeminiApiKey();
   if (!apiKey) {
-    throw new Error('Gemini is not configured. Set GEMINI_API_KEY in .env and restart Abhishek OS.');
+    throw new Error('Gemini is not configured. Open Ghost AI settings and add your Gemini API key.');
   }
 
   const allowedModels = new Set(['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro']);
@@ -357,6 +417,68 @@ ipcMain.handle('system:getResourceUsage', async event => {
     memoryUsedBytes: totalMemory > 0 ? totalMemory - freeMemory : null,
     memoryTotalBytes: totalMemory > 0 ? totalMemory : null,
   };
+});
+ipcMain.handle('system:getBatteryStatus', async event => {
+  assertTrustedFilesFrame(event);
+  if (process.platform !== 'win32') {
+    return { available: false, level: 0, charging: false, plugged: false };
+  }
+
+  const script = `Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class AbhishekPowerStatus {
+  [StructLayout(LayoutKind.Sequential)]
+  public struct Status {
+    public byte ACLineStatus;
+    public byte BatteryFlag;
+    public byte BatteryLifePercent;
+    public byte SystemStatusFlag;
+    public uint BatteryLifeTime;
+    public uint BatteryFullLifeTime;
+  }
+  [DllImport("kernel32.dll")]
+  public static extern bool GetSystemPowerStatus(out Status status);
+}
+'@;
+$status = New-Object AbhishekPowerStatus+Status;
+if (-not [AbhishekPowerStatus]::GetSystemPowerStatus([ref]$status)) { throw 'Windows did not return its power status.' }
+[pscustomobject]@{
+  available = ($status.BatteryLifePercent -ne 255 -and $status.BatteryFlag -ne 128 -and $status.BatteryFlag -ne 255)
+  level = [int]$status.BatteryLifePercent
+  charging = (($status.BatteryFlag -band 8) -ne 0)
+  plugged = ($status.ACLineStatus -eq 1)
+} | ConvertTo-Json -Compress`;
+
+  try {
+    const { stdout } = await execFileAsync('powershell.exe', [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      script,
+    ], { timeout: 10000, windowsHide: true, maxBuffer: 1024 * 1024 });
+    const status = JSON.parse(stdout.trim());
+    if (
+      typeof status.available !== 'boolean' ||
+      !Number.isInteger(status.level) ||
+      typeof status.charging !== 'boolean' ||
+      typeof status.plugged !== 'boolean'
+    ) {
+      throw new Error('Windows returned malformed battery status.');
+    }
+    return {
+      available: status.available,
+      level: Math.max(0, Math.min(100, status.level)),
+      charging: status.charging,
+      plugged: status.plugged,
+    };
+  } catch (error) {
+    console.warn('[System] Could not read Windows battery status:', error);
+    return { available: false, level: 0, charging: false, plugged: false };
+  }
 });
 ipcMain.handle('files:transferEntries', (event, sourcePaths, destinationPath, move) => {
   assertTrustedFilesFrame(event);
@@ -1611,6 +1733,14 @@ function sendUpdateEvent(channel, payload = {}) {
 ========================================================= */
 
 function setupAutoUpdater() {
+  if (isStorePackage) {
+    console.log(
+      '[Abhishek OS] Updates for Microsoft Store packages are managed by the Store.'
+    );
+
+    return;
+  }
+
   /*
    * Never run the updater while developing.
    */
@@ -2158,6 +2288,13 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     'app:checkForUpdates',
     async () => {
+      if (isStorePackage) {
+        return {
+          success: false,
+          reason: 'store-managed',
+        };
+      }
+
       if (!app.isPackaged) {
         return {
           success: false,
@@ -2199,7 +2336,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     'app:installUpdate',
     () => {
-      if (!app.isPackaged) {
+      if (!app.isPackaged || isStorePackage) {
         return false;
       }
 

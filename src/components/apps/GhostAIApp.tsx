@@ -6,12 +6,16 @@ import {
   ChevronDown,
   CircleHelp,
   Clock3,
+  Eye,
+  EyeOff,
+  KeyRound,
   LoaderCircle,
   MessageSquarePlus,
   MoreHorizontal,
   PanelLeftClose,
   Plus,
   ShieldCheck,
+  Save,
   Sparkles,
   Trash2,
   X,
@@ -66,6 +70,10 @@ export const GhostAIApp: React.FC = () => {
   const [isThinking, setIsThinking] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isKeySettingsOpen, setIsKeySettingsOpen] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const endOfChatRef = useRef<HTMLDivElement>(null);
 
@@ -114,11 +122,54 @@ export const GhostAIApp: React.FC = () => {
     textareaRef.current?.focus();
   };
 
+  const saveApiKey = async () => {
+    const apiKey = apiKeyInput.trim();
+    if (!apiKey || isSavingApiKey) return;
+    if (!window.electronAPI?.ghostAISetApiKey) {
+      setErrorMessage('Secure Gemini key storage is only available in the installed Abhishek OS app.');
+      return;
+    }
+    setIsSavingApiKey(true);
+    setErrorMessage('');
+    try {
+      await window.electronAPI.ghostAISetApiKey(apiKey);
+      setApiKeyInput('');
+      setShowApiKey(false);
+      setIsConfigured(true);
+      setIsKeySettingsOpen(false);
+    } catch (error) {
+      console.error('[Ghost AI] Could not save the Gemini API key:', error);
+      setErrorMessage(error instanceof Error ? error.message : 'Could not save the Gemini API key securely.');
+    } finally {
+      setIsSavingApiKey(false);
+    }
+  };
+
+  const removeApiKey = async () => {
+    if (!window.electronAPI?.ghostAIRemoveApiKey) {
+      setErrorMessage('Secure Gemini key storage is only available in the installed Abhishek OS app.');
+      return;
+    }
+    setIsSavingApiKey(true);
+    setErrorMessage('');
+    try {
+      await window.electronAPI.ghostAIRemoveApiKey();
+      const stillConfigured = await window.electronAPI.ghostAIIsConfigured();
+      setIsConfigured(stillConfigured);
+      setIsKeySettingsOpen(false);
+    } catch (error) {
+      console.error('[Ghost AI] Could not remove the saved Gemini API key:', error);
+      setErrorMessage(error instanceof Error ? error.message : 'Could not remove the saved Gemini API key.');
+    } finally {
+      setIsSavingApiKey(false);
+    }
+  };
+
   const submitPrompt = async (value = prompt) => {
     const content = value.trim();
     if (!content || isThinking) return;
     if (!isConfigured) {
-      setErrorMessage('Gemini is not configured. Set GEMINI_API_KEY in .env and restart Abhishek OS.');
+      setErrorMessage('Gemini is not configured. Open Ghost AI settings and add your Gemini API key.');
       return;
     }
 
@@ -252,9 +303,16 @@ export const GhostAIApp: React.FC = () => {
                 <span className={`h-1.5 w-1.5 rounded-full ${isConfigured ? 'bg-emerald-400' : 'bg-amber-400'}`} />
                 {isConfigured ? 'Gemini connected' : 'Gemini not configured'}
               </div>
+              <button
+                onClick={() => { setIsKeySettingsOpen(true); setErrorMessage(''); }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[10px] font-medium text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
+              >
+                <KeyRound size={13} className="text-sky-300" />
+                Configure Gemini API key
+              </button>
               <div className="flex items-start gap-2 px-2.5 pb-1 text-[9px] leading-4 text-slate-600">
                 <ShieldCheck size={12} className="mt-0.5 shrink-0" />
-                API key remains in the desktop main process.
+                API key is encrypted for this Windows account.
               </div>
             </div>
           </motion.aside>
@@ -275,6 +333,15 @@ export const GhostAIApp: React.FC = () => {
             <span className="text-slate-300">New chat</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => { setIsKeySettingsOpen(true); setErrorMessage(''); }}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.025] px-2.5 text-[10px] text-slate-300 transition hover:border-white/15 hover:bg-white/[0.05]"
+              title="Configure Gemini API key"
+              aria-label="Configure Gemini API key"
+            >
+              <KeyRound size={13} className={isConfigured ? 'text-emerald-300' : 'text-amber-300'} />
+              <span className="hidden sm:inline">API key</span>
+            </button>
             <div className="relative">
               <button
                 onClick={() => setIsModelMenuOpen(value => !value)}
@@ -329,9 +396,12 @@ export const GhostAIApp: React.FC = () => {
                 </p>
               </motion.div>
               {isConfigured === false && (
-                <p className="mt-5 rounded-full border border-amber-200/10 bg-amber-200/[0.05] px-3 py-1.5 text-center text-[10px] text-amber-100/80">
-                  Configure GEMINI_API_KEY in .env and restart Abhishek OS.
-                </p>
+                <button
+                  onClick={() => setIsKeySettingsOpen(true)}
+                  className="mt-5 rounded-full border border-amber-200/10 bg-amber-200/[0.05] px-3 py-1.5 text-center text-[10px] text-amber-100/80 transition hover:bg-amber-200/[0.09]"
+                >
+                  Add your Gemini API key to start chatting · Configure
+                </button>
               )}
               <div className="mt-7 grid w-full max-w-2xl gap-2 sm:grid-cols-3">
                 {STARTER_PROMPTS.map((starter, index) => (
@@ -422,6 +492,112 @@ export const GhostAIApp: React.FC = () => {
             </div>
           </div>
         </section>
+        <AnimatePresence>
+          {isKeySettingsOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-30 flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm"
+              onMouseDown={event => {
+                if (event.target === event.currentTarget) setIsKeySettingsOpen(false);
+              }}
+            >
+              <motion.section
+                initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="ghost-ai-key-title"
+                className="w-full max-w-md rounded-2xl border border-white/10 bg-[#121a25] p-5 shadow-2xl"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl border border-sky-200/15 bg-sky-300/10 p-2 text-sky-200">
+                    <KeyRound size={17} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 id="ghost-ai-key-title" className="text-sm font-semibold text-white">Configure Gemini</h2>
+                    <p className="mt-1 text-[10px] leading-4 text-slate-400">
+                      Paste your Gemini API key. It is encrypted and stored on this Windows account; it is not included in the app installer.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setIsKeySettingsOpen(false)}
+                    className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+                    aria-label="Close Gemini settings"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+
+                <form
+                  className="mt-5 space-y-3"
+                  onSubmit={event => { event.preventDefault(); void saveApiKey(); }}
+                >
+                  <label htmlFor="ghost-ai-api-key" className="block text-[10px] font-medium text-slate-300">
+                    Gemini API key
+                  </label>
+                  <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#0b1019] px-3 focus-within:border-sky-200/30">
+                    <input
+                      id="ghost-ai-api-key"
+                      type={showApiKey ? 'text' : 'password'}
+                      value={apiKeyInput}
+                      onChange={event => setApiKeyInput(event.target.value)}
+                      autoComplete="off"
+                      spellCheck={false}
+                      maxLength={512}
+                      placeholder={isConfigured ? 'Enter a new key to replace the saved one' : 'Paste your API key'}
+                      className="min-w-0 flex-1 bg-transparent py-3 text-xs text-white outline-none placeholder:text-slate-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(value => !value)}
+                      className="rounded-md p-1.5 text-slate-500 hover:bg-white/[0.06] hover:text-slate-200"
+                      aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+                    >
+                      {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                  <p className="text-[9px] leading-4 text-slate-500">
+                    Gemini usage is subject to Google AI Studio quotas and billing. Never share this key or commit it to source control.
+                  </p>
+                  <div className="flex items-center justify-between gap-2 pt-2">
+                    <div>
+                      {isConfigured && (
+                        <button
+                          type="button"
+                          onClick={() => void removeApiKey()}
+                          disabled={isSavingApiKey}
+                          className="rounded-lg px-2.5 py-2 text-[10px] font-medium text-rose-300 transition hover:bg-rose-300/10 disabled:opacity-50"
+                        >
+                          Remove saved key
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsKeySettingsOpen(false)}
+                        className="rounded-lg border border-white/10 px-3 py-2 text-[10px] font-medium text-slate-300 transition hover:bg-white/[0.05]"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={!apiKeyInput.trim() || isSavingApiKey}
+                        className="flex items-center gap-1.5 rounded-lg bg-sky-300 px-3 py-2 text-[10px] font-semibold text-slate-950 transition hover:bg-sky-200 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isSavingApiKey ? <LoaderCircle size={12} className="animate-spin" /> : <Save size={12} />}
+                        Save securely
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </motion.section>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
     </div>
