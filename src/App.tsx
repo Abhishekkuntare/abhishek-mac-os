@@ -9,6 +9,7 @@ import { OSProvider, useOS } from './context/OSContext';
 
 import { Desktop } from './components/desktop/Desktop';
 import { WindowManager } from './components/windows/WindowManager';
+import { AppSwitcher } from './components/windows/AppSwitcher';
 import  {MenuBar}  from './components/menubar/MenuBar';
 import { Dock } from './components/dock/Dock';
 
@@ -26,6 +27,7 @@ import { QuickLookModal } from './components/system/QuickLookModal';
 import { ShutdownScreen } from './components/system/ShutdownScreen';
 
 import { OnboardingModal } from './components/onboarding/OnboardingModal';
+import { LocalAccessPrompt } from './components/system/LocalAccessPrompt';
 
 function OSWorkspace() {
   const {
@@ -34,6 +36,7 @@ function OSWorkspace() {
     isSleeping,
     isShuttingDown,
     hasCompletedSetup,
+    settings,
   } = useOS();
 
   /**
@@ -91,15 +94,17 @@ function OSWorkspace() {
    * booting and not shutting down.
    */
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-black font-sans text-slate-100 select-none">
+    <div data-ui-density={settings.uiStyle} className="relative h-screen w-screen overflow-hidden bg-black font-sans text-slate-100 select-none">
       {/* Desktop Background, Widgets & Desktop Icon Grid */}
       <Desktop />
 
       {/* Active Application Windows */}
       <WindowManager />
 
+      <AppSwitcher />
+
       {/* Top System Menu Bar */}
-      <MenuBar />
+      {hasCompletedSetup && !isLocked && !isSleeping && <MenuBar />}
 
       {/* Bottom Floating Glass Dock */}
       <Dock />
@@ -122,6 +127,8 @@ function OSWorkspace() {
       {/* First-time Onboarding Setup Wizard */}
       {!hasCompletedSetup && <OnboardingModal />}
 
+      {hasCompletedSetup && <LocalAccessPrompt />}
+
       {/**
        * -------------------------------------------------------
        * SYSTEM POWER STATES
@@ -139,6 +146,12 @@ function OSWorkspace() {
       {isSleeping && <SleepOverlay />}
 
       {isLocked && !isSleeping && <LockScreen />}
+
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-[2147483647] bg-black transition-opacity duration-200"
+        style={{ opacity: Math.max(0, Math.min(1, (100 - settings.brightness) / 100)) }}
+      />
     </div>
   );
 }
@@ -150,5 +163,3 @@ export default function App() {
     </OSProvider>
   );
 }
-
-

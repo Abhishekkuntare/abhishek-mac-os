@@ -2,8 +2,9 @@ export type ThemeMode = 'dark' | 'light' | 'auto';
 export type AccentColor = 'blue' | 'purple' | 'pink' | 'orange' | 'green' | 'cyan' | 'amber';
 export type UIStyle = 'balanced' | 'compact' | 'spacious';
 export type AnimationLevel = 'full' | 'reduced' | 'minimal';
-export type DockPosition = 'bottom' | 'left' | 'right';
+export type DockPosition = 'top' | 'bottom' | 'left' | 'right';
 export type DockSize = 'small' | 'medium' | 'large';
+export type CursorStyle = 'system' | 'arrow' | 'crosshair';
 
 export interface UserProfile {
   fullName: string;
@@ -84,6 +85,7 @@ export interface NotificationItem {
 
 export interface VirtualFile {
   id: string;
+  hostPath?: string;
   name: string;
   path: string;
   size: number;
@@ -91,10 +93,12 @@ export interface VirtualFile {
   extension?: string;
   content?: string;
   previewUrl?: string;
+  mediaBlobId?: string;
   createdAt: string;
   updatedAt: string;
   isFavorite?: boolean;
   isDeleted?: boolean;
+  trashGroupId?: string;
   waveform?: number[];
 }
 
@@ -121,6 +125,12 @@ export interface SystemSettings {
   dockSize: DockSize;
   dockAutoHide: boolean;
   dockMagnification: boolean;
+  menuBarPosition: DockPosition;
+  fontFamily: string;
+  cursorStyle: CursorStyle;
+  cursorColor: string;
+  mascotStyle: number;
+  mascotColor: string;
   brightness: number; // 20 to 100
   nightShift: boolean;
   wifiEnabled: boolean;
@@ -128,6 +138,7 @@ export interface SystemSettings {
   wifiNetwork: string;
   bluetoothEnabled: boolean;
   bluetoothConnected: boolean;
+  bluetoothDeviceName: string;
   doNotDisturb: boolean;
   airDropEnabled: boolean;
   batteryLevel: number;
@@ -135,6 +146,12 @@ export interface SystemSettings {
   language: string;
   region: string;
   clock24h: boolean;
+  desktopWidgets: {
+    weather: boolean;
+    music: boolean;
+    system: boolean;
+    clock: boolean;
+  };
   developerMode: boolean;
   performanceMode: 'balanced' | 'quality' | 'batterySaver';
 }

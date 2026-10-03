@@ -32,6 +32,10 @@ Examples may include:
 * Local application data
 * Settings required for application functionality
 
+When you allow all-drive access for Finder, Abhishek OS stores that consent locally and can browse accessible mounted drives. It reads directory names, file types, sizes, and timestamps only as you open folders. Files remain in their original locations; this feature does not recursively copy or upload file contents. You can revoke all-drive access from Finder's sidebar. Windows does not provide a separate global file-picker permission for desktop apps, so the in-app consent is explicit and controls this access. Finder can also connect individually selected folders when all-drive access is off.
+
+On Windows, the application may query the current Wi-Fi network name and Bluetooth adapter status locally to show system connectivity. This information is not sent to an external service by this feature.
+
 This information is stored on the user's device unless a particular feature explicitly requires communication with an external service.
 
 ---
@@ -51,6 +55,8 @@ Examples can include:
 * Using APIs or integrations explicitly enabled by the user
 
 The application should not be interpreted as completely offline software when an enabled feature requires network access.
+
+Phone screen sharing contacts the configured pairing service to create a short-lived session and exchange WebRTC connection setup messages. Pairing tokens and active signaling connections are held in memory and expire after five minutes; restarting the service ends active sessions. The relay does not receive or store screen video. WebRTC sends video peer-to-peer with transport encryption, except when a TURN relay is used. Connection setup can expose network-address candidates to the paired device and signaling service; STUN providers may also see public network addresses. The hosted service and STUN providers may process ordinary connection metadata under their own privacy policies.
 
 ---
 
@@ -119,6 +125,8 @@ Users should maintain current operating-system security updates and obtain Abhis
 Because much of the application's data is stored locally, users can remove local application data through the operating system or application settings where supported.
 
 Removing the application does not necessarily remove every piece of data created by third-party services or external applications.
+
+Filesystem consent and selected-folder grants are stored in the application's user-data directory and can be revoked from Finder. Removing those grants does not delete or modify the original files.
 
 Users should consult the relevant third-party service if they need to delete data held by that service.
 

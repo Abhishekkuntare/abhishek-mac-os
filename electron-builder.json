@@ -17,6 +17,7 @@
     "dist/**/*",
     "electron-main.mjs",
     "electron-preload.cjs",
+    "code-runner.mjs",
     "package.json",
     "assets/icon.ico"
   ],

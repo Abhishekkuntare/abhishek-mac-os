@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   UserProfile,
   Wallpaper,
@@ -20,6 +20,7 @@ const STORAGE_KEYS = {
   USER: 'abhishek_os_user_v1',
   SETTINGS: 'abhishek_os_settings_v1',
   WALLPAPER: 'abhishek_os_wallpaper_v1',
+  LOCK_WALLPAPER: 'abhishek_os_lock_wallpaper_v1',
   SETUP_DONE: 'abhishek_os_setup_completed_v1',
   SPACES: 'abhishek_os_spaces_v1',
   DOCK_APPS: 'abhishek_os_dock_apps_v1',
@@ -51,13 +52,20 @@ const DEFAULT_SETTINGS: SystemSettings = {
   dockSize: 'medium',
   dockAutoHide: false,
   dockMagnification: true,
+  menuBarPosition: 'top',
+  fontFamily: 'Plus Jakarta Sans',
+  cursorStyle: 'system',
+  cursorColor: '#38bdf8',
+  mascotStyle: 0,
+  mascotColor: '#159eff',
   brightness: 100,
   nightShift: false,
-  wifiEnabled: true,
-  wifiConnected: true,
-  wifiNetwork: 'Abhishek-HyperFiber-5G',
-  bluetoothEnabled: true,
-  bluetoothConnected: true,
+  wifiEnabled: false,
+  wifiConnected: false,
+  wifiNetwork: 'Unavailable',
+  bluetoothEnabled: false,
+  bluetoothConnected: false,
+  bluetoothDeviceName: '',
   doNotDisturb: false,
   airDropEnabled: true,
   batteryLevel: 94,
@@ -65,6 +73,12 @@ const DEFAULT_SETTINGS: SystemSettings = {
   language: 'English',
   region: 'India',
   clock24h: false,
+  desktopWidgets: {
+    weather: true,
+    music: true,
+    system: true,
+    clock: false,
+  },
   developerMode: false,
   performanceMode: 'balanced',
 };
@@ -88,10 +102,10 @@ const INITIAL_NOTIFICATIONS: NotificationItem[] = [
   },
   {
     id: 'notif-2',
-    title: 'Velosa Studio Message',
-    message: 'Simon Pickford: Super happy to lock this rough cut for our color session!',
-    appId: 'messages',
-    appName: 'Messages',
+    title: 'Ghost AI is ready',
+    message: 'Your AI workspace is ready when you are.',
+    appId: 'ghostai',
+    appName: 'Ghost AI',
     timestamp: '9:41 AM',
     read: false,
     type: 'message',
@@ -138,6 +152,8 @@ interface OSContextType {
   setShowNotificationCenter: (open: boolean) => void;
   showMissionControl: boolean;
   setShowMissionControl: (open: boolean) => void;
+  showAppSwitcher: boolean;
+  setShowAppSwitcher: (open: boolean) => void;
   showCommandPalette: boolean;
   setShowCommandPalette: (open: boolean) => void;
   quickLookFile: VirtualFile | null;
@@ -147,12 +163,15 @@ interface OSContextType {
   user: UserProfile;
   updateUser: (fields: Partial<UserProfile>) => void;
   settings: SystemSettings;
+  resolvedTheme: 'dark' | 'light';
   updateSettings: (fields: Partial<SystemSettings>) => void;
 
   // Wallpaper
   currentWallpaper: Wallpaper;
   setWallpaper: (wp: Wallpaper) => void;
   uploadCustomWallpaper: (dataUrl: string, name: string) => void;
+  lockScreenWallpaper: string | null;
+  setLockScreenWallpaper: (dataUrl: string | null) => void;
 
   // Spaces
   spaces: DesktopSpace[];
@@ -166,6 +185,7 @@ interface OSContextType {
   openApp: (appId: string, initialTitle?: string) => void;
   closeWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
+  showDesktop: () => void;
   maximizeWindow: (id: string) => void;
   focusWindow: (id: string) => void;
   moveWindow: (id: string, x: number, y: number) => void;
@@ -202,7 +222,12 @@ interface OSContextType {
   currentTrack: AudioTrack;
   isPlayingMusic: boolean;
   musicProgress: number; // 0 to 100
+  repeatTrack: boolean;
+  setRepeatTrack: (enabled: boolean) => void;
+  shuffleTracks: boolean;
+  setShuffleTracks: (enabled: boolean) => void;
   togglePlayMusic: () => void;
+  playTrackAtIndex: (index: number) => void;
   nextTrack: () => void;
   prevTrack: () => void;
   setMusicProgress: (pct: number) => void;
@@ -232,6 +257,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [showControlCenter, setShowControlCenter] = useState<boolean>(false);
   const [showNotificationCenter, setShowNotificationCenter] = useState<boolean>(false);
   const [showMissionControl, setShowMissionControl] = useState<boolean>(false);
+  const [showAppSwitcher, setShowAppSwitcher] = useState<boolean>(false);
   const [showCommandPalette, setShowCommandPalette] = useState<boolean>(false);
   const [quickLookFile, setQuickLookFile] = useState<VirtualFile | null>(null);
 
@@ -249,11 +275,92 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [settings, setSettings] = useState<SystemSettings>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-      return stored ? { ...DEFAULT_SETTINGS, ...JSON.parse(stored) } : DEFAULT_SETTINGS;
+      return stored
+        ? {
+            ...DEFAULT_SETTINGS,
+            ...JSON.parse(stored),
+            desktopWidgets: {
+              ...DEFAULT_SETTINGS.desktopWidgets,
+              ...JSON.parse(stored).desktopWidgets,
+            },
+            wifiEnabled: false,
+            wifiConnected: false,
+            wifiNetwork: 'Unavailable',
+            bluetoothEnabled: false,
+            bluetoothConnected: false,
+            bluetoothDeviceName: '',
+          }
+        : DEFAULT_SETTINGS;
     } catch {
       return DEFAULT_SETTINGS;
     }
   });
+  const [systemPrefersLight, setSystemPrefersLight] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: light)').matches
+  );
+  const resolvedTheme: 'dark' | 'light' =
+    settings.theme === 'auto' ? (systemPrefersLight ? 'light' : 'dark') : settings.theme;
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem('abhishek_os_profile_sync_credentials_v1');
+    } catch {
+      // Ignore unavailable storage while cleaning up credentials from the removed sync feature.
+    }
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: light)');
+    const handleChange = (event: MediaQueryListEvent) => setSystemPrefersLight(event.matches);
+    setSystemPrefersLight(media.matches);
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
+  }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const accentColors: Record<SystemSettings['accent'], string> = {
+      blue: '#3b82f6',
+      purple: '#a855f7',
+      pink: '#ec4899',
+      orange: '#f97316',
+      green: '#22c55e',
+      cyan: '#06b6d4',
+      amber: '#f59e0b',
+    };
+    root.dataset.osTheme = resolvedTheme;
+    root.dataset.osDensity = settings.uiStyle;
+    root.style.colorScheme = resolvedTheme;
+    root.style.setProperty('--os-accent-color', accentColors[settings.accent]);
+    const fontFallback = settings.fontFamily === 'Georgia' || settings.fontFamily === 'Times New Roman' || settings.fontFamily === 'Garamond' || settings.fontFamily === 'Palatino Linotype'
+      ? 'Georgia, serif'
+      : settings.fontFamily === 'Consolas' || settings.fontFamily === 'Courier New'
+        ? 'ui-monospace, monospace'
+        : 'Arial, sans-serif';
+    const fontStack = `"${settings.fontFamily}", ${fontFallback}`;
+    root.style.setProperty('--font-sans', fontStack);
+    root.style.setProperty('--os-font-family', fontStack);
+    root.style.fontSize = settings.uiStyle === 'compact' ? '14px' : settings.uiStyle === 'spacious' ? '17px' : '16px';
+    root.dataset.osCursor = settings.cursorStyle;
+    if (settings.cursorStyle !== 'system') {
+      const cursorSvg = settings.cursorStyle === 'crosshair'
+        ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="8" fill="none" stroke="${settings.cursorColor}" stroke-width="2"/><path d="M16 1v9m0 12v9M1 16h9m12 0h9" stroke="${settings.cursorColor}" stroke-width="2"/></svg>`
+        : `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M5 2v24l6-6 4 9 5-2-4-9h9L5 2z" fill="${settings.cursorColor}" stroke="#0f172a" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+      root.style.setProperty('--os-custom-cursor', `url("data:image/svg+xml,${encodeURIComponent(cursorSvg)}") 4 2, auto`);
+    } else {
+      root.style.removeProperty('--os-custom-cursor');
+    }
+    return () => {
+      delete root.dataset.osTheme;
+      delete root.dataset.osDensity;
+      delete root.dataset.osCursor;
+      root.style.removeProperty('--os-accent-color');
+      root.style.removeProperty('--font-sans');
+      root.style.removeProperty('--os-font-family');
+      root.style.removeProperty('--os-custom-cursor');
+      root.style.removeProperty('font-size');
+    };
+  }, [resolvedTheme, settings.accent, settings.uiStyle, settings.fontFamily, settings.cursorStyle, settings.cursorColor]);
 
   // Sync sound service config whenever settings change
   useEffect(() => {
@@ -274,6 +381,19 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     }
     return DEFAULT_WALLPAPER;
   });
+  const [lockScreenWallpaper, setLockScreenWallpaperState] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.LOCK_WALLPAPER);
+    } catch {
+      return null;
+    }
+  });
+
+  const setLockScreenWallpaper = useCallback((dataUrl: string | null) => {
+    if (dataUrl) localStorage.setItem(STORAGE_KEYS.LOCK_WALLPAPER, dataUrl);
+    else localStorage.removeItem(STORAGE_KEYS.LOCK_WALLPAPER);
+    setLockScreenWallpaperState(dataUrl);
+  }, []);
 
   // Spaces
   const [spaces, setSpaces] = useState<DesktopSpace[]>(() => {
@@ -289,13 +409,19 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // Windows
   const [windows, setWindows] = useState<WindowState[]>([]);
   const [maxZIndex, setMaxZIndex] = useState<number>(100);
+  const appSwitcherOrderRef = useRef<string[]>([]);
+  const appSwitcherIndexRef = useRef(0);
 
   // Dock items
   const [dockAppIds, setDockAppIds] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.DOCK_APPS);
       return stored
-        ? JSON.parse(stored)
+        ? [...new Set(
+            (JSON.parse(stored) as string[]).map(appId =>
+              appId === 'mail' ? 'nextpad' : appId === 'messages' ? 'ghostai' : appId,
+            ),
+          )].filter(appId => Boolean(APP_REGISTRY[appId]))
         : Object.values(APP_REGISTRY)
           .filter(a => a.inDock)
           .map(a => a.id);
@@ -315,6 +441,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number>(0);
   const [isPlayingMusic, setIsPlayingMusic] = useState<boolean>(false);
   const [musicProgress, setMusicProgress] = useState<number>(0);
+  const [repeatTrack, setRepeatTrack] = useState(false);
+  const [shuffleTracks, setShuffleTracks] = useState(false);
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState<boolean>(() => {
@@ -353,6 +481,35 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     });
   }, []);
 
+  useEffect(() => {
+    const syncConnectivity = async () => {
+      try {
+        const state = await window.electronAPI?.getConnectivityState?.();
+        if (!state) return;
+        updateSettings({
+          wifiEnabled: state.wifi.enabled ?? false,
+          wifiConnected: state.wifi.connected ?? false,
+          wifiNetwork: state.wifi.connected && state.wifi.ssid
+            ? state.wifi.ssid
+            : state.wifi.enabled === true
+              ? 'Not connected'
+              : state.wifi.enabled === false
+                ? 'Off'
+                : 'Unavailable',
+          bluetoothEnabled: state.bluetooth.enabled ?? false,
+          bluetoothConnected: state.bluetooth.connected ?? false,
+          bluetoothDeviceName: state.bluetooth.deviceName || '',
+        });
+      } catch (error) {
+        console.warn('[OS] Could not read host connectivity:', error);
+      }
+    };
+
+    void syncConnectivity();
+    const timer = window.setInterval(() => void syncConnectivity(), 10000);
+    return () => window.clearInterval(timer);
+  }, [updateSettings]);
+
   const setWallpaper = useCallback((wp: Wallpaper) => {
     setCurrentWallpaper(wp);
     try {
@@ -374,7 +531,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   // Onboarding completion
   const finishOnboarding = useCallback((newUser: Partial<UserProfile>, newSettings: Partial<SystemSettings>) => {
-    updateUser(newUser);
+    const displayName = newUser.displayName?.trim() || newUser.fullName?.trim() || DEFAULT_USER.displayName;
+    const username = newUser.username?.trim() || displayName.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 32);
+    updateUser({
+      ...newUser,
+      displayName,
+      username: username || 'user',
+      email: newUser.email?.trim() ?? '',
+    });
     updateSettings(newSettings);
     setHasCompletedSetup(true);
     try {
@@ -534,6 +698,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const minimizeWindow = useCallback((id: string) => {
     sound.playClick();
     setWindows(prev => prev.map(w => (w.id === id ? { ...w, isMinimized: true, isFocused: false } : w)));
+  }, []);
+
+  const showDesktop = useCallback(() => {
+    sound.playClick();
+    setWindows(prev => prev.map(w => ({ ...w, isMinimized: true, isFocused: false })));
   }, []);
 
   const maximizeWindow = useCallback((id: string) => {
@@ -747,7 +916,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   // Notifications
   const addNotification = useCallback((item: Omit<NotificationItem, 'id' | 'timestamp' | 'read'>) => {
-    sound.playNotification();
+    if (!settings.doNotDisturb) sound.playNotification();
     const newNotif: NotificationItem = {
       ...item,
       id: `notif-${Date.now()}`,
@@ -755,7 +924,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       read: false,
     };
     setNotifications(prev => [newNotif, ...prev]);
-  }, []);
+  }, [settings.doNotDisturb]);
 
   const dismissNotification = useCallback((id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
@@ -771,7 +940,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const currentTrack = allTracks[currentTrackIndex] || allTracks[0];
 
   const addCustomTrack = useCallback((track: AudioTrack) => {
-    setUserTracks(prev => [track, ...prev]);
+    setUserTracks(prev => prev.some(existing => existing.id === track.id) ? prev : [...prev, track]);
     sound.playNotification();
   }, []);
 
@@ -786,13 +955,19 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       setMusicProgress(pct);
     });
     const unsubEnd = musicEngine.onTrackEnd(() => {
-      nextTrack();
+      if (repeatTrack) {
+        setMusicProgress(0);
+        musicEngine.playTrack(currentTrack, 0);
+        setIsPlayingMusic(true);
+      } else {
+        nextTrack();
+      }
     });
     return () => {
       unsubProgress();
       unsubEnd();
     };
-  }, [currentTrackIndex, allTracks.length]);
+  }, [currentTrackIndex, allTracks.length, currentTrack, isPlayingMusic, repeatTrack, shuffleTracks]);
 
   const togglePlayMusic = useCallback(() => {
     sound.playClick();
@@ -805,16 +980,32 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     }
   }, [isPlayingMusic, currentTrack, musicProgress]);
 
+  const playTrackAtIndex = useCallback((index: number) => {
+    const track = allTracks[index];
+    if (!track) return;
+
+    setCurrentTrackIndex(index);
+    setMusicProgress(0);
+    musicEngine.playTrack(track, 0);
+    setIsPlayingMusic(true);
+    sound.playClick();
+  }, [allTracks]);
+
   const nextTrack = useCallback(() => {
     sound.playClick();
-    const nextIdx = (currentTrackIndex + 1) % allTracks.length;
+    const availableIndices = allTracks
+      .map((_, index) => index)
+      .filter(index => index !== currentTrackIndex);
+    const nextIdx = shuffleTracks && availableIndices.length > 0
+      ? availableIndices[Math.floor(Math.random() * availableIndices.length)]
+      : (currentTrackIndex + 1) % allTracks.length;
     setCurrentTrackIndex(nextIdx);
     setMusicProgress(0);
     const nextT = allTracks[nextIdx];
     if (isPlayingMusic) {
       musicEngine.playTrack(nextT, 0);
     }
-  }, [currentTrackIndex, allTracks, isPlayingMusic]);
+  }, [currentTrackIndex, allTracks, isPlayingMusic, shuffleTracks]);
 
   const prevTrack = useCallback(() => {
     sound.playClick();
@@ -897,6 +1088,43 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMod = e.ctrlKey || e.metaKey;
 
+      if (
+        (e.metaKey && e.code === 'Tab') ||
+        (e.ctrlKey && e.altKey && e.code === 'Tab')
+      ) {
+        e.preventDefault();
+        appSwitcherOrderRef.current = [];
+        setShowAppSwitcher(false);
+        setShowMissionControl(true);
+        return;
+      }
+
+      if (e.altKey && e.code === 'Tab') {
+        e.preventDefault();
+        const availableWindows = windows
+          .filter(win => !win.desktopSpaceId || win.desktopSpaceId === activeSpaceId)
+          .sort((a, b) => b.zIndex - a.zIndex);
+        if (availableWindows.length === 0) return;
+
+        if (appSwitcherOrderRef.current.length === 0) {
+          appSwitcherOrderRef.current = availableWindows.map(win => win.id);
+          const focusedIndex = availableWindows.findIndex(win => win.isFocused);
+          appSwitcherIndexRef.current = focusedIndex >= 0 ? focusedIndex : -1;
+        }
+
+        const order = appSwitcherOrderRef.current.filter(id =>
+          availableWindows.some(win => win.id === id)
+        );
+        appSwitcherOrderRef.current = order;
+        if (order.length === 0) return;
+        const direction = e.shiftKey ? -1 : 1;
+        appSwitcherIndexRef.current =
+          (appSwitcherIndexRef.current + direction + order.length) % order.length;
+        setShowAppSwitcher(true);
+        focusWindow(order[appSwitcherIndexRef.current]);
+        return;
+      }
+
       // Space for QuickLook (when focused on Finder or Desktop and an item is selected)
       if (e.code === 'Space' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
         if (quickLookFile) {
@@ -954,7 +1182,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       // Escape -> Close topmost overlay
       if (e.code === 'Escape') {
-        if (quickLookFile) {
+        if (showAppSwitcher) {
+          setShowAppSwitcher(false);
+          appSwitcherOrderRef.current = [];
+        } else if (quickLookFile) {
           setQuickLookFile(null);
         } else if (showSpotlight) {
           setShowSpotlight(false);
@@ -974,10 +1205,28 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       }
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Alt' || e.key === 'Meta') {
+        setShowAppSwitcher(false);
+        appSwitcherOrderRef.current = [];
+      }
+    };
+    const handleWindowBlur = () => {
+      setShowAppSwitcher(false);
+      appSwitcherOrderRef.current = [];
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleWindowBlur);
+    };
   }, [
     windows,
+    activeSpaceId,
     showSpotlight,
     showCommandPalette,
     showControlCenter,
@@ -985,9 +1234,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     showMissionControl,
     showPowerDialog,
     showAboutModal,
+    showAppSwitcher,
     quickLookFile,
     closeWindow,
     minimizeWindow,
+    focusWindow,
   ]);
 
   return (
@@ -1020,6 +1271,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         setShowNotificationCenter,
         showMissionControl,
         setShowMissionControl,
+        showAppSwitcher,
+        setShowAppSwitcher,
         showCommandPalette,
         setShowCommandPalette,
         quickLookFile,
@@ -1028,11 +1281,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         user,
         updateUser,
         settings,
+        resolvedTheme,
         updateSettings,
 
         currentWallpaper,
         setWallpaper,
         uploadCustomWallpaper,
+        lockScreenWallpaper,
+        setLockScreenWallpaper,
 
         spaces,
         activeSpaceId,
@@ -1044,6 +1300,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         openApp,
         closeWindow,
         minimizeWindow,
+        showDesktop,
         maximizeWindow,
         focusWindow,
         moveWindow,
@@ -1075,7 +1332,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         currentTrack,
         isPlayingMusic,
         musicProgress,
+        repeatTrack,
+        setRepeatTrack,
+        shuffleTracks,
+        setShuffleTracks,
         togglePlayMusic,
+        playTrackAtIndex,
         nextTrack,
         prevTrack,
         setMusicProgress: handleSetMusicProgress,

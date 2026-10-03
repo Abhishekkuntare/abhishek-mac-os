@@ -1782,7 +1782,7 @@ export const TerminalApp: React.FC = () => {
                       autoFocus
                       spellCheck={false}
                       autoComplete="off"
-                      className={`w-full bg-transparent outline-none text-white font-mono text-[11px] caret-cyan-400 ${
+                      className={`terminal-command-input w-full bg-transparent border-0 outline-none focus-visible:outline-none focus-visible:outline-offset-0 text-white font-mono text-[11px] caret-cyan-400 ${
                         isMatrixMode
                           ? 'text-emerald-300 caret-emerald-400'
                           : ''

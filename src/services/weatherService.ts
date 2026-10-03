@@ -13,6 +13,7 @@ export interface WeatherCurrent {
   temperature: number;
   apparentTemperature: number;
   humidity: number;
+  cloudCover: number;
   precipitation: number;
   weatherCode: number;
   windSpeed: number;
@@ -70,6 +71,11 @@ export interface WeatherVisual {
 
   condition: string;
 }
+
+export const WEATHER_LOCATION_STORAGE_KEY =
+  'abhishek_os_weather_location_v1';
+export const WEATHER_LOCATION_UPDATED_EVENT =
+  'abhishek-os-weather-location-updated';
 
 const GEOCODING_API =
   'https://geocoding-api.open-meteo.com/v1/search';
@@ -247,6 +253,7 @@ export async function fetchWeather(
       'temperature_2m',
       'apparent_temperature',
       'relative_humidity_2m',
+      'cloud_cover',
       'precipitation',
       'weather_code',
       'wind_speed_10m',
@@ -431,6 +438,11 @@ export async function fetchWeather(
         Number(
           data.current
             .relative_humidity_2m
+        ),
+
+      cloudCover:
+        Number(
+          data.current.cloud_cover
         ),
 
       precipitation:

@@ -27,45 +27,25 @@ export const PowerDialog: React.FC = () => {
   };
 
   const handleSleep = () => {
-    try {
-      sound?.click?.();
-    } catch {
-      // Sound is optional; don't block the action.
-    }
-
+    sound.playClick();
     closeDialog();
     sleepSystem();
   };
 
   const handleRestart = () => {
-    try {
-      sound?.click?.();
-    } catch {
-      // Sound is optional; don't block the action.
-    }
-
+    sound.playClick();
     closeDialog();
     restartSystem();
   };
 
   const handleShutdown = () => {
-    try {
-      sound?.click?.();
-    } catch {
-      // Sound is optional; don't block the action.
-    }
-
+    sound.playClick();
     closeDialog();
     shutdownSystem();
   };
 
   const handleLock = () => {
-    try {
-      sound?.click?.();
-    } catch {
-      // Sound is optional; don't block the action.
-    }
-
+    sound.playClick();
     closeDialog();
     lockSystem();
   };

@@ -13,7 +13,7 @@
   }
 
   body {
-    font-family: var(--font-sans);
+    font-family: var(--os-font-family, var(--font-sans));
     user-select: none;
     -webkit-user-select: none;
     -webkit-font-smoothing: antialiased;
@@ -22,6 +22,10 @@
 
   code, pre, kbd {
     font-family: var(--font-mono);
+  }
+
+  .font-sans {
+    font-family: var(--os-font-family, var(--font-sans));
   }
 }
 
@@ -102,3 +106,319 @@
 /* Electron desktop window controls */
 .electron-drag-region { -webkit-app-region: drag; }
 .electron-no-drag { -webkit-app-region: no-drag; }
+
+@keyframes mascot-blink {
+  0%, 47%, 51%, 100% { transform: scaleY(1); }
+  49% { transform: scaleY(0.08); }
+}
+
+.mascot-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mascot-blink 5.2s ease-in-out infinite;
+}
+
+.mascot-mark .mascot-mouth,
+.mascot-mark .mascot-cheek {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    opacity 200ms ease,
+    transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.mascot-mark rect,
+.mascot-mark path,
+.mascot-mark ellipse,
+.mascot-mark circle {
+  transition: fill 220ms ease, stroke 220ms ease;
+}
+
+.mascot-mark .mascot-mouth,
+.mascot-mark .mascot-cheek {
+  opacity: 0;
+}
+
+.mascot-mark[data-mood="happy"] .mascot-mouth-smile,
+.mascot-mark[data-mood="shy"] .mascot-mouth-smile,
+.mascot-mark[data-mood="dreamy"] .mascot-mouth-smile {
+  opacity: 1;
+}
+
+.mascot-mark[data-mood="excited"] .mascot-mouth-happy,
+.mascot-mark[data-mood="loving"] .mascot-mouth-happy {
+  opacity: 1;
+}
+
+.mascot-mark[data-mood="calm"] .mascot-mouth-flat,
+.mascot-mark[data-mood="sleepy"] .mascot-mouth-flat,
+.mascot-mark[data-mood="focused"] .mascot-mouth-flat {
+  opacity: 1;
+}
+
+.mascot-mark[data-mood="surprised"] .mascot-mouth-oh,
+.mascot-mark[data-mood="curious"] .mascot-mouth-oh,
+.mascot-mark[data-mood="wacky"] .mascot-mouth-oh {
+  opacity: 1;
+}
+
+.mascot-mark[data-mood="angry"] .mascot-mouth-frown,
+.mascot-mark[data-mood="sad"] .mascot-mouth-frown,
+.mascot-mark[data-mood="grumpy"] .mascot-mouth-frown {
+  opacity: 1;
+}
+
+.mascot-mark[data-mood="silly"] .mascot-mouth-tongue,
+.mascot-mark[data-mood="playful"] .mascot-mouth-tongue {
+  opacity: 1;
+}
+
+.mascot-mark[data-mood="confident"] .mascot-mouth-smirk,
+.mascot-mark[data-mood="cool"] .mascot-mouth-smirk,
+.mascot-mark[data-mood="mischievous"] .mascot-mouth-smirk {
+  opacity: 1;
+}
+
+.mascot-mark[data-mood="nervous"] .mascot-mouth-zigzag {
+  opacity: 1;
+}
+
+.mascot-is-hovered .mascot-mouth {
+  opacity: 0 !important;
+}
+
+.mascot-is-hovered .mascot-mouth-happy,
+.mascot-is-hovered .mascot-cheek {
+  opacity: 1 !important;
+}
+
+.mascot-is-hovered .mascot-mouth-happy {
+  transform: scale(1.04);
+}
+
+.mascot-is-surprised .mascot-mouth,
+.mascot-is-surprised .mascot-cheek {
+  opacity: 0 !important;
+}
+
+.mascot-is-surprised .mascot-mouth-oh {
+  opacity: 1;
+  transform: scale(1.12);
+}
+
+.mascot-mark[data-clicked="true"] .mascot-mouth {
+  opacity: 0 !important;
+}
+
+.mascot-mark[data-clicked="true"] .mascot-mouth-oh {
+  opacity: 1 !important;
+  animation: mascot-surprise-pop 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes mascot-surprise-pop {
+  0% { transform: scale(0.45); }
+  72% { transform: scale(1.2); }
+  100% { transform: scale(1.12); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot-blink,
+  .mascot-mark .mascot-mouth,
+  .mascot-mark .mascot-cheek {
+    animation: none;
+    transition: none;
+  }
+
+  .mascot-mark[data-clicked="true"] .mascot-mouth-oh {
+    animation: none;
+  }
+}
+
+
+/* =========================================================
+   CONTROL CENTER SLIDER
+========================================================= */
+
+.control-slider {
+  appearance: none;
+  -webkit-appearance: none;
+
+  width: 100%;
+  height: 6px;
+
+  border-radius: 999px;
+
+  cursor: pointer;
+
+  background:
+    linear-gradient(
+      to right,
+      #0ea5e9 0%,
+      #0ea5e9 var(--value),
+      rgba(255, 255, 255, 0.12) var(--value),
+      rgba(255, 255, 255, 0.12) 100%
+    );
+
+  outline: none;
+
+  transition:
+    background 180ms ease,
+    filter 180ms ease;
+}
+
+.control-slider:hover {
+  filter: brightness(1.12);
+}
+
+.control-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+
+  width: 18px;
+  height: 18px;
+
+  border-radius: 50%;
+
+  border: 0;
+
+  background: #0ea5e9;
+
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.25),
+    0 0 0 3px rgba(14, 165, 233, 0.12);
+
+  cursor: grab;
+
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.control-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+
+  box-shadow:
+    0 3px 12px rgba(0, 0, 0, 0.3),
+    0 0 0 5px rgba(14, 165, 233, 0.12);
+}
+
+.control-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.18);
+}
+
+.control-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+
+  border: 0;
+  border-radius: 50%;
+
+  background: #0ea5e9;
+
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.25),
+    0 0 0 3px rgba(14, 165, 233, 0.12);
+
+  cursor: grab;
+}
+
+.control-slider::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: #0ea5e9;
+}
+
+.control-slider::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+html {
+  accent-color: var(--os-accent-color, #3b82f6);
+}
+
+::selection {
+  color: white;
+  background: color-mix(in srgb, var(--os-accent-color, #3b82f6) 78%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--os-accent-color, #3b82f6);
+  outline-offset: 2px;
+}
+
+.terminal-command-input:focus-visible {
+  outline: none;
+  outline-offset: 0;
+  box-shadow: none;
+}
+
+html[data-os-cursor="arrow"] *,
+html[data-os-cursor="crosshair"] * {
+  cursor: var(--os-custom-cursor) !important;
+}
+
+html[data-os-theme="light"] body {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+html[data-os-theme="light"] .glass-panel,
+html[data-os-theme="light"] .glass-menubar,
+html[data-os-theme="light"] .glass-dock {
+  background: rgba(248, 250, 252, 0.84);
+  border-color: rgba(15, 23, 42, 0.12);
+  color: #1e293b;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+html[data-os-theme="light"] [class~="bg-slate-950"],
+html[data-os-theme="light"] [class~="bg-black"] {
+  background-color: #f1f5f9 !important;
+}
+
+html[data-os-theme="light"] [class~="bg-slate-900"] {
+  background-color: #e2e8f0 !important;
+}
+
+html[data-os-theme="light"] [class~="bg-slate-800"] {
+  background-color: #e2e8f0 !important;
+}
+
+html[data-os-theme="light"] [class~="text-slate-100"],
+html[data-os-theme="light"] [class~="text-slate-200"],
+html[data-os-theme="light"] [class~="text-slate-300"] {
+  color: #1e293b !important;
+}
+
+html[data-os-theme="light"] [class~="text-slate-400"],
+html[data-os-theme="light"] [class~="text-slate-500"] {
+  color: #475569 !important;
+}
+
+.settings-app-root[data-theme="light"] {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+.settings-app-root[data-theme="light"] [class~="bg-white/10"],
+.settings-app-root[data-theme="light"] [class~="bg-white/5"],
+.settings-app-root[data-theme="light"] [class~="bg-white/[0.035]"],
+.settings-app-root[data-theme="light"] [class~="bg-white/[0.06]"] {
+  background-color: rgba(255, 255, 255, 0.78) !important;
+}
+
+.settings-app-root[data-theme="light"] [class~="text-white"] {
+  color: #0f172a !important;
+}
+
+.settings-app-root[data-theme="light"] [class~="text-slate-400"],
+.settings-app-root[data-theme="light"] [class~="text-slate-500"] {
+  color: #475569 !important;
+}
+
+.settings-app-root[data-theme="light"] [class~="border-white/10"],
+.settings-app-root[data-theme="light"] [class~="border-white/15"] {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+}

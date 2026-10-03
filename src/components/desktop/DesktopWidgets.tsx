@@ -24,19 +24,22 @@ import {
   HardDrive,
   Droplets,
   RefreshCw,
-  MapPin,
   Umbrella,
   Minus,
   GripVertical,
   Maximize2,
+  X,
 } from 'lucide-react';
 
 import { useOS } from '../../context/OSContext';
+import { AppIcon } from '../system/AppIcon';
 
 import {
   fetchWeather,
   searchLocations,
   getWeatherVisual,
+  WEATHER_LOCATION_STORAGE_KEY,
+  WEATHER_LOCATION_UPDATED_EVENT,
   type WeatherData,
 } from '../../services/weatherService';
 
@@ -44,7 +47,7 @@ import {
    TYPES
 ============================================================ */
 
-type WidgetId = 'weather' | 'music' | 'system';
+type WidgetId = 'weather' | 'music' | 'system' | 'clock';
 
 type WidgetPosition = {
   x: number;
@@ -54,6 +57,7 @@ type WidgetPosition = {
 type WidgetPositions = Record<WidgetId, WidgetPosition>;
 
 type MinimizedState = Record<WidgetId, boolean>;
+type WidgetVisibility = Record<WidgetId, boolean>;
 
 /* ============================================================
    DEFAULT POSITIONS
@@ -76,12 +80,17 @@ const DEFAULT_POSITIONS: WidgetPositions = {
     x: 0,
     y: 575,
   },
+  clock: {
+    x: 24,
+    y: 500,
+  },
 };
 
 const DEFAULT_MINIMIZED: MinimizedState = {
   weather: false,
   music: false,
   system: false,
+  clock: false,
 };
 
 /* ============================================================
@@ -424,7 +433,8 @@ const MiniWeatherScene: React.FC<{
 
 const DesktopWeatherMini: React.FC<{
   onMinimize: () => void;
-}> = ({ onMinimize }) => {
+  onRemove: () => void;
+}> = ({ onMinimize, onRemove }) => {
   const { settings } = useOS();
 
   const [weather, setWeather] =
@@ -493,6 +503,29 @@ const DesktopWeatherMini: React.FC<{
 
         setError(false);
 
+        try {
+          const savedLocation = localStorage.getItem(
+            WEATHER_LOCATION_STORAGE_KEY,
+          );
+          if (savedLocation) {
+            const location = JSON.parse(savedLocation) as WeatherData['location'];
+            if (
+              Number.isFinite(location.latitude) &&
+              Number.isFinite(location.longitude)
+            ) {
+              const data = await fetchWeather(
+                location.latitude,
+                location.longitude,
+                location,
+              );
+              setWeather(data);
+              return;
+            }
+          }
+        } catch (savedLocationError) {
+          console.error('Could not load the saved weather location:', savedLocationError);
+        }
+
         if (
           typeof navigator !== 'undefined' &&
           'geolocation' in navigator
@@ -540,6 +573,22 @@ const DesktopWeatherMini: React.FC<{
     },
     [loadFromRegion]
   );
+
+  useEffect(() => {
+    const refreshForSelectedLocation = () => {
+      void loadWeather(true);
+    };
+    window.addEventListener(
+      WEATHER_LOCATION_UPDATED_EVENT,
+      refreshForSelectedLocation,
+    );
+    return () => {
+      window.removeEventListener(
+        WEATHER_LOCATION_UPDATED_EVENT,
+        refreshForSelectedLocation,
+      );
+    };
+  }, [loadWeather]);
 
   /* ==========================================================
      INITIAL LOAD + AUTO REFRESH
@@ -590,6 +639,7 @@ const DesktopWeatherMini: React.FC<{
             title="Weather"
             subtitle="Detecting location..."
             onMinimize={onMinimize}
+            onRemove={onRemove}
           />
 
           <div className="px-4 pb-4">
@@ -661,6 +711,7 @@ const DesktopWeatherMini: React.FC<{
             title="Weather"
             subtitle="Weather unavailable"
             onMinimize={onMinimize}
+            onRemove={onRemove}
           />
 
           <div className="px-4 pb-4">
@@ -756,9 +807,10 @@ const DesktopWeatherMini: React.FC<{
                 'Your Location'
               }
               icon={
-                <MapPin className="h-3 w-3" />
+                <AppIcon appId="weather" className="h-4 w-4 rounded-md" />
               }
               onMinimize={onMinimize}
+              onRemove={onRemove}
               extraAction={
                 <button
                   type="button"
@@ -1023,12 +1075,14 @@ const WidgetHeader: React.FC<{
   subtitle: string;
   icon?: React.ReactNode;
   onMinimize: () => void;
+  onRemove: () => void;
   extraAction?: React.ReactNode;
 }> = ({
   title,
   subtitle,
   icon,
   onMinimize,
+  onRemove,
   extraAction,
 }) => {
   return (
@@ -1058,6 +1112,27 @@ const WidgetHeader: React.FC<{
 
       <div className="flex items-center gap-1 shrink-0">
         {extraAction}
+
+        <button
+          type="button"
+          aria-label={`Remove ${title} widget`}
+          onPointerDown={(event) =>
+            event.stopPropagation()
+          }
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemove();
+          }}
+          className="
+            flex h-8 w-8 items-center justify-center rounded-xl
+            border border-white/10 bg-white/5 text-white/45
+            transition-all hover:border-rose-400/30 hover:bg-rose-500/15
+            hover:text-rose-200 active:scale-90
+          "
+          title="Remove from desktop"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
 
         <button
           type="button"
@@ -1201,7 +1276,7 @@ const MinimizedWidget: React.FC<{
    WIDGET DRAG SYSTEM
 ============================================================ */
 
-const useWidgetManager = () => {
+const useWidgetManager = (visibility: WidgetVisibility) => {
   const [positions, setPositions] =
     useState<WidgetPositions>(
       DEFAULT_POSITIONS
@@ -1211,6 +1286,20 @@ const useWidgetManager = () => {
     useState<MinimizedState>(
       DEFAULT_MINIMIZED
     );
+  const previousVisibility = useRef(visibility);
+
+  useEffect(() => {
+    setMinimized((current) => {
+      const next = { ...current };
+      (Object.keys(visibility) as WidgetId[]).forEach((id) => {
+        if (!previousVisibility.current[id] && visibility[id]) {
+          next[id] = false;
+        }
+      });
+      return next;
+    });
+    previousVisibility.current = visibility;
+  }, [visibility]);
 
   const dragRef = useRef<{
     id: WidgetId;
@@ -1227,30 +1316,28 @@ const useWidgetManager = () => {
 
   useEffect(() => {
     const setInitialRightPositions = () => {
-      const widgetWidth = 280;
       const rightMargin = 24;
-
-      const rightX =
-        Math.max(
-          8,
-          window.innerWidth -
-            widgetWidth -
-            rightMargin
-        );
+      const rightX = (width: number) =>
+        Math.max(8, window.innerWidth - width - rightMargin);
 
       setPositions((current) => ({
         ...current,
         weather: {
           ...current.weather,
-          x: rightX,
+          x: rightX(320),
         },
         music: {
           ...current.music,
-          x: rightX,
+          x: rightX(320),
         },
         system: {
           ...current.system,
-          x: rightX,
+          x: rightX(320),
+        },
+        clock: {
+          ...current.clock,
+          x: 24,
+          y: Math.max(8, window.innerHeight - 190),
         },
       }));
     };
@@ -1360,7 +1447,7 @@ const useWidgetManager = () => {
         event.clientY - drag.offsetY,
         minimized[drag.id]
           ? 150
-          : 280,
+          : 320,
         minimized[drag.id]
           ? 50
           : 260
@@ -1432,8 +1519,8 @@ const useWidgetManager = () => {
                 height: 50,
               }
             : {
-                width: 280,
-                height: 260,
+              width: 320,
+              height: id === 'clock' ? 160 : 220,
               };
 
           next[id] = clampPosition(
@@ -1510,10 +1597,45 @@ export const DesktopWidgets: React.FC = () => {
     togglePlayMusic,
     nextTrack,
     settings,
+    updateSettings,
+    resolvedTheme,
   } = useOS();
 
-  const isLight =
-    settings.theme === 'light';
+  const isLight = resolvedTheme === 'light';
+
+  const [resourceUsage, setResourceUsage] =
+    useState<SystemResourceUsage | null>(null);
+  const [clockNow, setClockNow] =
+    useState(() => new Date());
+
+  useEffect(() => {
+    const interval = window.setInterval(
+      () => setClockNow(new Date()),
+      1000
+    );
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const updateResourceUsage = async () => {
+      try {
+        const usage = await window.electronAPI?.getResourceUsage?.();
+        if (active) setResourceUsage(usage || null);
+      } catch {
+        if (active) setResourceUsage(null);
+      }
+    };
+
+    void updateResourceUsage();
+    const intervalId = window.setInterval(() => {
+      void updateResourceUsage();
+    }, 2000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const {
     positions,
@@ -1522,7 +1644,7 @@ export const DesktopWidgets: React.FC = () => {
     startDrag,
     minimize,
     restore,
-  } = useWidgetManager();
+  } = useWidgetManager(settings.desktopWidgets);
 
   return (
     <div
@@ -1538,8 +1660,9 @@ export const DesktopWidgets: React.FC = () => {
           WEATHER WIDGET
       ====================================================== */}
 
-      {!minimized.weather && (
+      {settings.desktopWidgets.weather && !minimized.weather && (
         <motion.div
+          data-desktop-widget="true"
           className={`
             absolute
             pointer-events-auto
@@ -1570,6 +1693,14 @@ export const DesktopWidgets: React.FC = () => {
             onMinimize={() =>
               minimize('weather')
             }
+            onRemove={() =>
+              updateSettings({
+                desktopWidgets: {
+                  ...settings.desktopWidgets,
+                  weather: false,
+                },
+              })
+            }
           />
         </motion.div>
       )}
@@ -1578,8 +1709,9 @@ export const DesktopWidgets: React.FC = () => {
           MINIMIZED WEATHER
       ====================================================== */}
 
-      {minimized.weather && (
+      {settings.desktopWidgets.weather && minimized.weather && (
         <motion.div
+          data-desktop-widget="true"
           className="
             absolute
             pointer-events-auto
@@ -1620,12 +1752,13 @@ export const DesktopWidgets: React.FC = () => {
           NOW PLAYING
       ====================================================== */}
 
-      {!minimized.music && (
+      {settings.desktopWidgets.music && !minimized.music && (
         <motion.div
+          data-desktop-widget="true"
           className={`
             absolute
             pointer-events-auto
-            w-[280px]
+            w-[min(320px,calc(100vw-32px))]
             rounded-[24px]
             border
             border-white/10
@@ -1684,6 +1817,25 @@ export const DesktopWidgets: React.FC = () => {
 
             <div className="flex items-center gap-1">
               <Activity className="w-3 h-3 text-cyan-400 animate-pulse" />
+
+              <button
+                type="button"
+                aria-label="Remove Now Playing widget"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  updateSettings({
+                    desktopWidgets: {
+                      ...settings.desktopWidgets,
+                      music: false,
+                    },
+                  });
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5 text-white/40 transition hover:bg-rose-500/15 hover:text-rose-200"
+                title="Remove from desktop"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
 
               <button
                 type="button"
@@ -1808,8 +1960,9 @@ export const DesktopWidgets: React.FC = () => {
           MINIMIZED MUSIC
       ====================================================== */}
 
-      {minimized.music && (
+      {settings.desktopWidgets.music && minimized.music && (
         <motion.div
+          data-desktop-widget="true"
           className="absolute pointer-events-auto"
           style={{
             left: positions.music.x,
@@ -1846,12 +1999,13 @@ export const DesktopWidgets: React.FC = () => {
           SYSTEM RESOURCE WIDGET
       ====================================================== */}
 
-      {!minimized.system && (
+      {settings.desktopWidgets.system && !minimized.system && (
         <motion.div
+          data-desktop-widget="true"
           className={`
             absolute
             pointer-events-auto
-            w-[280px]
+            w-[min(320px,calc(100vw-32px))]
             rounded-[24px]
             border
             border-white/10
@@ -1907,56 +2061,97 @@ export const DesktopWidgets: React.FC = () => {
               <GripVertical className="h-3 w-3 text-white/20" />
             </div>
 
-            <button
-              type="button"
-              onPointerDown={(event) =>
-                event.stopPropagation()
-              }
-              onClick={(event) => {
-                event.stopPropagation();
-                minimize('system');
-              }}
-              className="
-                flex
-                h-7
-                w-7
-                items-center
-                justify-center
-                rounded-lg
-                bg-white/5
-                text-white/40
-                transition
-                hover:bg-white/10
-                hover:text-white
-              "
-              title="Minimize"
-            >
-              <Minus className="h-3.5 w-3.5" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-label="Remove System widget"
+                onPointerDown={(event) =>
+                  event.stopPropagation()
+                }
+                onClick={(event) => {
+                  event.stopPropagation();
+                  updateSettings({
+                    desktopWidgets: {
+                      ...settings.desktopWidgets,
+                      system: false,
+                    },
+                  });
+                }}
+                className="
+                  flex h-7 w-7 items-center justify-center rounded-lg
+                  bg-white/5 text-white/40 transition
+                  hover:bg-rose-500/15 hover:text-rose-200
+                "
+                title="Remove from desktop"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onPointerDown={(event) =>
+                  event.stopPropagation()
+                }
+                onClick={(event) => {
+                  event.stopPropagation();
+                  minimize('system');
+                }}
+                className="
+                  flex
+                  h-7
+                  w-7
+                  items-center
+                  justify-center
+                  rounded-lg
+                  bg-white/5
+                  text-white/40
+                  transition
+                  hover:bg-white/10
+                  hover:text-white
+                "
+                title="Minimize"
+              >
+                <Minus className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
 
           {/* RESOURCES */}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-white/5 p-3">
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="min-w-0 rounded-xl bg-white/5 p-3">
               <div className="flex items-center gap-2 text-[10px] text-white/40">
                 <Cpu className="w-3 h-3" />
                 CPU
               </div>
 
-              <div className="mt-1 text-lg font-bold">
-                18%
+              <div
+                className="mt-1 whitespace-nowrap text-lg font-bold tabular-nums"
+                title={resourceUsage?.cpuPercent == null ? 'CPU usage is unavailable' : undefined}
+              >
+                {resourceUsage?.cpuPercent == null
+                  ? 'N/A'
+                  : `${resourceUsage.cpuPercent}%`}
               </div>
             </div>
 
-            <div className="rounded-xl bg-white/5 p-3">
+            <div className="min-w-0 rounded-xl bg-white/5 p-3">
               <div className="flex items-center gap-2 text-[10px] text-white/40">
                 <HardDrive className="w-3 h-3" />
                 RAM
               </div>
 
-              <div className="mt-1 text-lg font-bold">
-                5.8 GB
+              <div
+                className="mt-1 whitespace-nowrap text-[clamp(0.8rem,2vw,1rem)] font-bold leading-tight tabular-nums"
+                title={resourceUsage?.memoryUsedBytes == null ||
+                resourceUsage.memoryTotalBytes == null
+                  ? 'Memory usage is unavailable'
+                  : undefined}
+              >
+                {resourceUsage?.memoryUsedBytes == null ||
+                resourceUsage.memoryTotalBytes == null
+                  ? 'N/A'
+                  : `${(resourceUsage.memoryUsedBytes / 1024 ** 3).toFixed(1)} / ${(resourceUsage.memoryTotalBytes / 1024 ** 3).toFixed(1)} GB`}
               </div>
             </div>
           </div>
@@ -1967,8 +2162,9 @@ export const DesktopWidgets: React.FC = () => {
           MINIMIZED SYSTEM
       ====================================================== */}
 
-      {minimized.system && (
+      {settings.desktopWidgets.system && minimized.system && (
         <motion.div
+          data-desktop-widget="true"
           className="absolute pointer-events-auto"
           style={{
             left: positions.system.x,
@@ -1998,6 +2194,67 @@ export const DesktopWidgets: React.FC = () => {
             }
             onPointerDown={startDrag}
           />
+        </motion.div>
+      )}
+
+      {settings.desktopWidgets.clock && (
+        <motion.div
+          data-desktop-widget="true"
+          className={`
+            absolute pointer-events-auto w-[min(320px,calc(100vw-32px))]
+            rounded-[24px] border border-white/10 p-4 backdrop-blur-2xl
+            shadow-xl
+            ${isLight ? 'glass-panel-light text-slate-800' : 'glass-panel text-white'}
+            ${dragging === 'clock' ? 'z-[100] cursor-grabbing' : 'z-10'}
+          `}
+          style={{
+            left: positions.clock.x,
+            top: positions.clock.y,
+          }}
+          onPointerDown={(event) => {
+            if ((event.target as HTMLElement).closest('button')) return;
+            startDrag(event, 'clock');
+          }}
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 cursor-grab active:cursor-grabbing">
+              <AppIcon appId="clock" className="h-5 w-5 rounded-md" />
+              <span className="text-xs font-bold uppercase tracking-wider">Clock</span>
+              <GripVertical className="h-3 w-3 text-white/20" />
+            </div>
+            <button
+              type="button"
+              aria-label="Remove Clock widget"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                updateSettings({
+                  desktopWidgets: {
+                    ...settings.desktopWidgets,
+                    clock: false,
+                  },
+                });
+              }}
+              className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5 text-white/40 transition hover:bg-rose-500/15 hover:text-rose-200"
+              title="Remove from desktop"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="text-4xl font-semibold tracking-tight tabular-nums">
+            {clockNow.toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: !settings.clock24h,
+            })}
+          </div>
+          <div className="mt-1 text-xs text-white/50">
+            {clockNow.toLocaleDateString([], {
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+            })}
+          </div>
         </motion.div>
       )}
     </div>

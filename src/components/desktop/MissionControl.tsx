@@ -21,7 +21,9 @@ export const MissionControl: React.FC = () => {
 
   if (!showMissionControl) return null;
 
-  const activeWindows = windows.filter(w => !w.isMinimized);
+  const activeWindows = windows.filter(
+    window => !window.desktopSpaceId || window.desktopSpaceId === activeSpaceId
+  );
 
   return (
     <motion.div
@@ -30,7 +32,7 @@ export const MissionControl: React.FC = () => {
       exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
       transition={{ duration: 0.25 }}
       onClick={() => setShowMissionControl(false)}
-      className="fixed inset-0 z-[80] bg-black/60 flex flex-col items-center justify-between p-8 select-none"
+      className="fixed inset-0 z-[20000] bg-black/60 flex flex-col items-center justify-between p-8 select-none"
     >
       {/* Top Spaces Bar */}
       <div
@@ -39,7 +41,7 @@ export const MissionControl: React.FC = () => {
       >
         {spaces.map((space, idx) => {
           const isActive = space.id === activeSpaceId;
-          const spaceWindowCount = windows.filter(w => w.desktopSpaceId === space.id && !w.isMinimized).length;
+          const spaceWindowCount = windows.filter(w => w.desktopSpaceId === space.id).length;
 
           return (
             <div
@@ -145,18 +147,40 @@ export const MissionControl: React.FC = () => {
                     </button>
                   </div>
 
-                  {/* Thumbnail canvas representation */}
-                  <div className="h-44 bg-slate-900/60 flex items-center justify-center p-6 text-center">
-                    <div>
+                  <div
+                    className={`relative flex h-44 flex-col justify-between overflow-hidden bg-gradient-to-br p-4 ${
+                      win.isMinimized ? 'from-slate-900/80 to-slate-950/90' : 'from-slate-800/90 to-slate-950/90'
+                    }`}
+                  >
+                    <div
+                      className="absolute -right-8 -top-12 h-40 w-40 rounded-full opacity-20 blur-2xl"
+                      style={{ background: meta?.iconBg || '#3b82f6' }}
+                    />
+                    <div className="relative flex items-center gap-3 text-left">
                       <div
-                        className="w-12 h-12 rounded-2xl mx-auto mb-2 flex items-center justify-center text-white text-xl font-bold shadow-lg"
+                        className="flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-lg"
                         style={{ background: meta?.iconBg || '#3b82f6' }}
                       >
-                        {win.title.charAt(0)}
+                        <span className="text-lg font-bold">{win.title.charAt(0)}</span>
                       </div>
-                      <p className="text-xs font-medium text-slate-300">{win.title}</p>
-                      <p className="text-[10px] text-slate-500 mt-0.5">Click to restore and bring to front</p>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">{win.title}</p>
+                        <p className="text-[10px] text-slate-400">{meta?.name || win.appId}</p>
+                      </div>
                     </div>
+                    <div className="relative rounded-xl border border-white/10 bg-black/25 p-3 text-left">
+                      <div className="mb-2 flex gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-rose-400/80" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-300/80" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-300/80" />
+                      </div>
+                      <div className="h-1.5 w-3/4 rounded bg-white/20" />
+                      <div className="mt-2 h-1.5 w-1/2 rounded bg-white/10" />
+                      <div className="mt-2 h-1.5 w-2/3 rounded bg-white/10" />
+                    </div>
+                    <span className="relative self-end rounded-full bg-white/10 px-2 py-1 text-[9px] text-slate-300">
+                      {win.isMinimized ? 'Minimized · click to restore' : 'Open · click to focus'}
+                    </span>
                   </div>
                 </motion.div>
               );

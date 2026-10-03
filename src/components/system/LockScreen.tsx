@@ -5,7 +5,7 @@ import { useOS } from '../../context/OSContext';
 import { sound } from '../../services/soundService';
 
 export const LockScreen: React.FC = () => {
-  const { isLocked, unlockSystem, user, currentWallpaper } = useOS();
+  const { isLocked, unlockSystem, user, currentWallpaper, lockScreenWallpaper } = useOS();
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
   const [time, setTime] = useState(new Date());
@@ -30,7 +30,7 @@ export const LockScreen: React.FC = () => {
   return (
     <div
       className="fixed inset-0 z-[105] bg-cover bg-center flex flex-col items-center justify-between p-12 select-none text-white overflow-hidden"
-      style={{ backgroundImage: `url(${currentWallpaper.url})` }}
+      style={{ backgroundImage: `url(${lockScreenWallpaper || currentWallpaper.url})` }}
     >
       {/* Background glass blur */}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-xl" />
@@ -88,8 +88,8 @@ export const LockScreen: React.FC = () => {
 
       {/* Bottom hint */}
       <div className="relative z-10 text-xs text-slate-400 flex items-center gap-1.5">
-        <Lock className="w-3.5 h-3.5" />
-        <span>Abhishek OS Session Protected</span>
+        {/* <Lock className="w-3.5 h-3.5" />
+        <span>Abhishek OS Session Protected</span> */}
       </div>
     </div>
   );

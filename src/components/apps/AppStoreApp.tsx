@@ -18,6 +18,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useOS } from '../../context/OSContext';
 import { APP_REGISTRY } from '../../data/defaultApps';
 import { sound } from '../../services/soundService';
+import { AppIcon } from '../system/AppIcon';
 
 type Category = 'All' | 'Productivity' | 'Developer' | 'Creative' | 'Utilities';
 
@@ -32,8 +33,8 @@ const CATEGORY_ICONS = {
 const APP_DESCRIPTIONS: Record<string, string> = {
   finder: 'Browse files, folders and everything on your Mac.',
   browser: 'A fast and beautiful browser for your everyday web.',
-  messages: 'Stay connected with your conversations.',
-  mail: 'All your important email, beautifully organized.',
+  nextpad: 'Edit code and text in a fast, tabbed workspace.',
+  ghostai: 'Ask questions and explore ideas with your AI assistant.',
   calendar: 'Plan your days, meetings and important events.',
   photos: 'Keep your favorite memories organized.',
   music: 'Discover and enjoy your favorite music.',
@@ -210,9 +211,11 @@ const AppCard: React.FC<AppCardProps> = ({
               "
             />
 
-            <span className="relative z-10 text-2xl font-black drop-shadow-lg">
-              {app.name?.charAt(0)?.toUpperCase()}
-            </span>
+            <AppIcon
+              appId={app.id}
+              className="relative z-10 h-full w-full object-contain p-1"
+              fallback={<span className="relative z-10 text-2xl font-black drop-shadow-lg">{app.name?.charAt(0)?.toUpperCase()}</span>}
+            />
           </motion.div>
 
           {/* Rating */}
@@ -921,7 +924,7 @@ export const AppStoreApp: React.FC = () => {
                             app.iconBg,
                         }}
                       >
-                        {app.name?.charAt(0)}
+                        <AppIcon appId={app.id} className="h-full w-full rounded-[14px] object-contain p-1" fallback={<span>{app.name?.charAt(0)}</span>} />
                       </div>
 
                       <div className="min-w-0">
@@ -1061,7 +1064,7 @@ export const AppStoreApp: React.FC = () => {
                             app.iconBg,
                         }}
                       >
-                        {app.name?.charAt(0)}
+                        <AppIcon appId={app.id} className="h-full w-full rounded-[17px] object-contain p-1" fallback={<span>{app.name?.charAt(0)}</span>} />
                       </div>
 
                       <div className="min-w-0">

@@ -42,6 +42,7 @@ import {
 import { useOS } from '../../context/OSContext';
 import { sound } from '../../services/soundService';
 import { vfs } from '../../services/virtualFileSystem';
+import { MobileMirrorPairing } from './MobileMirrorPairing';
 
 interface MobilePhoto {
   id: string;
@@ -103,10 +104,11 @@ export const MobileLinkApp: React.FC = () => {
 
   // Active viewing mode
   const [activeTab, setActiveTab] = useState<'mirror-phone' | 'mirror-mac' | 'pairing'>('mirror-phone');
-  const [isConnected, setIsConnected] = useState(true);
   const [isLandscape, setIsLandscape] = useState(false);
   const [phoneAudioMuted, setPhoneAudioMuted] = useState(false);
-  const [deviceModel, setDeviceModel] = useState("Abhishek's iPhone 16 Pro");
+  const [mirrorStream, setMirrorStream] = useState<MediaStream | null>(null);
+  const mirrorVideoRef = useRef<HTMLVideoElement | null>(null);
+  const deviceModel = 'Phone preview';
   const [copiedText, setCopiedText] = useState(false);
 
   // Phone Internal App Navigation
@@ -149,6 +151,10 @@ export const MobileLinkApp: React.FC = () => {
       }
     };
   }, [webcamStream]);
+
+  useEffect(() => {
+    if (mirrorVideoRef.current) mirrorVideoRef.current.srcObject = mirrorStream;
+  }, [mirrorStream]);
 
   // Start / Stop Live Web Camera inside phone
   const toggleWebcam = async () => {
@@ -264,7 +270,7 @@ export const MobileLinkApp: React.FC = () => {
       };
       setMessages(prev => [...prev, replyMsg]);
       addNotification({
-        appId: 'messages',
+        appId: 'mobile',
         title: 'Messages from iPhone',
         message: 'Simon Pickford: Got it on my end! Cross-device connectivity is seamless.',
         type: 'message',
@@ -322,18 +328,16 @@ export const MobileLinkApp: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-white">{deviceModel}</span>
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                  isConnected
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                }`}
-              >
-                {isConnected ? 'Connected • AirPlay 5G' : 'Disconnected'}
+              <span className="text-sm font-bold text-white">{mirrorStream ? 'Connected phone' : deviceModel}</span>
+              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                mirrorStream
+                  ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200'
+                  : 'border-amber-400/20 bg-amber-400/10 text-amber-200'
+              }`}>
+                {mirrorStream ? 'Live · View only' : 'Demo preview · Not connected'}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">iOS 18.2 Continuity & Sidecar Display</p>
+            <p className="text-[11px] text-slate-400">{mirrorStream ? 'Connected phone screen' : 'Illustrative phone interface'}</p>
           </div>
         </div>
 
@@ -366,7 +370,7 @@ export const MobileLinkApp: React.FC = () => {
             }`}
           >
             <ScreenShare className="w-3.5 h-3.5" />
-            <span>Mac on iPhone (Sidecar)</span>
+            <span>Mac preview on phone</span>
           </button>
 
           <button
@@ -385,56 +389,50 @@ export const MobileLinkApp: React.FC = () => {
           </button>
         </div>
 
-        {/* Quick Toolbar Controls */}
+        {/* Preview-only controls */}
         <div className="flex items-center gap-2">
+          {!mirrorStream && (
+            <>
+              <button
+                onClick={() => {
+                  setIsLandscape(prev => !prev);
+                  sound.playClick();
+                }}
+                className={`p-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${
+                  isLandscape
+                    ? 'bg-purple-600/30 border-purple-500/50 text-purple-300'
+                    : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                }`}
+                title="Rotate preview orientation"
+              >
+                <RotateCw className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => {
+                  setPhoneAudioMuted(prev => !prev);
+                  sound.playToggle(!phoneAudioMuted);
+                }}
+                className={`p-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${
+                  phoneAudioMuted
+                    ? 'bg-rose-600/30 border-rose-500/50 text-rose-300'
+                    : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                }`}
+                title={phoneAudioMuted ? 'Unmute preview audio' : 'Mute preview audio'}
+              >
+                {phoneAudioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              </button>
+            </>
+          )}
+
           <button
             onClick={() => {
-              setIsLandscape(prev => !prev);
+              setActiveTab(mirrorStream ? 'mirror-phone' : 'pairing');
               sound.playClick();
             }}
-            className={`p-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${
-              isLandscape
-                ? 'bg-purple-600/30 border-purple-500/50 text-purple-300'
-                : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-            }`}
-            title="Rotate Device Orientation"
+            className="cursor-pointer rounded-xl border border-sky-400/30 bg-sky-500/15 px-3 py-1.5 text-xs font-semibold text-sky-200 transition-all hover:bg-sky-500/25"
           >
-            <RotateCw className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={() => {
-              setPhoneAudioMuted(prev => !prev);
-              sound.playToggle(!phoneAudioMuted);
-            }}
-            className={`p-2 rounded-xl border text-xs font-medium transition-colors cursor-pointer ${
-              phoneAudioMuted
-                ? 'bg-rose-600/30 border-rose-500/50 text-rose-300'
-                : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-            }`}
-            title={phoneAudioMuted ? 'Unmute iPhone Audio' : 'Mute iPhone Audio'}
-          >
-            {phoneAudioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </button>
-
-          <button
-            onClick={() => {
-              setIsConnected(prev => !prev);
-              sound.playToggle(!isConnected);
-              addNotification({
-                appId: 'mobile',
-                title: isConnected ? 'Device Disconnected' : 'Device Connected',
-                message: isConnected ? 'iPhone 16 Pro disconnected.' : 'iPhone 16 Pro connected via AirPlay 5G.',
-                type: isConnected ? 'system' : 'update',
-              });
-            }}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
-              isConnected
-                ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border-rose-500/40'
-                : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40'
-            }`}
-          >
-            {isConnected ? 'Disconnect' : 'Connect'}
+            {mirrorStream ? 'View live screen' : 'Set up mirroring'}
           </button>
         </div>
       </div>
@@ -444,6 +442,18 @@ export const MobileLinkApp: React.FC = () => {
         {/* MODE 1: IPHONE MIRRORING ON MAC */}
         {activeTab === 'mirror-phone' && (
           <div className="relative flex flex-col items-center">
+            {mirrorStream ? (
+              <div className="w-full max-w-5xl">
+                <div className="overflow-hidden rounded-3xl border border-emerald-300/20 bg-black shadow-2xl shadow-black/50">
+                  <video ref={mirrorVideoRef} autoPlay playsInline className="block max-h-[70vh] w-full object-contain" />
+                </div>
+                <div className="mt-3 flex items-center justify-center gap-2 text-xs text-emerald-100">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-300" />
+                  Live phone screen · view only
+                </div>
+              </div>
+            ) : (
+              <>
             {/* Phone Hardware Mockup Shell */}
             <motion.div
               layout
@@ -502,10 +512,10 @@ export const MobileLinkApp: React.FC = () => {
                       <>
                         <div className="flex items-center gap-1">
                           <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-                          <span className="text-[9px] font-bold text-amber-300">AirPlay</span>
+                          <span className="text-[9px] font-bold text-amber-300">DEMO</span>
                         </div>
                         <div className="w-2 h-2 rounded-full bg-slate-800 border border-slate-700" />
-                        <span className="text-[9px] font-bold text-sky-400">5G</span>
+                        <span className="text-[9px] font-bold text-sky-400">UI</span>
                       </>
                     )}
                   </div>
@@ -1061,6 +1071,9 @@ export const MobileLinkApp: React.FC = () => {
                       </div>
 
                       <div className="space-y-3 mt-3 text-xs">
+                        <p className="rounded-xl border border-amber-300/15 bg-amber-300/[0.06] p-3 text-[10px] leading-relaxed text-amber-100/75">
+                          Illustrative preview only. Device details are not read from a connected phone.
+                        </p>
                         <div className="p-3 rounded-xl bg-slate-900 border border-white/10 space-y-2">
                           <div className="flex justify-between">
                             <span className="text-slate-400">Device Name</span>
@@ -1068,26 +1081,22 @@ export const MobileLinkApp: React.FC = () => {
                           </div>
                           <div className="flex justify-between">
                             <span className="text-slate-400">iOS Version</span>
-                            <span className="font-semibold text-sky-400">18.2 (22C150)</span>
+                            <span className="font-semibold text-slate-400">Not connected</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-slate-400">Model Identifier</span>
-                            <span className="font-semibold text-white">iPhone 17,2</span>
+                            <span className="font-semibold text-slate-400">Not connected</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-slate-400">Storage</span>
-                            <span className="font-semibold text-emerald-400">184.2 GB / 256 GB Free</span>
+                            <span className="font-semibold text-slate-400">Not connected</span>
                           </div>
                         </div>
 
                         <div className="p-3 rounded-xl bg-slate-900 border border-white/10 space-y-2">
                           <div className="flex justify-between">
                             <span className="text-slate-400">Battery Health</span>
-                            <span className="font-semibold text-emerald-400">100% (Normal)</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-400">Continuity Bridge</span>
-                            <span className="font-semibold text-purple-400">Active (AirPlay 2)</span>
+                            <span className="font-semibold text-slate-400">Not connected</span>
                           </div>
                         </div>
                       </div>
@@ -1111,8 +1120,10 @@ export const MobileLinkApp: React.FC = () => {
 
             {/* Quick helper tip under the phone */}
             <p className="text-[11px] text-slate-400 mt-4 text-center">
-              💡 Drag & drop files onto the phone to AirDrop • Click the Home bar at the bottom to return Home
+              Preview only — this is not a live connected phone screen.
             </p>
+              </>
+            )}
           </div>
         )}
 
@@ -1286,99 +1297,15 @@ export const MobileLinkApp: React.FC = () => {
             </motion.div>
 
             <p className="text-[11px] text-slate-400 mt-4 text-center">
-              💻 Abhishek OS desktop rendered in real-time on iPhone • Tap anywhere on the mobile screen to control the remote pointer
+              Illustrative desktop preview — remote display and pointer control are not connected.
             </p>
           </div>
         )}
 
         {/* MODE 3: PAIRING, QR CODE & ADVANCED CONTINUITY SETTINGS */}
-        {activeTab === 'pairing' && (
-          <div className="max-w-xl w-full bg-slate-900/90 rounded-3xl p-6 border border-white/15 backdrop-blur-2xl shadow-2xl space-y-6 text-white">
-            <div className="flex items-center justify-between border-b border-white/10 pb-4">
-              <div>
-                <h3 className="text-lg font-bold">Connect Your Real Smartphone</h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Pair iPhone, iPad, or Android device using AirPlay Direct or Wi-Fi 6E
-                </p>
-              </div>
-              <span className="p-2 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
-                <QrCode className="w-6 h-6" />
-              </span>
-            </div>
-
-            {/* QR Code & Pairing Instructions */}
-            <div className="flex flex-col sm:flex-row items-center gap-6 p-4 rounded-2xl bg-slate-950/70 border border-white/10">
-              <div className="w-36 h-36 p-2 rounded-2xl bg-white flex items-center justify-center shadow-lg shrink-0">
-                <svg viewBox="0 0 100 100" className="w-full h-full text-slate-950">
-                  <path
-                    fill="currentColor"
-                    d="M10 10h30v30h-30zM15 15v20h20v-20zM22 22h6v6h-6zM60 10h30v30h-30zM65 15v20h20v-20zM72 22h6v6h-6zM10 60h30v30h-30zM15 65v20h20v-20zM22 72h6v6h-6zM60 60h10v10h-10zM80 60h10v10h-10zM70 70h10v10h-10zM60 80h10v10h-10zM80 80h10v10h-10zM45 10h10v10h-10zM45 45h10v10h-10zM45 80h10v10h-10zM10 45h10v10h-10zM80 45h10v10h-10z"
-                  />
-                </svg>
-              </div>
-
-              <div className="space-y-2 text-xs">
-                <p className="font-bold text-white text-sm">Scan with your Camera</p>
-                <p className="text-slate-300 leading-relaxed">
-                  Open the Camera app on your iPhone or Android and point it at this QR code to initiate high-speed AirPlay mirroring.
-                </p>
-                <div className="pt-1 flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(window.location.href);
-                      sound.playClick();
-                      addNotification({
-                        appId: 'mobile',
-                        title: 'Pairing Link Copied',
-                        message: 'Direct mobile pairing URL copied to clipboard.',
-                        type: 'system',
-                      });
-                    }}
-                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer shadow"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copy Pairing Link</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Continuity Features Switches */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Continuity Features</h4>
-
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-800/60 border border-white/10">
-                <div>
-                  <p className="text-xs font-bold text-white">Universal Clipboard</p>
-                  <p className="text-[11px] text-slate-400">Copy on Mac, paste seamlessly on Phone</p>
-                </div>
-                <div className="w-9 h-5 rounded-full bg-indigo-600 p-0.5 cursor-pointer flex justify-end">
-                  <div className="w-4 h-4 rounded-full bg-white shadow" />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-800/60 border border-white/10">
-                <div>
-                  <p className="text-xs font-bold text-white">iPhone Notifications on Mac</p>
-                  <p className="text-[11px] text-slate-400">Forward mobile SMS, calls, and app alerts to macOS banners</p>
-                </div>
-                <div className="w-9 h-5 rounded-full bg-indigo-600 p-0.5 cursor-pointer flex justify-end">
-                  <div className="w-4 h-4 rounded-full bg-white shadow" />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-800/60 border border-white/10">
-                <div>
-                  <p className="text-xs font-bold text-white">Instant Personal Hotspot</p>
-                  <p className="text-[11px] text-slate-400">Auto-connect to 5G Ultra Wideband when offline</p>
-                </div>
-                <div className="w-9 h-5 rounded-full bg-indigo-600 p-0.5 cursor-pointer flex justify-end">
-                  <div className="w-4 h-4 rounded-full bg-white shadow" />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        <div className={`w-full justify-center ${activeTab === 'pairing' ? 'flex' : 'hidden'}`}>
+          <MobileMirrorPairing onStream={setMirrorStream} />
+        </div>
       </div>
     </div>
   );

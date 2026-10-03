@@ -1,5 +1,6 @@
 import { VirtualFile } from '../types/desktop';
 import { INITIAL_FILES } from '../data/sampleData';
+import { deleteMediaBlob, readMediaBlob, storeMediaBlob } from './mediaStore';
 
 const VFS_STORAGE_KEY = 'abhishek_os_vfs_v1';
 
@@ -16,6 +17,7 @@ export class VirtualFileSystem {
       const stored = localStorage.getItem(VFS_STORAGE_KEY);
       if (stored) {
         this.files = JSON.parse(stored);
+        void this.hydrateMediaPreviews();
       } else {
         this.files = [...INITIAL_FILES];
         this.save();
@@ -23,6 +25,31 @@ export class VirtualFileSystem {
     } catch {
       this.files = [...INITIAL_FILES];
     }
+  }
+
+  private async hydrateMediaPreviews() {
+    let changed = false;
+    for (const file of this.files) {
+      if (!file.mediaBlobId || file.isDeleted) continue;
+      try {
+        const blob = await readMediaBlob(file.mediaBlobId);
+        if (!blob) continue;
+        file.previewUrl = URL.createObjectURL(blob);
+        changed = true;
+      } catch (error) {
+        console.error(`[VFS] Could not restore media preview for "${file.name}":`, error);
+      }
+    }
+    if (changed) this.notify();
+  }
+
+  private removeStoredMedia(files: VirtualFile[]) {
+    files.forEach(file => {
+      if (!file.mediaBlobId) return;
+      void deleteMediaBlob(file.mediaBlobId).catch(error => {
+        console.error(`[VFS] Could not delete stored media for "${file.name}":`, error);
+      });
+    });
   }
 
   private listeners: Set<() => void> = new Set();
@@ -46,7 +73,10 @@ export class VirtualFileSystem {
 
   public save() {
     try {
-      localStorage.setItem(VFS_STORAGE_KEY, JSON.stringify(this.files));
+      localStorage.setItem(
+        VFS_STORAGE_KEY,
+        JSON.stringify(this.files.map(({ previewUrl: _previewUrl, ...file }) => file)),
+      );
     } catch (e) {
       console.warn('Failed to persist VFS', e);
     }
@@ -72,7 +102,9 @@ export class VirtualFileSystem {
   }
 
   public getTrash(): VirtualFile[] {
-    return this.files.filter(f => f.isDeleted);
+    return this.files.filter(f =>
+      f.isDeleted && (!f.trashGroupId || f.trashGroupId === f.id)
+    );
   }
 
   public getFileById(id: string): VirtualFile | undefined {
@@ -105,7 +137,7 @@ export class VirtualFileSystem {
       id: `file-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       name: name.trim() || `Untitled.${extension}`,
       path: currentPath,
-      size: content.length || 1024,
+      size: new TextEncoder().encode(content).byteLength,
       type,
       extension,
       content,
@@ -115,6 +147,143 @@ export class VirtualFileSystem {
     this.files.unshift(newFile);
     this.save();
     return newFile;
+  }
+
+  public async importBlob(
+    blob: Blob,
+    name: string,
+    targetPath: string,
+    type: Extract<VirtualFile['type'], 'image' | 'video' | 'audio'>,
+  ): Promise<VirtualFile> {
+    if (blob.size === 0) throw new Error('Cannot save an empty media file.');
+    const safeName = name.trim();
+    if (!safeName) throw new Error('A name is required to save media.');
+    const id = `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await storeMediaBlob(id, blob);
+    const file: VirtualFile = {
+      id,
+      name: safeName,
+      path: targetPath,
+      size: blob.size,
+      type,
+      extension: safeName.split('.').pop()?.toLowerCase() || (type === 'image' ? 'jpg' : type === 'video' ? 'webm' : 'audio'),
+      mediaBlobId: id,
+      previewUrl: URL.createObjectURL(blob),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this.files.unshift(file);
+    this.save();
+    return file;
+  }
+
+  public async readMedia(file: VirtualFile): Promise<Blob> {
+    if (file.mediaBlobId) {
+      const blob = await readMediaBlob(file.mediaBlobId);
+      if (blob) return blob;
+      throw new Error(`Stored media for "${file.name}" could not be found.`);
+    }
+    if (file.previewUrl) {
+      const response = await fetch(file.previewUrl);
+      if (!response.ok) throw new Error(`Could not read "${file.name}".`);
+      return response.blob();
+    }
+    throw new Error(`"${file.name}" has no media data to save.`);
+  }
+
+  public updateFileContent(id: string, content: string): VirtualFile | undefined {
+    const file = this.files.find(candidate =>
+      candidate.id === id && !candidate.isDeleted && candidate.type !== 'folder'
+    );
+    if (!file) return undefined;
+
+    file.content = content;
+    file.size = new TextEncoder().encode(content).byteLength;
+    file.updatedAt = new Date().toISOString();
+    this.save();
+    return file;
+  }
+
+  public moveFiles(
+    ids: string[],
+    targetPath: string
+  ): { moved: VirtualFile[]; error?: string } {
+    const selected = this.files.filter(file => ids.includes(file.id) && !file.isDeleted);
+    if (selected.length !== ids.length) {
+      return { moved: [], error: 'One or more items are no longer available.' };
+    }
+
+    const selectedIds = new Set(ids);
+    const folders = selected.filter(file => file.type === 'folder');
+    const invalidFolder = folders.find(folder => {
+      const folderPath = `${folder.path.replace(/\/+$/, '')}/${folder.name}`.replace(/\/+/g, '/');
+      return targetPath === folderPath || targetPath.startsWith(`${folderPath}/`);
+    });
+    if (invalidFolder) {
+      return { moved: [], error: 'A folder cannot be moved into itself or one of its subfolders.' };
+    }
+
+    const directlyMoved = selected.filter(file =>
+      !selected.some(parent => {
+        if (parent.type !== 'folder' || parent.id === file.id) return false;
+        const parentPath = `${parent.path.replace(/\/+$/, '')}/${parent.name}`.replace(/\/+/g, '/');
+        return file.path === parentPath || file.path.startsWith(`${parentPath}/`);
+      })
+    );
+    const collisions = directlyMoved.filter(file =>
+      file.path !== targetPath &&
+      this.files.some(candidate =>
+        !candidate.isDeleted &&
+        !selectedIds.has(candidate.id) &&
+        candidate.path === targetPath &&
+        candidate.name.toLocaleLowerCase() === file.name.toLocaleLowerCase()
+      )
+    );
+    if (collisions.length > 0) {
+      return {
+        moved: [],
+        error: `An item named "${collisions[0].name}" already exists on the Desktop.`,
+      };
+    }
+
+    const now = new Date().toISOString();
+    directlyMoved.forEach(file => {
+      const previousItemPath = `${file.path.replace(/\/+$/, '')}/${file.name}`.replace(/\/+/g, '/');
+      const nextItemPath = `${targetPath.replace(/\/+$/, '')}/${file.name}`.replace(/\/+/g, '/');
+      file.path = targetPath;
+      file.updatedAt = now;
+      if (file.type === 'folder') {
+        this.files.forEach(descendant => {
+          if (descendant.path === previousItemPath || descendant.path.startsWith(`${previousItemPath}/`)) {
+            descendant.path = `${nextItemPath}${descendant.path.slice(previousItemPath.length)}`;
+            descendant.updatedAt = now;
+          }
+        });
+      }
+    });
+
+    this.save();
+    return { moved: directlyMoved };
+  }
+
+  public createHostShortcut(
+    file: Pick<VirtualFile, 'hostPath' | 'name' | 'type' | 'size' | 'extension'>,
+    targetPath: string
+  ): VirtualFile {
+    const shortcut: VirtualFile = {
+      id: `host-shortcut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      hostPath: file.hostPath,
+      name: file.name,
+      path: targetPath,
+      type: file.type,
+      size: file.size,
+      extension: file.extension,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this.files.unshift(shortcut);
+    this.save();
+    return shortcut;
   }
 
   public copyFiles(ids: string[]): void {
@@ -222,32 +391,64 @@ export class VirtualFileSystem {
 
   public moveToTrash(id: string): boolean {
     const file = this.files.find(f => f.id === id);
-    if (!file) return false;
-    file.isDeleted = true;
-    file.updatedAt = new Date().toISOString();
+    if (!file || file.isDeleted) return false;
+    const trashGroupId = file.id;
+    const now = new Date().toISOString();
+    const affectedFiles = file.type === 'folder'
+      ? this.files.filter(candidate => {
+          if (candidate === file || candidate.isDeleted) return candidate === file;
+          const folderPath = `${file.path.replace(/\/+$/, '')}/${file.name}`.replace(/\/+/g, '/');
+          return candidate.path === folderPath || candidate.path.startsWith(`${folderPath}/`);
+        })
+      : [file];
+    affectedFiles.forEach(candidate => {
+      candidate.isDeleted = true;
+      candidate.trashGroupId = trashGroupId;
+      candidate.updatedAt = now;
+    });
     this.save();
     return true;
   }
 
   public restoreFromTrash(id: string): boolean {
     const file = this.files.find(f => f.id === id);
-    if (!file) return false;
-    file.isDeleted = false;
-    file.updatedAt = new Date().toISOString();
+    if (!file || !file.isDeleted) return false;
+    const now = new Date().toISOString();
+    const groupId = file.trashGroupId || file.id;
+    this.files
+      .filter(candidate => candidate.isDeleted && candidate.trashGroupId === groupId)
+      .forEach(candidate => {
+        candidate.isDeleted = false;
+        delete candidate.trashGroupId;
+        candidate.updatedAt = now;
+      });
+    if (!file.trashGroupId) {
+      file.isDeleted = false;
+      file.updatedAt = now;
+    }
     this.save();
     return true;
   }
 
   public deletePermanently(id: string): boolean {
-    const index = this.files.findIndex(f => f.id === id);
-    if (index === -1) return false;
-    this.files.splice(index, 1);
+    const file = this.files.find(f => f.id === id && f.isDeleted);
+    if (!file) return false;
+    const groupId = file.trashGroupId || file.id;
+    const removedFiles = this.files.filter(candidate =>
+      (candidate.isDeleted && candidate.trashGroupId === groupId) || candidate.id === id
+    );
+    this.removeStoredMedia(removedFiles);
+    this.files = this.files.filter(candidate =>
+      !(candidate.isDeleted && candidate.trashGroupId === groupId) &&
+      candidate.id !== id
+    );
     this.save();
     return true;
   }
 
   public emptyTrash(): number {
     const initialCount = this.files.length;
+    this.removeStoredMedia(this.files.filter(file => file.isDeleted));
     this.files = this.files.filter(f => !f.isDeleted);
     this.save();
     return initialCount - this.files.length;
@@ -303,10 +504,12 @@ export class VirtualFileSystem {
         const type = this.detectFileType(file.name, file.type);
 
         let previewUrl: string | undefined = undefined;
+        let mediaBlobId: string | undefined;
         let content = '';
 
         if (type === 'image' || type === 'video' || type === 'audio') {
-          // Create an object URL so media can be viewed/played natively
+          mediaBlobId = `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          await storeMediaBlob(mediaBlobId, file);
           previewUrl = URL.createObjectURL(file);
         } else if (file.size < 500000) {
           // Text/code file
@@ -326,6 +529,7 @@ export class VirtualFileSystem {
           extension: ext,
           content,
           previewUrl,
+          mediaBlobId,
           createdAt: new Date(file.lastModified || Date.now()).toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -403,4 +607,3 @@ export class VirtualFileSystem {
 }
 
 export const vfs = new VirtualFileSystem();
-

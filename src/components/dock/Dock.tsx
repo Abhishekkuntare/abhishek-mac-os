@@ -3,18 +3,19 @@ import React, {
   useRef,
   useEffect,
   useCallback,
+  useLayoutEffect,
 } from 'react';
 
 import {
   motion,
   AnimatePresence,
+  useAnimationControls,
 } from 'motion/react';
 
 import {
   Folder,
   Compass,
-  MessageCircle,
-  Mail,
+  Sparkles,
   Calendar,
   Image,
   Music,
@@ -27,6 +28,7 @@ import {
   ShoppingBag,
   Trash2,
   Activity,
+  Gamepad2,
   Smartphone,
   Camera as CameraIcon,
   Info,
@@ -51,13 +53,16 @@ import {
   Check,
   AlertTriangle,
   Maximize2,
+  Minimize2,
   Minus,
 } from 'lucide-react';
 
 import { useOS } from '../../context/OSContext';
 import { APP_REGISTRY } from '../../data/defaultApps';
 import { sound } from '../../services/soundService';
+import { vfs } from '../../services/virtualFileSystem';
 import { AppFeaturesModal } from '../system/AppFeaturesModal';
+import { AppIcon, getAppIconAsset } from '../system/AppIcon';
 
 /* ============================================================
    ICON REGISTRY
@@ -71,8 +76,7 @@ const ICON_COMPONENTS: Record<
   CameraIcon,
   Folder,
   Compass,
-  MessageCircle,
-  Mail,
+  Sparkles,
   Calendar,
   Image,
   Music,
@@ -84,6 +88,7 @@ const ICON_COMPONENTS: Record<
   Settings,
   ShoppingBag,
   Activity,
+  Gamepad2,
 };
 
 /* ============================================================
@@ -99,10 +104,12 @@ interface DockContextMenuState {
 interface TrashItem {
   id: string;
   name: string;
-  type: 'folder' | 'file' | 'image' | 'code' | 'archive';
+  type: 'folder' | 'file' | 'image' | 'code' | 'archive' | 'video' | 'audio';
   size: string;
   deletedAt: string;
   originalLocation: string;
+  source: 'virtual' | 'local';
+  sourceId: string;
 }
 
 type TrashViewMode =
@@ -123,40 +130,6 @@ type TrashSortMode =
 const CONTEXT_MENU_WIDTH = 224;
 const CONTEXT_MENU_HEIGHT = 235;
 const SCREEN_PADDING = 10;
-
-const TRASH_STORAGE_KEY =
-  'abhishek-os-trash-items';
-
-/* ============================================================
-   DEFAULT TRASH DATA
-============================================================ */
-
-const DEFAULT_TRASH_ITEMS: TrashItem[] = [
-  {
-    id: 'trash-demo-1',
-    name: 'Old Website',
-    type: 'folder',
-    size: '24.8 MB',
-    deletedAt: 'Today, 10:42 AM',
-    originalLocation: '/Users/Abhishek/Documents',
-  },
-  {
-    id: 'trash-demo-2',
-    name: 'design-final.fig',
-    type: 'file',
-    size: '8.4 MB',
-    deletedAt: 'Yesterday, 8:15 PM',
-    originalLocation: '/Users/Abhishek/Downloads',
-  },
-  {
-    id: 'trash-demo-3',
-    name: 'hero-section.png',
-    type: 'image',
-    size: '3.1 MB',
-    deletedAt: 'Yesterday, 4:20 PM',
-    originalLocation: '/Users/Abhishek/Desktop',
-  },
-];
 
 /* ============================================================
    TRASH ICON
@@ -211,14 +184,39 @@ const getTrashItemIcon = (
 interface TrashModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onMinimize: () => void;
   addNotification: (notification: any) => void;
 }
 
 const TrashModal: React.FC<TrashModalProps> = ({
   isOpen,
   onClose,
+  onMinimize,
   addNotification,
 }) => {
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const animationControls = useAnimationControls();
+  const dragRef = useRef<{
+    mode: 'drag' | 'resize';
+    pointerId: number;
+    startX: number;
+    startY: number;
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [modalBounds, setModalBounds] = useState(() => {
+    const width = Math.min(1050, typeof window === 'undefined' ? 1050 : window.innerWidth * 0.94);
+    const height = Math.min(720, typeof window === 'undefined' ? 720 : window.innerHeight * 0.86);
+    return {
+      left: Math.max(12, ((typeof window === 'undefined' ? 1440 : window.innerWidth) - width) / 2),
+      top: Math.max(12, ((typeof window === 'undefined' ? 900 : window.innerHeight) - height) / 2),
+      width,
+      height,
+    };
+  });
+  const restoreBoundsRef = useRef(modalBounds);
   const [items, setItems] = useState<TrashItem[]>(
     [],
   );
@@ -250,63 +248,160 @@ const TrashModal: React.FC<TrashModalProps> = ({
   const [isMaximized, setIsMaximized] =
     useState(false);
 
-  /* ============================================================
-     LOAD TRASH
-  ============================================================ */
+  const getDockAnimationOrigin = useCallback(() => {
+    const bounds = modalRef.current?.getBoundingClientRect();
+    const dockIcon = document.querySelector<HTMLElement>(
+      '[data-dock-app-id="trash"] [data-dock-icon="true"]',
+    );
+    if (!bounds || !dockIcon) return null;
 
-  useEffect(() => {
-    if (!isOpen) {
+    const iconBounds = dockIcon.getBoundingClientRect();
+    if (!iconBounds.width || !iconBounds.height) return null;
+
+    return {
+      opacity: 0.12,
+      scale: Math.max(iconBounds.width / bounds.width, iconBounds.height / bounds.height),
+      x: iconBounds.left + iconBounds.width / 2 - (bounds.left + bounds.width / 2),
+      y: iconBounds.top + iconBounds.height / 2 - (bounds.top + bounds.height / 2),
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+
+    const origin = getDockAnimationOrigin();
+    if (origin) {
+      animationControls.set(origin);
+    } else {
+      animationControls.set({ opacity: 0, scale: 0.96, y: 14 });
+    }
+
+    void animationControls.start({
+      opacity: 1,
+      scale: 1,
+      x: 0,
+      y: 0,
+      transition: { duration: 0.46, ease: [0.16, 1, 0.3, 1] },
+    });
+  }, [animationControls, getDockAnimationOrigin, isOpen]);
+
+  const beginModalPointer = (
+    event: React.PointerEvent<HTMLElement>,
+    mode: 'drag' | 'resize',
+  ) => {
+    if (
+      event.button !== 0 ||
+      isMaximized ||
+      (event.target instanceof Element &&
+        event.target.closest('button, input, [data-no-window-drag="true"]'))
+    ) {
       return;
     }
 
-    try {
-      const saved =
-        localStorage.getItem(
-          TRASH_STORAGE_KEY,
-        );
+    const bounds = modalRef.current?.getBoundingClientRect();
+    if (!bounds) return;
 
-      if (saved) {
-        const parsed = JSON.parse(
-          saved,
-        ) as TrashItem[];
+    event.preventDefault();
+    dragRef.current = {
+      mode,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      left: bounds.left,
+      top: bounds.top,
+      width: bounds.width,
+      height: bounds.height,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
 
-        if (Array.isArray(parsed)) {
-          setItems(parsed);
-          return;
-        }
-      }
+  const handleModalPointerMove = (event: React.PointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
 
-      setItems(DEFAULT_TRASH_ITEMS);
-
-      localStorage.setItem(
-        TRASH_STORAGE_KEY,
-        JSON.stringify(
-          DEFAULT_TRASH_ITEMS,
-        ),
-      );
-    } catch {
-      setItems(DEFAULT_TRASH_ITEMS);
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (drag.mode === 'resize') {
+      const width = Math.min(Math.max(drag.width + deltaX, 440), window.innerWidth - 24);
+      const height = Math.min(Math.max(drag.height + deltaY, 320), window.innerHeight - 24);
+      setModalBounds({
+        left: Math.min(drag.left, window.innerWidth - width - 12),
+        top: Math.min(drag.top, window.innerHeight - height - 12),
+        width,
+        height,
+      });
+      return;
     }
-  }, [isOpen]);
 
-  /* ============================================================
-     SAVE TRASH
-  ============================================================ */
+    setModalBounds(previous => ({
+      ...previous,
+      left: Math.min(Math.max(drag.left + deltaX, 48 - drag.width), window.innerWidth - 48),
+      top: Math.min(Math.max(drag.top + deltaY, 0), window.innerHeight - 48),
+    }));
+  };
 
-  const saveItems = (
-    nextItems: TrashItem[],
-  ) => {
-    setItems(nextItems);
-
-    try {
-      localStorage.setItem(
-        TRASH_STORAGE_KEY,
-        JSON.stringify(nextItems),
-      );
-    } catch {
-      // Ignore storage errors.
+  const handleModalPointerUp = (event: React.PointerEvent<HTMLElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
     }
   };
+
+  const toggleMaximize = () => {
+    if (isMaximized) {
+      setModalBounds(restoreBoundsRef.current);
+      setIsMaximized(false);
+      return;
+    }
+
+    restoreBoundsRef.current = modalBounds;
+    setIsMaximized(true);
+  };
+
+  const loadTrash = useCallback(async () => {
+    const virtualItems: TrashItem[] = vfs.getTrash().map(file => ({
+      id: `virtual:${file.id}`,
+      source: 'virtual',
+      sourceId: file.id,
+      name: file.name,
+      type: file.type === 'app' || file.type === 'document' ? 'file' : file.type,
+      size: file.size > 0 ? `${(file.size / 1024 ** 2).toFixed(1)} MB` : '—',
+      deletedAt: file.updatedAt,
+      originalLocation: file.path,
+    }));
+
+    let localItems: TrashItem[] = [];
+    try {
+      const entries = await window.electronAPI?.listLocalTrash?.();
+      localItems = (entries || []).map(entry => ({
+        id: `local:${entry.id}`,
+        source: 'local',
+        sourceId: entry.id,
+        name: entry.name,
+        type: entry.type,
+        size: entry.size > 0 ? `${(entry.size / 1024 ** 2).toFixed(1)} MB` : '—',
+        deletedAt: entry.deletedAt,
+        originalLocation: entry.originalLocation,
+      }));
+    } catch (error) {
+      addNotification({
+        appId: 'trash',
+        title: 'Unable to load local Trash',
+        message: error instanceof Error ? error.message : String(error),
+        type: 'system',
+      });
+    }
+    setItems([...virtualItems, ...localItems]);
+  }, [addNotification]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void loadTrash();
+    return vfs.subscribe(() => {
+      void loadTrash();
+    });
+  }, [isOpen, loadTrash]);
 
   /* ============================================================
      FILTER + SORT
@@ -397,36 +492,34 @@ const TrashModal: React.FC<TrashModalProps> = ({
      RESTORE
   ============================================================ */
 
-  const restoreSelected = () => {
-    if (
-      selectedItems.length === 0
-    ) {
-      return;
+  const restoreSelected = async (ids = selectedItems) => {
+    if (ids.length === 0) return;
+    let restoredCount = 0;
+    const failures: string[] = [];
+    for (const item of items.filter(current => ids.includes(current.id))) {
+      try {
+        if (item.source === 'local') {
+          if (!window.electronAPI?.restoreLocalTrashEntry) {
+            throw new Error('Local Trash is unavailable. Update and restart Abhishek OS.');
+          }
+          await window.electronAPI.restoreLocalTrashEntry(item.sourceId);
+        } else if (!vfs.restoreFromTrash(item.sourceId)) {
+          throw new Error('This item is no longer in Trash.');
+        }
+        restoredCount += 1;
+      } catch (error) {
+        failures.push(`${item.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
-
-    const restoredCount =
-      selectedItems.length;
-
-    const remaining = items.filter(
-      item =>
-        !selectedItems.includes(
-          item.id,
-        ),
-    );
-
-    saveItems(remaining);
     setSelectedItems([]);
-
-    sound.playClick();
-
+    await loadTrash();
+    if (restoredCount > 0) sound.playClick();
     addNotification({
       appId: 'trash',
-      title: 'Items Restored',
-      message: `${restoredCount} item${
-        restoredCount === 1
-          ? ''
-          : 's'
-      } restored from Trash.`,
+      title: failures.length ? 'Some items could not be restored' : 'Items Restored',
+      message: failures.length
+        ? `${restoredCount} restored. ${failures.join('; ')}`
+        : `${restoredCount} item${restoredCount === 1 ? '' : 's'} restored from Trash.`,
       type: 'system',
     });
   };
@@ -435,19 +528,29 @@ const TrashModal: React.FC<TrashModalProps> = ({
      EMPTY TRASH
   ============================================================ */
 
-  const emptyTrash = () => {
-    saveItems([]);
+  const emptyTrash = async () => {
+    vfs.emptyTrash();
+    let failure: string | null = null;
+    try {
+      const localCount = items.filter(item => item.source === 'local').length;
+      if (localCount > 0 && !window.electronAPI?.emptyLocalTrash) {
+        throw new Error('Local Trash is unavailable. Update and restart Abhishek OS.');
+      }
+      await window.electronAPI?.emptyLocalTrash?.();
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error);
+    }
     setSelectedItems([]);
     setShowEmptyConfirm(false);
     setPreviewItem(null);
+    await loadTrash();
 
     sound.playClick();
 
     addNotification({
       appId: 'trash',
-      title: 'Trash Emptied',
-      message:
-        'All items have been permanently removed from Trash.',
+      title: failure ? 'Some Trash items could not be deleted' : 'Trash Emptied',
+      message: failure || 'All items in app Trash have been permanently deleted.',
       type: 'system',
     });
   };
@@ -456,26 +559,37 @@ const TrashModal: React.FC<TrashModalProps> = ({
      DELETE SELECTED
   ============================================================ */
 
-  const permanentlyDeleteSelected =
-    () => {
-      if (
-        selectedItems.length === 0
-      ) {
-        return;
+  const permanentlyDeleteSelected = async (ids = selectedItems) => {
+    if (ids.length === 0) return;
+    let deletedCount = 0;
+    const failures: string[] = [];
+    for (const item of items.filter(current => ids.includes(current.id))) {
+      try {
+        if (item.source === 'local') {
+          if (!window.electronAPI?.deleteLocalTrashEntry) {
+            throw new Error('Local Trash is unavailable. Update and restart Abhishek OS.');
+          }
+          await window.electronAPI.deleteLocalTrashEntry(item.sourceId);
+        } else if (!vfs.deletePermanently(item.sourceId)) {
+          throw new Error('This item is no longer in Trash.');
+        }
+        deletedCount += 1;
+      } catch (error) {
+        failures.push(`${item.name}: ${error instanceof Error ? error.message : String(error)}`);
       }
-
-      const remaining = items.filter(
-        item =>
-          !selectedItems.includes(
-            item.id,
-          ),
-      );
-
-      saveItems(remaining);
-      setSelectedItems([]);
-
-      sound.playClick();
-    };
+    }
+    setSelectedItems([]);
+    await loadTrash();
+    if (deletedCount > 0) sound.playClick();
+    if (failures.length) {
+      addNotification({
+        appId: 'trash',
+        title: 'Some items could not be permanently deleted',
+        message: `${deletedCount} deleted. ${failures.join('; ')}`,
+        type: 'system',
+      });
+    }
+  };
 
   /* ============================================================
      KEYBOARD
@@ -519,7 +633,7 @@ const TrashModal: React.FC<TrashModalProps> = ({
         if (
           selectedItems.length > 0
         ) {
-          permanentlyDeleteSelected();
+          void permanentlyDeleteSelected();
         }
       }
     };
@@ -547,45 +661,38 @@ const TrashModal: React.FC<TrashModalProps> = ({
      CLOSE
   ============================================================ */
 
-  if (!isOpen) {
-    return null;
-  }
-
-  const windowClass = isMaximized
-    ? 'fixed inset-3'
-    : 'fixed left-1/2 top-1/2 w-[min(1050px,94vw)] h-[min(720px,86vh)] -translate-x-1/2 -translate-y-1/2';
-
   return (
     <AnimatePresence>
-      <motion.div
+      {isOpen && <motion.div
+        ref={modalRef}
         key="trash-modal"
-        initial={{
-          opacity: 0,
-          scale: 0.94,
-          y: 20,
+        initial={false}
+        animate={animationControls}
+        variants={{
+          dockExit: () => ({
+            ...(getDockAnimationOrigin() ?? { opacity: 0, scale: 0.92, y: 12 }),
+            transition: { duration: 0.36, ease: [0.4, 0, 1, 1] },
+          }),
         }}
-        animate={{
-          opacity: 1,
-          scale: 1,
-          y: 0,
-        }}
-        exit={{
-          opacity: 0,
-          scale: 0.94,
-          y: 20,
-        }}
-        transition={{
-          type: 'spring',
-          stiffness: 300,
-          damping: 28,
-        }}
-        className={`${windowClass} z-[10000] overflow-hidden rounded-2xl border border-white/15 bg-[#15171c]/95 text-white shadow-[0_30px_100px_rgba(0,0,0,0.7)] backdrop-blur-3xl`}
+        exit="dockExit"
+        style={
+          isMaximized
+            ? { left: 12, top: 12, width: 'calc(100vw - 24px)', height: 'calc(100vh - 24px)' }
+            : modalBounds
+        }
+        className="fixed z-[10000] overflow-hidden rounded-2xl border border-white/15 bg-[#15171c]/95 text-white shadow-[0_30px_100px_rgba(0,0,0,0.7)] backdrop-blur-3xl"
       >
         {/* ======================================================
             TITLE BAR
         ======================================================= */}
 
-        <div className="h-12 shrink-0 border-b border-white/10 bg-white/[0.035] flex items-center px-4">
+        <div
+          className="h-12 shrink-0 border-b border-white/10 bg-white/[0.035] flex items-center px-4 cursor-grab active:cursor-grabbing"
+          onPointerDown={event => beginModalPointer(event, 'drag')}
+          onPointerMove={handleModalPointerMove}
+          onPointerUp={handleModalPointerUp}
+          onPointerCancel={handleModalPointerUp}
+        >
 
           {/* MAC TRAFFIC LIGHTS */}
 
@@ -594,32 +701,38 @@ const TrashModal: React.FC<TrashModalProps> = ({
               type="button"
               onClick={onClose}
               aria-label="Close Trash"
-              className="w-3 h-3 rounded-full bg-red-500 hover:brightness-110 transition"
-            />
+              className="group/control w-3 h-3 rounded-full bg-red-500 hover:brightness-110 transition flex items-center justify-center text-red-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/80"
+            >
+              <X className="w-2 h-2 opacity-0 group-hover/control:opacity-100 group-focus-visible/control:opacity-100 transition-opacity" />
+            </button>
 
             <button
               type="button"
-              onClick={() => {}}
+              onClick={onMinimize}
               aria-label="Minimize Trash"
-              className="w-3 h-3 rounded-full bg-yellow-400 hover:brightness-110 transition"
-            />
+              className="group/control w-3 h-3 rounded-full bg-yellow-400 hover:brightness-110 transition flex items-center justify-center text-yellow-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/80"
+            >
+              <Minus className="w-2 h-2 opacity-0 group-hover/control:opacity-100 group-focus-visible/control:opacity-100 transition-opacity" />
+            </button>
 
             <button
               type="button"
-              onClick={() =>
-                setIsMaximized(
-                  previous => !previous,
-                )
-              }
+              onClick={toggleMaximize}
               aria-label="Maximize Trash"
-              className="w-3 h-3 rounded-full bg-green-500 hover:brightness-110 transition"
-            />
+              className="group/control w-3 h-3 rounded-full bg-green-500 hover:brightness-110 transition flex items-center justify-center text-green-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/80"
+            >
+              {isMaximized ? (
+                <Minimize2 className="w-2 h-2 opacity-0 group-hover/control:opacity-100 group-focus-visible/control:opacity-100 transition-opacity" />
+              ) : (
+                <Maximize2 className="w-2 h-2 opacity-0 group-hover/control:opacity-100 group-focus-visible/control:opacity-100 transition-opacity" />
+              )}
+            </button>
           </div>
 
           {/* TITLE */}
 
           <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
-            <Trash2 className="w-4 h-4 text-slate-300" />
+            <AppIcon appId="trash" className="w-4 h-4 object-contain" />
             <span className="text-sm font-semibold">
               Trash
             </span>
@@ -678,9 +791,7 @@ const TrashModal: React.FC<TrashModalProps> = ({
             disabled={
               selectedItems.length === 0
             }
-            onClick={
-              restoreSelected
-            }
+            onClick={() => void restoreSelected()}
             className="h-8 px-3 rounded-lg hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none flex items-center gap-2 text-xs"
           >
             <RotateCcw className="w-4 h-4" />
@@ -907,9 +1018,9 @@ const TrashModal: React.FC<TrashModalProps> = ({
                   scale: 1,
                   opacity: 1,
                 }}
-                className="w-28 h-28 rounded-3xl bg-gradient-to-br from-slate-700/60 to-slate-900/70 border border-white/10 flex items-center justify-center shadow-2xl mb-5"
+                className="w-28 h-28 flex items-center justify-center mb-5"
               >
-                <Trash2 className="w-14 h-14 text-slate-400" />
+                <AppIcon appId="trash" className="w-full h-full object-contain" />
               </motion.div>
 
               <h2 className="text-lg font-semibold text-white">
@@ -1294,12 +1405,7 @@ const TrashModal: React.FC<TrashModalProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        setSelectedItems([
-                          previewItem.id,
-                        ]);
-
-                        restoreSelected();
-
+                        void restoreSelected([previewItem.id]);
                         setPreviewItem(
                           null,
                         );
@@ -1313,12 +1419,7 @@ const TrashModal: React.FC<TrashModalProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        setSelectedItems([
-                          previewItem.id,
-                        ]);
-
-                        permanentlyDeleteSelected();
-
+                        void permanentlyDeleteSelected([previewItem.id]);
                         setPreviewItem(
                           null,
                         );
@@ -1415,7 +1516,20 @@ const TrashModal: React.FC<TrashModalProps> = ({
             </>
           )}
         </AnimatePresence>
-      </motion.div>
+        {!isMaximized && (
+          <div
+            role="presentation"
+            onPointerDown={event => beginModalPointer(event, 'resize')}
+            onPointerMove={handleModalPointerMove}
+            onPointerUp={handleModalPointerUp}
+            onPointerCancel={handleModalPointerUp}
+            className="absolute bottom-0 right-0 z-[70] h-5 w-5 cursor-nwse-resize touch-none"
+            aria-label="Resize Trash window"
+          >
+            <span className="absolute bottom-1 right-1 h-2.5 w-2.5 border-b-2 border-r-2 border-white/35" />
+          </div>
+        )}
+      </motion.div>}
     </AnimatePresence>
   );
 };
@@ -1429,8 +1543,10 @@ export const Dock: React.FC = () => {
     dockAppIds,
     windows,
     openApp,
+    focusWindow,
     bouncingAppId,
     settings,
+    resolvedTheme,
     moveDockApp,
     toggleDockPin,
     addNotification,
@@ -1439,15 +1555,18 @@ export const Dock: React.FC = () => {
   const dockRef =
     useRef<HTMLDivElement | null>(null);
 
-  const [
-    hoveredIndex,
-    setHoveredIndex,
-  ] = useState<number | null>(null);
+  const dockPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const dockMagnificationFrameRef = useRef<number | null>(null);
 
   const [
     tooltipApp,
     setTooltipApp,
   ] = useState<string | null>(null);
+
+  const [previewWindowId, setPreviewWindowId] = useState<string | null>(null);
+  const [previewSnapshot, setPreviewSnapshot] = useState<string | null>(null);
+  const [previewCaptureFailed, setPreviewCaptureFailed] = useState(false);
+  const previewRequestRef = useRef(0);
 
   const [
     draggedAppId,
@@ -1479,42 +1598,82 @@ export const Dock: React.FC = () => {
     trashModalOpen,
     setTrashModalOpen,
   ] = useState(false);
+  const [trashModalMinimized, setTrashModalMinimized] = useState(false);
 
-  const isLight =
-    settings.theme === 'light';
+  const isLight = resolvedTheme === 'light';
+  const dockSharesMenuBarEdge = settings.dockPosition === settings.menuBarPosition;
 
   /* ============================================================
      DOCK MAGNIFICATION
   ============================================================ */
 
-  const getScale = (
-    index: number,
-  ) => {
-    if (
-      !settings.dockMagnification ||
-      hoveredIndex === null ||
-      draggedAppId !== null
-    ) {
-      return 1;
+  const resetDockMagnification = () => {
+    if (dockMagnificationFrameRef.current !== null) {
+      cancelAnimationFrame(dockMagnificationFrameRef.current);
+      dockMagnificationFrameRef.current = null;
     }
 
-    const distance = Math.abs(
-      index - hoveredIndex,
-    );
+    dockPointerRef.current = null;
+    dockRef.current
+      ?.querySelectorAll<HTMLElement>('[data-dock-icon="true"]')
+      .forEach(icon => {
+        icon.style.scale = '1';
+      });
+  };
 
-    if (distance === 0) {
-      return 1.45;
+  useEffect(() => () => {
+    if (dockMagnificationFrameRef.current !== null) {
+      cancelAnimationFrame(dockMagnificationFrameRef.current);
     }
+  }, []);
 
-    if (distance === 1) {
-      return 1.22;
+  const handleDockPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'touch') return;
+
+    dockPointerRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+    };
+
+    if (dockMagnificationFrameRef.current !== null) return;
+
+    dockMagnificationFrameRef.current = requestAnimationFrame(() => {
+      dockMagnificationFrameRef.current = null;
+      const pointer = dockPointerRef.current;
+      const dock = dockRef.current;
+      if (!pointer || !dock) return;
+
+      const icons = dock.querySelectorAll<HTMLElement>('[data-dock-icon="true"]');
+      const vertical = settings.dockPosition === 'left' || settings.dockPosition === 'right';
+      const pointerAxis = vertical ? pointer.y : pointer.x;
+      const radius = 58;
+
+      icons.forEach(icon => {
+        const bounds = (icon.parentElement ?? icon).getBoundingClientRect();
+        const center = vertical
+          ? bounds.top + bounds.height / 2
+          : bounds.left + bounds.width / 2;
+        const distance = Math.abs(pointerAxis - center);
+        const scale = settings.dockMagnification && draggedAppId === null
+          ? 1 + 0.48 * Math.exp(-(distance * distance) / (2 * radius * radius))
+          : 1;
+
+        icon.style.scale = scale.toFixed(3);
+      });
+    });
+  };
+
+  const getDockIconOrigin = () => {
+    switch (settings.dockPosition) {
+      case 'top':
+        return 'top center';
+      case 'left':
+        return 'center left';
+      case 'right':
+        return 'center right';
+      default:
+        return 'bottom center';
     }
-
-    if (distance === 2) {
-      return 1.08;
-    }
-
-    return 1;
   };
 
   /* ============================================================
@@ -1546,6 +1705,14 @@ export const Dock: React.FC = () => {
     e.dataTransfer.setData(
       'text/plain',
       appId,
+    );
+    e.dataTransfer.setData(
+      'application/x-abhishek-os-dock-app',
+      appId,
+    );
+    e.dataTransfer.setData(
+      'application/x-abhishek-os-dock-app-name',
+      APP_REGISTRY[appId]?.name ?? appId,
     );
 
     sound.playClick();
@@ -1784,7 +1951,7 @@ export const Dock: React.FC = () => {
         e.clientY,
       );
 
-    setHoveredIndex(null);
+    resetDockMagnification();
     setTooltipApp(null);
 
     sound.playClick();
@@ -1913,6 +2080,7 @@ export const Dock: React.FC = () => {
 
     setTooltipApp(null);
 
+    setTrashModalMinimized(false);
     setTrashModalOpen(true);
 
     sound.playClick();
@@ -1959,17 +2127,23 @@ export const Dock: React.FC = () => {
       ======================================================= */}
 
       <div
-        className="
-          fixed
-          bottom-3
-          left-0
-          right-0
-          flex
-          justify-center
-          z-40
-          pointer-events-none
-          select-none
-        "
+        className={`fixed flex justify-center z-40 pointer-events-none select-none ${
+          settings.dockPosition === 'top'
+            ? dockSharesMenuBarEdge
+              ? 'top-10 left-0 right-0'
+              : 'top-3 left-0 right-0'
+            : settings.dockPosition === 'left'
+              ? dockSharesMenuBarEdge
+                ? 'left-[3.75rem] top-0 bottom-0 flex-col'
+                : 'left-3 top-0 bottom-0 flex-col'
+              : settings.dockPosition === 'right'
+                ? dockSharesMenuBarEdge
+                  ? 'right-[3.75rem] top-0 bottom-0 flex-col'
+                  : 'right-3 top-0 bottom-0 flex-col'
+                : dockSharesMenuBarEdge
+                  ? 'bottom-10 left-0 right-0'
+                  : 'bottom-3 left-0 right-0'
+        }`}
       >
         <motion.div
           ref={dockRef}
@@ -1986,9 +2160,14 @@ export const Dock: React.FC = () => {
             stiffness: 260,
             damping: 25,
           }}
+          onPointerMove={handleDockPointerMove}
           onMouseLeave={() => {
-            setHoveredIndex(null);
+            resetDockMagnification();
             setTooltipApp(null);
+            setPreviewWindowId(null);
+            setPreviewSnapshot(null);
+            setPreviewCaptureFailed(false);
+            previewRequestRef.current += 1;
           }}
           className={`
             pointer-events-auto
@@ -1996,11 +2175,10 @@ export const Dock: React.FC = () => {
             py-2
             rounded-2xl
             flex
-            items-end
+            ${settings.dockPosition === 'left' || settings.dockPosition === 'right' ? 'flex-col items-center max-h-[calc(100vh-24px)] overflow-y-auto' : 'flex-row items-end max-w-[calc(100vw-20px)]'}
             gap-2.5
             transition-all
             duration-200
-            max-w-[calc(100vw-20px)]
             overflow-visible
             ${
               isLight
@@ -2017,7 +2195,7 @@ export const Dock: React.FC = () => {
           =================================================== */}
 
           {dockAppIds.map(
-            (appId, index) => {
+            appId => {
               const app =
                 APP_REGISTRY[appId];
 
@@ -2029,6 +2207,7 @@ export const Dock: React.FC = () => {
                 ICON_COMPONENTS[
                   app.iconName
                 ] || Folder;
+              const iconAsset = getAppIconAsset(appId);
 
               const isRunning =
                 isAppRunning(appId);
@@ -2036,9 +2215,6 @@ export const Dock: React.FC = () => {
               const isBouncing =
                 bouncingAppId ===
                 appId;
-
-              const scale =
-                getScale(index);
 
               const isBeingDragged =
                 draggedAppId ===
@@ -2053,6 +2229,7 @@ export const Dock: React.FC = () => {
               return (
                 <div
                   key={appId}
+                  data-dock-app-id={appId}
                   draggable
                   onDragStart={e =>
                     handleDragStart(
@@ -2097,18 +2274,55 @@ export const Dock: React.FC = () => {
                         : 'opacity-100'
                     }
                   `}
-                  onMouseEnter={() => {
+                  onMouseEnter={async () => {
                     if (
                       !draggedAppId
                     ) {
-                      setHoveredIndex(
-                        index,
-                      );
-
                       setTooltipApp(
                         app.name,
                       );
+                      const appWindow = windows
+                        .filter(window => window.appId === appId)
+                        .sort((a, b) => b.zIndex - a.zIndex)[0];
+                      setPreviewWindowId(appWindow?.id ?? null);
+                      setPreviewSnapshot(null);
+                      setPreviewCaptureFailed(false);
+                      const requestId = ++previewRequestRef.current;
+                      if (appWindow && !appWindow.isMinimized && window.electronAPI?.captureWindowPreview) {
+                        const target = Array.from(
+                          document.querySelectorAll<HTMLElement>('[data-window-id]'),
+                        ).find(element => element.dataset.windowId === appWindow.id);
+                        if (target) {
+                          const bounds = target.getBoundingClientRect();
+                          if (bounds.width <= 0 || bounds.height <= 0) {
+                            setPreviewCaptureFailed(true);
+                            return;
+                          }
+                          try {
+                            const snapshot = await window.electronAPI.captureWindowPreview({
+                              x: bounds.x,
+                              y: bounds.y,
+                              width: bounds.width,
+                              height: bounds.height,
+                            });
+                            if (previewRequestRef.current === requestId) {
+                              setPreviewSnapshot(snapshot);
+                            }
+                          } catch (error) {
+                            console.error('Could not capture the Dock window preview:', error);
+                            if (previewRequestRef.current === requestId) {
+                              setPreviewCaptureFailed(true);
+                            }
+                          }
+                        } else setPreviewCaptureFailed(true);
+                      }
                     }
+                  }}
+                  onMouseLeave={() => {
+                    setPreviewWindowId(null);
+                    setPreviewSnapshot(null);
+                    setPreviewCaptureFailed(false);
+                    previewRequestRef.current += 1;
                   }}
                   onClick={() => {
                     if (
@@ -2164,7 +2378,8 @@ export const Dock: React.FC = () => {
                   <AnimatePresence>
                     {tooltipApp ===
                       app.name &&
-                      !draggedAppId && (
+                      !draggedAppId &&
+                      previewWindowId === null && (
                         <motion.div
                           initial={{
                             opacity: 0,
@@ -2204,13 +2419,74 @@ export const Dock: React.FC = () => {
                       )}
                   </AnimatePresence>
 
+                  <AnimatePresence>
+                    {previewWindowId && windows.some(window =>
+                      window.id === previewWindowId && window.appId === appId
+                    ) && !draggedAppId && (
+                      <motion.button
+                        type="button"
+                        initial={{ opacity: 0, y: 10, scale: 0.94 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                        transition={{ type: 'spring', stiffness: 360, damping: 28 }}
+                        onClick={event => {
+                          event.stopPropagation();
+                          focusWindow(previewWindowId);
+                          setPreviewWindowId(null);
+                          setTooltipApp(null);
+                        }}
+                        className="absolute bottom-full left-1/2 z-[120] w-[min(280px,80vw)] -translate-x-1/2 overflow-hidden rounded-2xl border border-white/20 bg-[#11131d]/95 p-1.5 text-left text-white shadow-[0_20px_70px_rgba(0,0,0,0.65)] backdrop-blur-2xl"
+                        aria-label={`Restore ${app.name}`}
+                      >
+                        {(() => {
+                          const previewWindow = windows.find(window => window.id === previewWindowId);
+                          if (!previewWindow) return null;
+                          return (
+                            <>
+                              <div className="flex items-center gap-2 rounded-t-xl border-b border-white/[0.08] px-2.5 py-2">
+                                <span
+                                  className="flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-black"
+                                  style={{ background: app.iconBg }}
+                                >
+                                  {previewWindow.title.charAt(0).toUpperCase()}
+                                </span>
+                                <span className="min-w-0 flex-1 truncate text-[11px] font-semibold">{previewWindow.title}</span>
+                                <span className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold ${previewWindow.isMinimized ? 'bg-amber-300/15 text-amber-200' : 'bg-emerald-300/15 text-emerald-200'}`}>
+                                  {previewWindow.isMinimized ? 'MINIMIZED' : 'OPEN'}
+                                </span>
+                              </div>
+                              <div className="relative flex h-[142px] items-center justify-center overflow-hidden rounded-b-xl bg-slate-950">
+                                {previewSnapshot ? (
+                                  <img src={previewSnapshot} alt={`${previewWindow.title} live window preview`} className="h-full w-full object-fill" />
+                                ) : (
+                                  <span className="px-4 text-center text-[10px] text-white/55">
+                                    {previewWindow.isMinimized
+                                      ? 'Window minimized — click to restore'
+                                      : previewCaptureFailed
+                                        ? 'Could not capture this window preview'
+                                      : window.electronAPI?.captureWindowPreview
+                                        ? 'Capturing window preview…'
+                                        : 'Window preview is available in the desktop app'}
+                                  </span>
+                                )}
+                                <div className="absolute inset-x-0 bottom-0 bg-black/60 py-1 text-center text-[9px] font-medium text-white/80">
+                                  Click to bring {app.name} to front
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </motion.button>
+                    )}
+                  </AnimatePresence>
+
                   {/* APP ICON */}
 
                   <motion.div
                     animate={{
                       scale: isTargeted
-                        ? scale * 1.1
-                        : scale,
+                        ? 1.1
+                        : 1,
 
                       y: isBouncing
                         ? [
@@ -2263,12 +2539,17 @@ export const Dock: React.FC = () => {
                       }
                     `}
                     style={{
-                      background:
-                        app.iconBg,
+                      background: iconAsset
+                        ? 'transparent'
+                        : app.iconBg,
+                      transformOrigin: getDockIconOrigin(),
+                      transition: 'scale 90ms cubic-bezier(0.2, 0.8, 0.2, 1)',
                     }}
+                    data-dock-icon="true"
                   >
-                    <div
-                      className="
+                    {!iconAsset && (
+                      <div
+                        className="
                         absolute
                         inset-0
                         bg-gradient-to-b
@@ -2277,15 +2558,23 @@ export const Dock: React.FC = () => {
                         to-black/20
                         pointer-events-none
                       "
-                    />
+                      />
+                    )}
 
-                    <IconComp
-                      className="
-                        w-6
-                        h-6
-                        drop-shadow-md
-                        z-10
-                      "
+                    <AppIcon
+                      appId={appId}
+                      className="relative z-10 h-full w-full object-contain"
+                      fallback={
+                        <IconComp
+                          className="
+                            relative
+                            z-10
+                            w-6
+                            h-6
+                            drop-shadow-md
+                          "
+                        />
+                      }
                     />
                   </motion.div>
 
@@ -2344,6 +2633,7 @@ export const Dock: React.FC = () => {
           =================================================== */}
 
           <div
+            data-dock-app-id="trash"
             className="
               relative
               flex
@@ -2410,19 +2700,12 @@ export const Dock: React.FC = () => {
             {/* TRASH ICON */}
 
             <motion.div
-              whileHover={{
-                scale: 1.15,
-              }}
               whileTap={{
                 scale: 0.95,
               }}
               className="
                 w-12
                 h-12
-                rounded-2xl
-                bg-gradient-to-tr
-                from-slate-700
-                to-slate-500
                 flex
                 items-center
                 justify-center
@@ -2431,27 +2714,13 @@ export const Dock: React.FC = () => {
                 relative
                 overflow-hidden
               "
+              style={{
+                transformOrigin: getDockIconOrigin(),
+                transition: 'scale 90ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+              }}
+              data-dock-icon="true"
             >
-              <div
-                className="
-                  absolute
-                  inset-0
-                  bg-gradient-to-b
-                  from-white/20
-                  via-transparent
-                  to-black/20
-                  pointer-events-none
-                "
-              />
-
-              <Trash2
-                className="
-                  w-6
-                  h-6
-                  drop-shadow-md
-                  z-10
-                "
-              />
+              <AppIcon appId="trash" className="relative z-10 h-full w-full object-contain" />
             </motion.div>
 
             <div className="h-1.5 mt-1" />
@@ -2565,7 +2834,7 @@ export const Dock: React.FC = () => {
 
                 <div className="px-3 py-2 border-b border-white/10 flex items-center gap-2">
                   <div className="w-7 h-7 rounded-lg bg-white/10 border border-white/10 flex items-center justify-center">
-                    <Trash2 className="w-4 h-4 text-slate-300" />
+                    <AppIcon appId="trash" className="w-4 h-4 object-contain" />
                   </div>
 
                   <div>
@@ -2588,6 +2857,7 @@ export const Dock: React.FC = () => {
                       setTrashModalOpen(
                         true,
                       );
+                      setTrashModalMinimized(false);
 
                       closeContextMenu();
 
@@ -2620,6 +2890,7 @@ export const Dock: React.FC = () => {
                       setTrashModalOpen(
                         true,
                       );
+                      setTrashModalMinimized(false);
 
                       closeContextMenu();
 
@@ -2921,10 +3192,12 @@ export const Dock: React.FC = () => {
       ======================================================= */}
 
       <TrashModal
-        isOpen={trashModalOpen}
-        onClose={() =>
+        isOpen={trashModalOpen && !trashModalMinimized}
+        onClose={() => {
           setTrashModalOpen(false)
-        }
+          setTrashModalMinimized(false)
+        }}
+        onMinimize={() => setTrashModalMinimized(true)}
         addNotification={
           addNotification
         }

@@ -30,6 +30,30 @@ The project combines a familiar desktop workflow with a responsive interface, bu
 
 Features may evolve as the project develops.
 
+### Desktop themes
+
+The Themes section in Settings offers animated previews for 29 visual themes. Abhishek OS's original appearance is the default; selecting a theme applies its colors and surfaces across the desktop, system panels, and built-in applications, and the choice is saved between launches. Use **Original Desktop** to restore the default appearance.
+
+### Code Studio runtimes
+
+Code Studio runs C++ and Java programs using local toolchains. On Windows, if a required toolchain is missing, Code Studio offers an **Install and Run** action: C++ setup installs MSYS2/GCC, and Java setup installs Eclipse Temurin JDK 21 through Windows winget. These installs require an internet connection and are started only after the user selects the install action. JavaScript and Python use their existing local runtimes.
+
+### Finder context menus
+
+Finder context menus work in both the virtual workspace and user-connected local folders. Local file operations are limited to folders the user has granted to Abhishek OS. Deleting a file or folder moves it into the app's Trash; restoring returns local files to their original folder (with a renamed copy if a name collision exists), while permanent deletion and Empty Trash remove the stored data. System and app icons are protected from deletion. Code files open in VS Code when it is detected; otherwise Finder opens the file in Code Studio. Actions such as sharing or editing in third-party apps are only shown when an actual integration is available.
+
+The desktop System widget polls live CPU load and memory usage from the host computer through Electron's main process. A metric that cannot be read is shown as unavailable.
+
+### Host connectivity
+
+On Windows, Control Center can scan and display nearby Wi-Fi networks with signal and security details. It can connect to a network with an existing Windows Wi-Fi profile; networks that need a new password must first be configured in Windows Wi-Fi settings. Bluetooth status comes from the host and is cleared while Bluetooth is off. The in-app scan can connect to Bluetooth LE devices; use **Pair classic** to open Windows Bluetooth settings for audio and other classic Bluetooth devices.
+
+### Quick Look media streaming
+
+Images and videos in Quick Look are streamed via a custom `abhishek-local://` protocol handler, eliminating the 2 MB size limit that applied to base64 conversion. The protocol handler serves files directly with correct MIME types, allowing unlimited image and video preview sizes.
+
+When Electron's main-process or preload code changes, rebuild and reinstall/relaunch the desktop app; rebuilding only the renderer does not update its IPC handlers.
+
 ---
 
 ## 📸 Screenshots

@@ -38,6 +38,12 @@ contextBridge.exposeInMainWorld(
         'window:isMaximized'
       ),
 
+    captureWindowPreview: (bounds) =>
+      ipcRenderer.invoke(
+        'window:capturePreview',
+        bounds
+      ),
+
     /* =====================================================
        EXTERNAL LINKS
     ===================================================== */
@@ -61,6 +67,122 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke(
         'app:version'
       ),
+
+    getConnectivityState: () =>
+      ipcRenderer.invoke(
+        'system:getConnectivityState'
+      ),
+
+    setWifiEnabled: (enabled) =>
+      ipcRenderer.invoke('system:setWifiEnabled', enabled),
+
+    setBluetoothEnabled: (enabled) =>
+      ipcRenderer.invoke('system:setBluetoothEnabled', enabled),
+
+    scanWifiNetworks: () =>
+      ipcRenderer.invoke('system:scanWifiNetworks'),
+
+    connectWifi: (ssid) =>
+      ipcRenderer.invoke('system:connectWifi', ssid),
+
+    selectBluetoothDevice: (deviceId) =>
+      ipcRenderer.invoke('system:selectBluetoothDevice', deviceId),
+
+    openBluetoothSettings: () =>
+      ipcRenderer.invoke('system:openBluetoothSettings'),
+
+    getResourceUsage: () =>
+      ipcRenderer.invoke('system:getResourceUsage'),
+
+    onBluetoothDevices: (callback) => {
+      const listener = (_event, devices) => callback(devices);
+      ipcRenderer.on('system:bluetooth-devices', listener);
+      return () => ipcRenderer.removeListener('system:bluetooth-devices', listener);
+    },
+
+    onBrowserOpenUrl: (callback) => {
+      const listener = (_event, url) => callback(url);
+      ipcRenderer.on('browser:open-url', listener);
+      return () => ipcRenderer.removeListener('browser:open-url', listener);
+    },
+
+    chooseLocalFolders: () =>
+      ipcRenderer.invoke('files:chooseFolders'),
+
+    getLocalFolders: () =>
+      ipcRenderer.invoke('files:getFolders'),
+
+    grantAllDrives: () =>
+      ipcRenderer.invoke('files:grantAllDrives'),
+
+    revokeAllDrives: () =>
+      ipcRenderer.invoke('files:revokeAllDrives'),
+
+    removeLocalFolder: (folderPath) =>
+      ipcRenderer.invoke('files:removeFolder', folderPath),
+
+    listLocalFolder: (folderPath) =>
+      ipcRenderer.invoke('files:listFolder', folderPath),
+
+    openLocalPath: (targetPath) =>
+      ipcRenderer.invoke('files:openPath', targetPath),
+
+    openLocalCodeFile: (targetPath) =>
+      ipcRenderer.invoke('files:openCodeFile', targetPath),
+
+    openLocalCodePath: (targetPath) =>
+      ipcRenderer.invoke('files:openCodePath', targetPath),
+
+    readLocalImage: (targetPath) =>
+      ipcRenderer.invoke('files:readImage', targetPath),
+
+    getMediaUrl: (targetPath) =>
+      ipcRenderer.invoke('files:getMediaUrl', targetPath),
+
+    createLocalEntry: (parentPath, name, isDirectory) =>
+      ipcRenderer.invoke('files:createEntry', parentPath, name, isDirectory),
+
+    renameLocalEntry: (targetPath, newName) =>
+      ipcRenderer.invoke('files:renameEntry', targetPath, newName),
+
+    trashLocalEntry: (targetPath) =>
+      ipcRenderer.invoke('files:trashEntry', targetPath),
+
+    listLocalTrash: () =>
+      ipcRenderer.invoke('files:listTrash'),
+
+    restoreLocalTrashEntry: (id) =>
+      ipcRenderer.invoke('files:restoreTrashEntry', id),
+
+    deleteLocalTrashEntry: (id) =>
+      ipcRenderer.invoke('files:deleteTrashEntry', id),
+
+    emptyLocalTrash: () =>
+      ipcRenderer.invoke('files:emptyTrash'),
+
+    transferLocalEntries: (sourcePaths, destinationPath, move) =>
+      ipcRenderer.invoke('files:transferEntries', sourcePaths, destinationPath, move),
+
+    openLocalTerminal: (targetPath) =>
+      ipcRenderer.invoke('files:openTerminal', targetPath),
+
+    runCode: (request) =>
+      ipcRenderer.invoke('code:run', request),
+
+    installCodeRuntime: (language) =>
+      ipcRenderer.invoke('code:installRuntime', language),
+
+    ghostAIIsConfigured: () =>
+      ipcRenderer.invoke('ghost-ai:isConfigured'),
+
+    ghostAIChat: (request) =>
+      ipcRenderer.invoke('ghost-ai:chat', request),
+
+    readClipboardText: () =>
+      ipcRenderer.invoke('studio:clipboardRead'),
+
+    writeClipboardText: (text) =>
+      ipcRenderer.invoke('studio:clipboardWrite', text),
 
     /* =====================================================
        AUTOMATIC UPDATES

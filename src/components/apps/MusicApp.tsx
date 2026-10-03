@@ -89,6 +89,7 @@ const LOCAL_COVERS = [
   'https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?q=80&w=800&auto=format&fit=crop',
   'https://images.unsplash.com/photo-1521337581100-8ca9a73a5f79?q=80&w=800&auto=format&fit=crop',
 ];
+const FAVORITES_STORAGE_KEY = 'abhishek_os_music_favorites_v1';
 
 /* -------------------------------------------------------------------------- */
 /* IndexedDB                                                                  */
@@ -243,7 +244,12 @@ export const MusicApp: React.FC = () => {
     currentTrack,
     isPlayingMusic,
     musicProgress,
+    repeatTrack,
+    setRepeatTrack,
+    shuffleTracks,
+    setShuffleTracks,
     togglePlayMusic,
+    playTrackAtIndex,
     nextTrack,
     prevTrack,
     setMusicProgress,
@@ -266,17 +272,21 @@ export const MusicApp: React.FC = () => {
   >('nowPlaying');
 
   const [search, setSearch] = useState('');
+  const [libraryFilter, setLibraryFilter] = useState<'all' | 'favorites' | 'imported'>('all');
+  const [favoriteTrackIds, setFavoriteTrackIds] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(FAVORITES_STORAGE_KEY);
+      const parsed: unknown = stored ? JSON.parse(stored) : [];
+      return Array.isArray(parsed) && parsed.every(id => typeof id === 'string') ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
 
   const [isFullscreenPlayer, setIsFullscreenPlayer] =
     useState(false);
-
-  const [isShuffle, setIsShuffle] = useState(false);
-
-  const [isRepeat, setIsRepeat] = useState(false);
-
-  const [isFavorite, setIsFavorite] = useState(false);
 
   const [showTrackMenu, setShowTrackMenu] = useState(false);
 
@@ -296,18 +306,31 @@ export const MusicApp: React.FC = () => {
   const filteredTracks = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    if (!query) {
-      return allTracks;
-    }
-
     return allTracks.filter(track => {
-      return (
+      const matchesSearch = !query || (
         track.title.toLowerCase().includes(query) ||
         track.artist.toLowerCase().includes(query) ||
         track.album.toLowerCase().includes(query)
       );
+      const matchesFilter = libraryFilter === 'all' ||
+        (libraryFilter === 'favorites' && favoriteTrackIds.includes(track.id)) ||
+        (libraryFilter === 'imported' && importedLocalTracks.some(local => local.id === track.id));
+      return matchesSearch && matchesFilter;
     });
-  }, [allTracks, search]);
+  }, [allTracks, favoriteTrackIds, importedLocalTracks, libraryFilter, search]);
+
+  const isTrackFavorite = useCallback(
+    (trackId: string) => favoriteTrackIds.includes(trackId),
+    [favoriteTrackIds],
+  );
+
+  const toggleFavorite = useCallback((trackId: string) => {
+    setFavoriteTrackIds(current =>
+      current.includes(trackId)
+        ? current.filter(id => id !== trackId)
+        : [...current, trackId],
+    );
+  }, []);
 
   /* ---------------------------------------------------------------------- */
   /* Toast                                                                  */
@@ -320,6 +343,14 @@ export const MusicApp: React.FC = () => {
       setToast(null);
     }, 2200);
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favoriteTrackIds));
+    } catch {
+      showToast('Could not save music favorites.');
+    }
+  }, [favoriteTrackIds, showToast]);
 
   /* ---------------------------------------------------------------------- */
   /* Restore imported music from IndexedDB                                  */
@@ -576,38 +607,15 @@ export const MusicApp: React.FC = () => {
   /* Track selection                                                        */
   /* ---------------------------------------------------------------------- */
 
-  const handleTrackSelect = (index: number) => {
-    const difference =
-      index - currentTrackIndex;
-
-    if (difference === 0) {
-      if (!isPlayingMusic) {
-        togglePlayMusic();
-      }
-
+  const handleTrackSelect = (trackId: string) => {
+    const index = allTracks.findIndex(track => track.id === trackId);
+    if (index < 0) {
+      showToast('This track is no longer in your library.');
       return;
     }
 
-    /*
-     * OSContext currently exposes nextTrack/prevTrack rather than
-     * setCurrentTrackIndex. We therefore navigate using the existing
-     * music API instead of changing OSContext.
-     */
-    if (difference > 0) {
-      for (let i = 0; i < difference; i++) {
-        nextTrack();
-      }
-    } else {
-      for (let i = 0; i < Math.abs(difference); i++) {
-        prevTrack();
-      }
-    }
-
-    if (!isPlayingMusic) {
-      togglePlayMusic();
-    }
-
-    sound.playClick();
+    if (index === currentTrackIndex && isPlayingMusic) return;
+    playTrackAtIndex(index);
   };
 
   /* ---------------------------------------------------------------------- */
@@ -1151,10 +1159,12 @@ export const MusicApp: React.FC = () => {
                           scale: 0.9,
                         }}
                         onClick={() =>
-                          setIsShuffle(!isShuffle)
+                          setShuffleTracks(!shuffleTracks)
                         }
+                        aria-label={shuffleTracks ? 'Turn shuffle off' : 'Shuffle songs'}
+                        title={shuffleTracks ? 'Shuffle is on' : 'Shuffle songs'}
                         className={`w-9 h-9 rounded-full flex items-center justify-center ${
-                          isShuffle
+                          shuffleTracks
                             ? 'text-pink-400 bg-pink-500/10'
                             : 'text-slate-500 hover:text-white'
                         }`}
@@ -1229,11 +1239,11 @@ export const MusicApp: React.FC = () => {
                         whileTap={{
                           scale: 0.9,
                         }}
-                        onClick={() =>
-                          setIsRepeat(!isRepeat)
-                        }
+                        onClick={() => setRepeatTrack(!repeatTrack)}
+                        aria-label={repeatTrack ? 'Turn repeat off' : 'Repeat current song'}
+                        title={repeatTrack ? 'Repeat current song is on' : 'Repeat current song'}
                         className={`w-9 h-9 rounded-full flex items-center justify-center ${
-                          isRepeat
+                          repeatTrack
                             ? 'text-pink-400 bg-pink-500/10'
                             : 'text-slate-500 hover:text-white'
                         }`}
@@ -1251,18 +1261,17 @@ export const MusicApp: React.FC = () => {
                         whileTap={{
                           scale: 0.95,
                         }}
-                        onClick={() =>
-                          setIsFavorite(!isFavorite)
-                        }
+                        onClick={() => toggleFavorite(currentTrack.id)}
+                        aria-label={isTrackFavorite(currentTrack.id) ? 'Remove from favorites' : 'Add to favorites'}
                         className={`w-9 h-9 rounded-xl border flex items-center justify-center ${
-                          isFavorite
+                          isTrackFavorite(currentTrack.id)
                             ? 'bg-pink-500/10 border-pink-400/20 text-pink-400'
                             : 'bg-white/[0.04] border-white/[0.07] text-slate-500'
                         }`}
                       >
                         <Heart
                           className={`w-4 h-4 ${
-                            isFavorite
+                            isTrackFavorite(currentTrack.id)
                               ? 'fill-current'
                               : ''
                           }`}
@@ -1316,17 +1325,30 @@ export const MusicApp: React.FC = () => {
                           }}
                           className="absolute mt-2 top-[calc(100%-100px)] lg:top-auto lg:mt-[235px] z-50 w-48 rounded-2xl border border-white/10 bg-[#15161d]/95 backdrop-blur-2xl shadow-2xl p-1"
                         >
-                          <button className="w-full text-left px-3 py-2 rounded-xl text-[11px] hover:bg-white/10">
-                            Add to Playlist
+                          <button
+                            type="button"
+                            onClick={() => {
+                              toggleFavorite(currentTrack.id);
+                              setShowTrackMenu(false);
+                            }}
+                            className="w-full text-left px-3 py-2 rounded-xl text-[11px] hover:bg-white/10"
+                          >
+                            {isTrackFavorite(currentTrack.id) ? 'Remove from Favorites' : 'Add to Favorites'}
                           </button>
 
-                          <button className="w-full text-left px-3 py-2 rounded-xl text-[11px] hover:bg-white/10">
-                            Show Album
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveTab('library');
+                              setLibraryFilter('all');
+                              setSearch(currentTrack.album);
+                              setShowTrackMenu(false);
+                            }}
+                            className="w-full text-left px-3 py-2 rounded-xl text-[11px] hover:bg-white/10"
+                          >
+                            Find Album in Library
                           </button>
 
-                          <button className="w-full text-left px-3 py-2 rounded-xl text-[11px] hover:bg-white/10">
-                            Get Track Info
-                          </button>
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -1374,10 +1396,8 @@ export const MusicApp: React.FC = () => {
                         Your Space.
                       </h2>
 
-                      <p className="text-xs text-slate-500 mt-3 max-w-md">
-                        Local music imported from your computer
-                        stays inside the Abhishek OS Music Library
-                        using persistent local storage.
+                      <p className="text-xs text-slate-400 mt-3 max-w-md">
+                        Play built-in soundscapes or add songs from your device. Imported audio stays in your private local library.
                       </p>
                     </div>
 
@@ -1414,8 +1434,8 @@ export const MusicApp: React.FC = () => {
                       All Tracks
                     </h3>
 
-                    <p className="text-[10px] text-slate-600 mt-1">
-                      {filteredTracks.length} songs
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      {filteredTracks.length} of {allTracks.length} {allTracks.length === 1 ? 'song' : 'songs'}
                     </p>
                   </div>
 
@@ -1425,12 +1445,36 @@ export const MusicApp: React.FC = () => {
                   </div>
                 </div>
 
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  {([
+                    ['all', 'All songs', allTracks.length],
+                    ['favorites', 'Favorites', favoriteTrackIds.filter(id => allTracks.some(track => track.id === id)).length],
+                    ['imported', 'Your imports', importedLocalTracks.length],
+                  ] as const).map(([filter, label, count]) => (
+                    <motion.button
+                      key={filter}
+                      type="button"
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => setLibraryFilter(filter)}
+                      className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-[10px] font-bold transition-colors ${
+                        libraryFilter === filter
+                          ? 'border-pink-400/30 bg-pink-400/15 text-pink-100 shadow-[0_6px_24px_rgba(236,72,153,0.12)]'
+                          : 'border-white/[0.08] bg-white/[0.03] text-slate-400 hover:border-white/[0.16] hover:bg-white/[0.07] hover:text-white'
+                      }`}
+                    >
+                      <span>{label}</span>
+                      <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${libraryFilter === filter ? 'bg-pink-300/15 text-pink-100' : 'bg-white/[0.06] text-slate-500'}`}>{count}</span>
+                    </motion.button>
+                  ))}
+                </div>
+
                 <div className="space-y-2">
                   <AnimatePresence>
                     {filteredTracks.map(
-                      (track, index) => {
+                      track => {
                         const isCurrent =
-                          index === currentTrackIndex;
+                          track.id === currentTrack.id;
+                        const isFavorite = isTrackFavorite(track.id);
 
                         const isLocal =
                           importedLocalTracks.some(
@@ -1454,9 +1498,7 @@ export const MusicApp: React.FC = () => {
                               y: -2,
                               scale: 1.005,
                             }}
-                            onClick={() =>
-                              handleTrackSelect(index)
-                            }
+                            onClick={() => handleTrackSelect(track.id)}
                             className={`group relative overflow-hidden flex items-center gap-3 p-3 rounded-2xl cursor-pointer border transition-all ${
                               isCurrent
                                 ? 'bg-pink-500/[0.10] border-pink-400/20 shadow-[0_10px_40px_rgba(236,72,153,0.08)]'
@@ -1533,15 +1575,15 @@ export const MusicApp: React.FC = () => {
                               </span>
 
                               <button
+                                type="button"
+                                aria-label={isFavorite ? `Remove ${track.title} from favorites` : `Add ${track.title} to favorites`}
                                 onClick={e => {
                                   e.stopPropagation();
-                                  setIsFavorite(
-                                    !isFavorite
-                                  );
+                                  toggleFavorite(track.id);
                                 }}
-                                className="w-7 h-7 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-white/10 flex items-center justify-center text-slate-500 hover:text-pink-400 transition-all"
+                                className={`w-7 h-7 rounded-lg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/10 flex items-center justify-center transition-all ${isFavorite ? 'text-pink-400 opacity-100' : 'text-slate-500 hover:text-pink-400'}`}
                               >
-                                <Heart className="w-3.5 h-3.5" />
+                                <Heart className={`w-3.5 h-3.5 ${isFavorite ? 'fill-current' : ''}`} />
                               </button>
                             </div>
                           </motion.div>
@@ -1563,8 +1605,11 @@ export const MusicApp: React.FC = () => {
                     </h3>
 
                     <p className="text-xs text-slate-600 mt-2">
-                      Try another search or import audio
-                      from your computer.
+                      {libraryFilter === 'favorites'
+                        ? 'Save tracks with the heart button to find them here.'
+                        : libraryFilter === 'imported'
+                          ? 'Import audio from your device to build your personal library.'
+                          : 'Try another search or import audio from your device.'}
                     </p>
                   </div>
                 )}
@@ -1644,18 +1689,17 @@ export const MusicApp: React.FC = () => {
             </div>
 
             <button
-              onClick={() =>
-                setIsFavorite(!isFavorite)
-              }
+              onClick={() => toggleFavorite(currentTrack.id)}
+              aria-label={isTrackFavorite(currentTrack.id) ? 'Remove from favorites' : 'Add to favorites'}
               className={`ml-auto ${
-                isFavorite
+                isTrackFavorite(currentTrack.id)
                   ? 'text-pink-400'
                   : 'text-slate-600 hover:text-white'
               }`}
             >
               <Heart
                 className={`w-4 h-4 ${
-                  isFavorite
+                  isTrackFavorite(currentTrack.id)
                     ? 'fill-current'
                     : ''
                 }`}
@@ -1668,10 +1712,12 @@ export const MusicApp: React.FC = () => {
             <div className="flex items-center gap-3">
               <button
                 onClick={() =>
-                  setIsShuffle(!isShuffle)
+                  setShuffleTracks(!shuffleTracks)
                 }
+                aria-label={shuffleTracks ? 'Turn shuffle off' : 'Shuffle songs'}
+                title={shuffleTracks ? 'Shuffle is on' : 'Shuffle songs'}
                 className={`hidden sm:block ${
-                  isShuffle
+                  shuffleTracks
                     ? 'text-pink-400'
                     : 'text-slate-600 hover:text-white'
                 }`}
@@ -1711,11 +1757,11 @@ export const MusicApp: React.FC = () => {
               </button>
 
               <button
-                onClick={() =>
-                  setIsRepeat(!isRepeat)
-                }
+                onClick={() => setRepeatTrack(!repeatTrack)}
+                aria-label={repeatTrack ? 'Turn repeat off' : 'Repeat current song'}
+                title={repeatTrack ? 'Repeat current song is on' : 'Repeat current song'}
                 className={`hidden sm:block ${
-                  isRepeat
+                  repeatTrack
                     ? 'text-pink-400'
                     : 'text-slate-600 hover:text-white'
                 }`}

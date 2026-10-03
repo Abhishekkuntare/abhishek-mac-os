@@ -26,14 +26,19 @@ import {
   Clipboard,
   ListChecks,
   LayoutGrid,
+  Maximize2,
+  Minimize2,
+  HardDrive,
 } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { sound } from '../../services/soundService';
+import { MascotMark } from '../system/MascotMark';
 
 export const MenuBar: React.FC = () => {
   const {
     user,
     settings,
+    resolvedTheme,
     updateSettings,
     openApp,
     lockSystem,
@@ -48,12 +53,26 @@ export const MenuBar: React.FC = () => {
     setShowNotificationCenter,
     setShowMissionControl,
     notifications,
+    isFullscreen,
+    toggleFullscreen,
   } = useOS();
 
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  const [localAccessResponse, setLocalAccessResponse] = useState(
+    () => localStorage.getItem('abhishek_os_local_access_response_v2'),
+  );
 
   const menuBarRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const syncLocalAccessResponse = () => {
+      setLocalAccessResponse(localStorage.getItem('abhishek_os_local_access_response_v2'));
+    };
+
+    window.addEventListener('local-access-changed', syncLocalAccessResponse);
+    return () => window.removeEventListener('local-access-changed', syncLocalAccessResponse);
+  }, []);
 
   // Live time ticker
   useEffect(() => {
@@ -94,7 +113,12 @@ export const MenuBar: React.FC = () => {
     setActiveMenu(null);
   };
 
-  const isLight = settings.theme === 'light';
+  const isLight = resolvedTheme === 'light';
+
+  const requestLocalAccess = () => {
+    sound.playClick();
+    window.dispatchEvent(new Event('request-local-access-prompt'));
+  };
 
   // Format time
   const formatTime = (date: Date) => {
@@ -112,6 +136,14 @@ export const MenuBar: React.FC = () => {
   };
 
   const unreadNotifs = notifications.filter((n) => !n.read).length;
+  const verticalMenuBar = settings.menuBarPosition === 'left' || settings.menuBarPosition === 'right';
+  const menuBarPositionClass = settings.menuBarPosition === 'bottom'
+    ? 'bottom-0 left-0 right-0 h-8'
+    : settings.menuBarPosition === 'left'
+      ? 'left-0 top-0 bottom-0 w-12 flex-col justify-start gap-3 px-1 py-2'
+      : settings.menuBarPosition === 'right'
+        ? 'right-0 top-0 bottom-0 w-12 flex-col justify-start gap-3 px-1 py-2'
+        : 'top-0 left-0 right-0 h-8';
 
   // ---------------------------------------------------------
   // EDIT ACTIONS
@@ -197,18 +229,60 @@ export const MenuBar: React.FC = () => {
   return (
     <div
       ref={menuBarRef}
-      className={`fixed top-0 left-0 right-0 h-8 px-3 flex items-center justify-between z-50 electron-drag-region text-xs font-medium select-none transition-colors duration-200 ${
+      data-menu-bar-orientation={verticalMenuBar ? 'vertical' : 'horizontal'}
+      className={`fixed ${menuBarPositionClass} px-3 flex items-center justify-between z-[10000] electron-drag-region text-xs font-medium select-none transition-colors duration-200 ${
         isLight
           ? 'glass-menubar-light text-slate-800'
           : 'glass-menubar text-white'
       }`}
     >
+      {verticalMenuBar ? (
+        <div className="electron-no-drag flex h-full w-full flex-col items-center gap-2">
+          <button
+            type="button"
+            aria-label="Abhishek OS menu"
+            title="Abhishek OS"
+            onClick={() => setShowAboutModal(true)}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl hover:bg-white/10"
+          >
+            <MascotMark className="h-7 w-7" />
+          </button>
+          <button type="button" aria-label="Search" title="Search" onClick={() => setShowSpotlight(true)} className="rounded-lg p-2 hover:bg-white/10"><Search className="h-4 w-4" /></button>
+          <button type="button" aria-label="Control Center" title="Control Center" onClick={() => setShowControlCenter(!showControlCenter)} className="rounded-lg p-2 hover:bg-white/10"><Sliders className="h-4 w-4" /></button>
+          <button type="button" aria-label="Notifications" title="Notifications" onClick={() => setShowNotificationCenter(!showNotificationCenter)} className="rounded-lg p-2 hover:bg-white/10"><Bell className="h-4 w-4" /></button>
+          <button type="button" aria-label="Settings" title="Settings" onClick={() => openApp('settings')} className="rounded-lg p-2 hover:bg-white/10"><Settings className="h-4 w-4" /></button>
+          <AnimatePresence>
+            {localAccessResponse === 'deferred' && (
+              <motion.button
+                type="button"
+                aria-label="Allow Finder access"
+                title="Allow access to all drives"
+                onClick={requestLocalAccess}
+                initial={{ opacity: 0, y: 6, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 6, scale: 0.9 }}
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.94 }}
+                transition={{ duration: 0.18 }}
+                className="rounded-lg border border-sky-400/20 bg-sky-400/10 p-2 text-sky-300 shadow-[0_0_14px_rgba(56,189,248,0.12)] hover:bg-sky-400/20"
+              >
+                <HardDrive className="h-4 w-4" />
+              </motion.button>
+            )}
+          </AnimatePresence>
+          <button type="button" aria-label="Fullscreen" title="Fullscreen" onClick={toggleFullscreen} className="rounded-lg p-2 hover:bg-white/10"><Maximize2 className="h-4 w-4" /></button>
+          <div className="mt-auto flex flex-col items-center gap-1 pb-1 text-[9px] text-slate-400">
+            <span>{formatTime(currentTime).split(' ').at(-1)}</span>
+            <span>{settings.brightness}%</span>
+          </div>
+        </div>
+      ) : (
+        <>
       {/* =====================================================
           LEFT MENUS
       ====================================================== */}
 
       <div className="flex items-center gap-1">
-
         {/* =====================================================
             ABHISHEK OS LOGO MENU
         ====================================================== */}
@@ -216,6 +290,8 @@ export const MenuBar: React.FC = () => {
         <div className="relative">
           <button
             type="button"
+            aria-label="Abhishek OS menu"
+            title="Abhishek OS"
             className={`electron-no-drag flex items-center justify-center px-2 py-0.5 rounded-md transition-colors ${
               activeMenu === 'os'
                 ? 'bg-white/20'
@@ -223,14 +299,7 @@ export const MenuBar: React.FC = () => {
             }`}
             onClick={() => toggleMenu('os')}
           >
-            {/* Signature Abhishek OS Geometric "A" glyph */}
-            <svg
-              className="w-4 h-4 text-sky-400"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <path d="M12 2L2 22h4.5l2-4.5h7l2 4.5H22L12 2zm0 6l2.3 5.5h-4.6L12 8z" />
-            </svg>
+            <MascotMark className="h-7 w-7" />
           </button>
 
           <AnimatePresence>
@@ -780,7 +849,7 @@ export const MenuBar: React.FC = () => {
                   </div>
 
                   <span className="text-[10px] text-slate-400 font-mono">
-                    ⌃↑
+                    Win+Tab
                   </span>
                 </button>
 
@@ -848,6 +917,52 @@ export const MenuBar: React.FC = () => {
         >
           Help
         </button>
+
+        <span className="mx-1 h-4 w-px bg-white/15" aria-hidden="true" />
+
+        <button
+          type="button"
+          onClick={() => {
+            toggleFullscreen();
+            sound.playClick();
+          }}
+          title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          className="electron-no-drag inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold text-white/85 transition-colors hover:bg-white/10"
+        >
+          {isFullscreen ? (
+            <Minimize2 className="h-3.5 w-3.5 text-sky-300" />
+          ) : (
+            <Maximize2 className="h-3.5 w-3.5 text-sky-300" />
+          )}
+          <span className="hidden sm:inline">
+            {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+          </span>
+        </button>
+
+        <AnimatePresence>
+          {localAccessResponse === 'deferred' && (
+            <motion.button
+              type="button"
+              onClick={requestLocalAccess}
+              title="Allow access to all drives"
+              aria-label="Allow Finder access"
+              initial={{ opacity: 0, x: 8, scale: 0.96 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 8, scale: 0.96 }}
+              whileHover={{ y: -1, scale: 1.02 }}
+              whileTap={{ scale: 0.97 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className={`electron-no-drag inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+                isLight
+                  ? 'border-sky-600/15 bg-sky-600/10 text-sky-800 hover:bg-sky-600/15'
+                  : 'border-sky-300/20 bg-sky-400/10 text-sky-200 shadow-[0_0_16px_rgba(56,189,248,0.12)] hover:bg-sky-400/20'
+              }`}
+            >
+              <HardDrive className="h-3.5 w-3.5 shrink-0" />
+              <span>Allow Finder Access</span>
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* =====================================================
@@ -1003,6 +1118,8 @@ export const MenuBar: React.FC = () => {
           )}
         </button>
       </div>
+        </>
+      )}
     </div>
   );
 };

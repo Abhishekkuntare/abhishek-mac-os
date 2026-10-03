@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { X, Cpu, HardDrive, Monitor, ShieldCheck, Mail, Sparkles } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { sound } from '../../services/soundService';
+import { MascotMark } from './MascotMark';
 
 export const AboutModal: React.FC = () => {
   const { showAboutModal, setShowAboutModal, openApp } = useOS();
@@ -32,13 +33,14 @@ export const AboutModal: React.FC = () => {
         </button>
 
         <div className="flex items-center gap-4 mb-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-sky-500 via-indigo-600 to-pink-500 flex items-center justify-center shadow-xl p-0.5 shrink-0">
-            <div className="w-full h-full rounded-[14px] bg-slate-950 flex items-center justify-center">
-              <svg className="w-8 h-8 text-sky-400" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2L2 22h4.5l2-4.5h7l2 4.5H22L12 2zm0 6l2.3 5.5h-4.6L12 8z" />
-              </svg>
-            </div>
-          </div>
+          <motion.div
+            className="shrink-0"
+            whileHover={{ scale: 1.06, rotate: -2 }}
+            whileTap={{ scale: 0.94 }}
+            transition={{ type: 'spring', stiffness: 360, damping: 22 }}
+          >
+            <MascotMark className="h-16 w-16" />
+          </motion.div>
 
           <div>
             <h2 className="text-xl font-extrabold tracking-tight">Abhishek OS</h2>

@@ -2,34 +2,1487 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   shell,
   ipcMain,
   nativeTheme,
+  clipboard,
+  net,
+  protocol,
 } from 'electron';
 
 import electronUpdater from 'electron-updater';
+import dotenv from 'dotenv';
+import { GoogleGenAI } from '@google/genai';
 
 
 
-import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import http from 'node:http';
+import { installCodeRuntime, runCode } from './code-runner.mjs';
 
 const { autoUpdater } = electronUpdater;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, '.env'), quiet: true });
 
 const isDev = !app.isPackaged;
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'abhishek-local',
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    corsEnabled: true,
+    stream: true,
+  },
+}]);
 
 let mainWindow = null;
 let viteProcess = null;
+let pendingBluetoothSelection = null;
+let previousCpuTimes = null;
+let localTrashOperation = Promise.resolve();
+const execFileAsync = promisify(execFile);
+const readCpuTimes = () => os.cpus().reduce((total, cpu) => {
+  Object.keys(cpu.times).forEach(key => {
+    total[key] = (total[key] || 0) + cpu.times[key];
+  });
+  return total;
+}, {});
+const localFoldersFile = () => path.join(app.getPath('userData'), 'local-folders.json');
+const fullAccessFile = () => path.join(app.getPath('userData'), 'full-filesystem-access.json');
+const appTrashDirectory = () => path.join(app.getPath('userData'), 'file-trash');
+const appTrashManifest = () => path.join(app.getPath('userData'), 'file-trash.json');
+const assertTrustedFilesFrame = event => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Local file access is only available to the Abhishek OS desktop window.');
+  }
+};
+
+const isTrustedCodeRunnerFrame = frame => {
+  if (!frame || frame !== mainWindow?.webContents.mainFrame) return false;
+
+  if (isDev) {
+    try {
+      const url = new URL(frame.url);
+      const expectedPort = process.env.ELECTRON_VITE_PORT || '5173';
+      return (
+        url.protocol === 'http:' &&
+        ['localhost', '127.0.0.1'].includes(url.hostname) &&
+        url.port === expectedPort
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  if (!frame.url.startsWith('file:')) return false;
+  try {
+    return path.resolve(fileURLToPath(frame.url)) ===
+      path.resolve(__dirname, 'dist', 'index.html');
+  } catch {
+    return false;
+  }
+};
+
+ipcMain.handle('code:run', (event, request) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Code execution is only available to the Abhishek OS desktop window.');
+  }
+  if (!request || typeof request !== 'object' || Array.isArray(request)) {
+    throw new Error('Invalid code execution request.');
+  }
+  return runCode(request);
+});
+
+ipcMain.handle('code:installRuntime', (event, language) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Runtime installation is only available to the Abhishek OS desktop window.');
+  }
+  return installCodeRuntime(language);
+});
+
+ipcMain.handle('ghost-ai:isConfigured', event => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Ghost AI is only available to the Abhishek OS desktop window.');
+  }
+  return Boolean(process.env.GEMINI_API_KEY?.trim());
+});
+
+ipcMain.handle('ghost-ai:chat', async (event, request) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Ghost AI is only available to the Abhishek OS desktop window.');
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error('Gemini is not configured. Set GEMINI_API_KEY in .env and restart Abhishek OS.');
+  }
+
+  const allowedModels = new Set(['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro']);
+  if (
+    !request ||
+    typeof request !== 'object' ||
+    Array.isArray(request) ||
+    !allowedModels.has(request.model) ||
+    !Array.isArray(request.messages) ||
+    request.messages.length < 1 ||
+    request.messages.length > 40
+  ) {
+    throw new Error('Invalid Ghost AI chat request.');
+  }
+
+  const messages = request.messages.map(message => {
+    if (
+      !message ||
+      typeof message !== 'object' ||
+      !['user', 'assistant'].includes(message.role) ||
+      typeof message.content !== 'string' ||
+      !message.content.trim() ||
+      message.content.length > 20_000
+    ) {
+      throw new Error('Invalid message in Ghost AI chat request.');
+    }
+    return { role: message.role, content: message.content };
+  });
+  const totalCharacters = messages.reduce((sum, message) => sum + message.content.length, 0);
+  if (totalCharacters > 100_000) {
+    throw new Error('This conversation is too long. Start a new chat and try again.');
+  }
+
+  const genAI = new GoogleGenAI({ apiKey });
+  const response = await genAI.models.generateContent({
+    model: request.model,
+    contents: messages.map(message => ({
+      role: message.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: message.content }],
+    })),
+    config: {
+      systemInstruction:
+        'You are Ghost, a thoughtful, helpful assistant inside Abhishek OS. Be clear, accurate, and warm. If you are unsure or lack current information, say so. Use concise answers unless the user asks for detail.',
+      abortSignal: AbortSignal.timeout(60_000),
+    },
+  });
+
+  const content = response.text;
+  if (typeof content !== 'string' || !content.trim()) {
+    throw new Error('Gemini returned an empty response.');
+  }
+  return content.trim();
+});
+
+ipcMain.handle('window:capturePreview', async (event, bounds) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Window previews are only available to the Abhishek OS desktop window.');
+  }
+  if (
+    !bounds ||
+    !['x', 'y', 'width', 'height'].every(key =>
+      Number.isFinite(bounds[key])
+    ) ||
+    bounds.width <= 0 ||
+    bounds.height <= 0
+  ) {
+    throw new Error('Invalid window preview bounds.');
+  }
+
+  const contentBounds = mainWindow.getContentBounds();
+  const x = Math.max(0, Math.floor(bounds.x));
+  const y = Math.max(0, Math.floor(bounds.y));
+  const right = Math.min(contentBounds.width, Math.ceil(bounds.x + bounds.width));
+  const bottom = Math.min(contentBounds.height, Math.ceil(bounds.y + bounds.height));
+  if (right <= x || bottom <= y) {
+    throw new Error('The window is outside the visible desktop area.');
+  }
+
+  const image = await mainWindow.webContents.capturePage({
+    x,
+    y,
+    width: right - x,
+    height: bottom - y,
+  });
+  if (image.isEmpty()) {
+    throw new Error('Electron returned an empty window preview.');
+  }
+  return image.resize({ width: 560 }).toDataURL();
+});
+
+ipcMain.handle('studio:clipboardRead', event => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Clipboard access is only available to the Abhishek OS desktop window.');
+  }
+  return clipboard.readText();
+});
+
+ipcMain.handle('studio:clipboardWrite', (event, text) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Clipboard access is only available to the Abhishek OS desktop window.');
+  }
+  if (typeof text !== 'string') {
+    throw new Error('Clipboard contents must be text.');
+  }
+  clipboard.writeText(text);
+});
+
+ipcMain.handle('files:chooseFolders', event => {
+  assertTrustedFilesFrame(event);
+  return chooseLocalFolders();
+});
+ipcMain.handle('files:getFolders', event => {
+  assertTrustedFilesFrame(event);
+  return getAuthorizedFolders();
+});
+ipcMain.handle('files:grantAllDrives', event => {
+  assertTrustedFilesFrame(event);
+  return grantFullFilesystemAccess();
+});
+ipcMain.handle('files:revokeAllDrives', event => {
+  assertTrustedFilesFrame(event);
+  return revokeFullFilesystemAccess();
+});
+ipcMain.handle('files:removeFolder', (event, folderPath) => {
+  assertTrustedFilesFrame(event);
+  return removeLocalFolder(folderPath);
+});
+ipcMain.handle('files:listFolder', (event, folderPath) => {
+  assertTrustedFilesFrame(event);
+  return listLocalFolder(folderPath);
+});
+ipcMain.handle('files:openPath', (event, targetPath) => {
+  assertTrustedFilesFrame(event);
+  return openAuthorizedLocalPath(targetPath);
+});
+ipcMain.handle('files:openCodeFile', (event, targetPath) => {
+  assertTrustedFilesFrame(event);
+  return openAuthorizedCodeFile(targetPath);
+});
+ipcMain.handle('files:openCodePath', (event, targetPath) => {
+  assertTrustedFilesFrame(event);
+  return openAuthorizedCodePath(targetPath);
+});
+ipcMain.handle('files:readImage', (event, targetPath) => {
+  assertTrustedFilesFrame(event);
+  return readAuthorizedImage(targetPath);
+});
+ipcMain.handle('files:getMediaUrl', async (event, targetPath) => {
+  assertTrustedFilesFrame(event);
+  if (!(await isLocalPathAuthorized(targetPath))) {
+    throw new Error('This media file is outside the folders granted to Abhishek OS.');
+  }
+  return `abhishek-local://media/?path=${encodeURIComponent(await fs.realpath(targetPath))}`;
+});
+ipcMain.handle('files:createEntry', (event, parentPath, name, isDirectory) => {
+  assertTrustedFilesFrame(event);
+  if (typeof isDirectory !== 'boolean') throw new Error('Invalid entry type.');
+  return createAuthorizedLocalEntry(parentPath, name, isDirectory);
+});
+ipcMain.handle('files:renameEntry', (event, targetPath, newName) => {
+  assertTrustedFilesFrame(event);
+  return renameAuthorizedLocalEntry(targetPath, newName);
+});
+ipcMain.handle('files:trashEntry', (event, targetPath) => {
+  assertTrustedFilesFrame(event);
+  return runSerializedTrashOperation(() => trashAuthorizedLocalEntry(targetPath));
+});
+ipcMain.handle('files:listTrash', event => {
+  assertTrustedFilesFrame(event);
+  return runSerializedTrashOperation(() => listLocalTrash());
+});
+ipcMain.handle('files:restoreTrashEntry', (event, id) => {
+  assertTrustedFilesFrame(event);
+  return runSerializedTrashOperation(() => restoreLocalTrashEntry(id));
+});
+ipcMain.handle('files:deleteTrashEntry', (event, id) => {
+  assertTrustedFilesFrame(event);
+  return runSerializedTrashOperation(() => deleteLocalTrashEntry(id));
+});
+ipcMain.handle('files:emptyTrash', event => {
+  assertTrustedFilesFrame(event);
+  return runSerializedTrashOperation(() => emptyLocalTrash());
+});
+ipcMain.handle('system:getResourceUsage', async event => {
+  assertTrustedFilesFrame(event);
+  let currentCpuTimes = readCpuTimes();
+  if (!previousCpuTimes) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    currentCpuTimes = readCpuTimes();
+  }
+  let cpuPercent = null;
+  if (previousCpuTimes) {
+    const totalDelta = Object.keys(currentCpuTimes).reduce(
+      (sum, key) => sum + currentCpuTimes[key] - previousCpuTimes[key],
+      0,
+    );
+    const idleDelta = currentCpuTimes.idle - previousCpuTimes.idle;
+    if (totalDelta > 0 && idleDelta >= 0) {
+      cpuPercent = Math.max(0, Math.min(100, Math.round((1 - idleDelta / totalDelta) * 100)));
+    }
+  }
+  previousCpuTimes = currentCpuTimes;
+
+  const totalMemory = os.totalmem();
+  const freeMemory = os.freemem();
+  return {
+    cpuPercent,
+    memoryUsedBytes: totalMemory > 0 ? totalMemory - freeMemory : null,
+    memoryTotalBytes: totalMemory > 0 ? totalMemory : null,
+  };
+});
+ipcMain.handle('files:transferEntries', (event, sourcePaths, destinationPath, move) => {
+  assertTrustedFilesFrame(event);
+  if (typeof move !== 'boolean') throw new Error('Invalid transfer mode.');
+  return transferAuthorizedLocalEntries(sourcePaths, destinationPath, move);
+});
+ipcMain.handle('files:openTerminal', (event, targetPath) => {
+  assertTrustedFilesFrame(event);
+  return openAuthorizedTerminal(targetPath);
+});
+
+async function readLocalFolders() {
+  try {
+    const saved = JSON.parse(await fs.readFile(localFoldersFile(), 'utf8'));
+    return Array.isArray(saved) ? saved.filter(item => item && typeof item.path === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+async function hasFullFilesystemAccess() {
+  try {
+    const grant = JSON.parse(await fs.readFile(fullAccessFile(), 'utf8'));
+    return grant?.granted === true;
+  } catch {
+    return false;
+  }
+}
+
+async function getDriveRoots() {
+  if (process.platform !== 'win32') {
+    return [];
+  }
+
+  const drives = await Promise.all(Array.from('ABCDEFGHIJKLMNOPQRSTUVWXYZ', async letter => {
+    const drivePath = `${letter}:${path.sep}`;
+    try {
+      const stats = await fs.stat(drivePath);
+      return stats.isDirectory()
+        ? { path: drivePath, label: `Drive (${letter}:)`, isDriveRoot: true }
+        : null;
+    } catch {
+      return null;
+    }
+  }));
+
+  return drives.filter(Boolean);
+}
+
+async function getAuthorizedFolders() {
+  if (await hasFullFilesystemAccess()) {
+    return getDriveRoots();
+  }
+  return readLocalFolders();
+}
+
+async function grantFullFilesystemAccess() {
+  if (process.platform !== 'win32') {
+    throw new Error('All-drive access is currently supported on Windows only.');
+  }
+
+  await fs.mkdir(app.getPath('userData'), { recursive: true });
+  await fs.writeFile(fullAccessFile(), JSON.stringify({ granted: true, grantedAt: new Date().toISOString() }), 'utf8');
+  return getAuthorizedFolders();
+}
+
+async function revokeFullFilesystemAccess() {
+  await fs.mkdir(app.getPath('userData'), { recursive: true });
+  await fs.writeFile(fullAccessFile(), JSON.stringify({ granted: false }), 'utf8');
+  return readLocalFolders();
+}
+
+async function isLocalPathAuthorized(candidate) {
+  if (typeof candidate !== 'string' || !path.isAbsolute(candidate)) {
+    return false;
+  }
+
+  let candidateRealPath;
+  try {
+    candidateRealPath = await fs.realpath(candidate);
+  } catch {
+    return false;
+  }
+
+  if (await hasFullFilesystemAccess()) {
+    const roots = await getDriveRoots();
+    for (const root of roots) {
+      try {
+        const rootRealPath = await fs.realpath(root.path);
+        const relative = path.relative(rootRealPath, candidateRealPath);
+        if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
+          return true;
+        }
+      } catch {
+        continue;
+      }
+    }
+    return false;
+  }
+
+  const folders = await readLocalFolders();
+  for (const folder of folders) {
+    try {
+      const rootRealPath = await fs.realpath(folder.path);
+      const relative = path.relative(rootRealPath, candidateRealPath);
+      if (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
+        return true;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return false;
+}
+
+async function chooseLocalFolders() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose folders for Abhishek OS Finder',
+    properties: ['openDirectory', 'multiSelections'],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true, folders: await readLocalFolders() };
+  }
+
+  const selectedFolders = result.filePaths.map(folderPath => ({
+    path: path.resolve(folderPath),
+    label: path.basename(folderPath) || folderPath,
+  }));
+  const existingFolders = await readLocalFolders();
+  const folders = [...new Map([...existingFolders, ...selectedFolders].map(folder => [
+    process.platform === 'win32' ? folder.path.toLowerCase() : folder.path,
+    folder,
+  ])).values()];
+  await fs.mkdir(app.getPath('userData'), { recursive: true });
+  await fs.writeFile(localFoldersFile(), JSON.stringify(folders, null, 2), 'utf8');
+  return { canceled: false, folders };
+}
+
+async function removeLocalFolder(folderPath) {
+  const folders = await readLocalFolders();
+  const normalizedPath = path.resolve(folderPath);
+  const filtered = folders.filter(folder => process.platform === 'win32'
+    ? folder.path.toLowerCase() !== normalizedPath.toLowerCase()
+    : folder.path !== normalizedPath);
+  await fs.mkdir(app.getPath('userData'), { recursive: true });
+  await fs.writeFile(localFoldersFile(), JSON.stringify(filtered, null, 2), 'utf8');
+  return filtered;
+}
+
+async function listLocalFolder(folderPath) {
+  if (folderPath === 'local://drives' && await hasFullFilesystemAccess()) {
+    const now = new Date().toISOString();
+    return (await getDriveRoots()).map(drive => ({
+      name: drive.label,
+      hostPath: drive.path,
+      isDirectory: true,
+      size: 0,
+      extension: '',
+      createdAt: now,
+      updatedAt: now,
+    }));
+  }
+
+  if (!(await isLocalPathAuthorized(folderPath))) {
+    throw new Error('This folder has not been granted to Abhishek OS.');
+  }
+
+  const entries = await fs.readdir(folderPath, { withFileTypes: true });
+  const results = await Promise.all(entries
+    .filter(entry => !entry.isSymbolicLink())
+    .map(async entry => {
+      const entryPath = path.join(folderPath, entry.name);
+      try {
+        const stats = await fs.stat(entryPath);
+        return {
+          name: entry.name,
+          hostPath: entryPath,
+          isDirectory: entry.isDirectory(),
+          size: entry.isDirectory() ? 0 : stats.size,
+          extension: path.extname(entry.name).slice(1).toLowerCase(),
+          createdAt: stats.birthtime.toISOString(),
+          updatedAt: stats.mtime.toISOString(),
+        };
+      } catch {
+        return null;
+      }
+    }));
+
+  return results.filter(Boolean).sort((a, b) => {
+    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+  });
+}
+
+async function openAuthorizedLocalPath(targetPath) {
+  if (!(await isLocalPathAuthorized(targetPath))) {
+    throw new Error('This item is outside the folders granted to Abhishek OS.');
+  }
+  const errorMessage = await shell.openPath(targetPath);
+  if (errorMessage) throw new Error(errorMessage);
+  return '';
+}
+
+const CODE_FILE_EXTENSIONS = new Set([
+  'c', 'cc', 'cpp', 'css', 'go', 'h', 'hpp', 'html', 'java', 'js', 'jsx',
+  'json', 'md', 'py', 'rs', 'scss', 'sh', 'sql', 'ts', 'tsx', 'txt', 'xml',
+]);
+const LOCAL_MEDIA_MIME_TYPES = {
+  aac: 'audio/aac',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  flac: 'audio/flac',
+  gif: 'image/gif',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  m4a: 'audio/mp4',
+  m4v: 'video/mp4',
+  mkv: 'video/x-matroska',
+  mov: 'video/quicktime',
+  mp3: 'audio/mpeg',
+  mp4: 'video/mp4',
+  oga: 'audio/ogg',
+  ogg: 'audio/ogg',
+  opus: 'audio/ogg',
+  png: 'image/png',
+  svg: 'image/svg+xml',
+  wav: 'audio/wav',
+  webm: 'video/webm',
+  webp: 'image/webp',
+};
+
+async function handleLocalMediaRequest(request) {
+  try {
+    const url = new URL(request.url);
+    const targetPath = url.searchParams.get('path');
+    if (!targetPath || !(await isLocalPathAuthorized(targetPath))) {
+      return new Response('This media file is not authorized.', { status: 403 });
+    }
+    const realPath = await fs.realpath(targetPath);
+    const mimeType = LOCAL_MEDIA_MIME_TYPES[path.extname(realPath).slice(1).toLowerCase()];
+    if (!mimeType) {
+      return new Response('Unsupported media type.', { status: 415 });
+    }
+    const stats = await fs.stat(realPath);
+    if (!stats.isFile()) return new Response('Media item is not a file.', { status: 404 });
+    const response = await net.fetch(pathToFileURL(realPath).toString());
+    if (!response.ok) return response;
+    const headers = new Headers(response.headers);
+    headers.set('Content-Type', mimeType);
+    headers.set('Cache-Control', 'no-store');
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  } catch (error) {
+    console.error('[Finder] Failed to stream local media:', error);
+    return new Response('Unable to load this media file.', { status: 404 });
+  }
+}
+
+async function findVSCodeExecutable() {
+  if (process.platform === 'win32') {
+    const candidates = [
+      process.env.VSCODE_PATH,
+      process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'Microsoft VS Code', 'Code.exe'),
+      process.env.ProgramFiles && path.join(process.env.ProgramFiles, 'Microsoft VS Code', 'Code.exe'),
+      process.env['ProgramFiles(x86)'] && path.join(process.env['ProgramFiles(x86)'], 'Microsoft VS Code', 'Code.exe'),
+      process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'Microsoft VS Code Insiders', 'Code - Insiders.exe'),
+      process.env.ProgramFiles && path.join(process.env.ProgramFiles, 'Microsoft VS Code Insiders', 'Code - Insiders.exe'),
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+      const executable = candidate.toLowerCase().endsWith('.exe')
+        ? candidate
+        : path.join(candidate, 'Code.exe');
+      try {
+        await fs.access(executable);
+        return executable;
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+    }
+    try {
+      const { stdout } = await execFileAsync('where.exe', ['Code.exe']);
+      const executable = stdout.split(/\r?\n/).map(value => value.trim()).find(Boolean);
+      if (executable) return executable;
+    } catch (error) {
+      if (error.code !== 'ENOENT' && error.code !== 1) throw error;
+    }
+    return null;
+  }
+
+  const executable = process.platform === 'darwin' ? 'code' : 'code';
+  try {
+    const { stdout } = await execFileAsync('which', [executable]);
+    return stdout.trim().split(/\r?\n/)[0] || null;
+  } catch (error) {
+    if (error.code === 'ENOENT' || error.code === 1) return null;
+    throw error;
+  }
+}
+
+const launchDetached = (executable, args) => new Promise((resolve, reject) => {
+  const child = spawn(executable, args, {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  child.once('error', reject);
+  child.once('spawn', () => {
+    child.removeAllListeners('error');
+    child.unref();
+    resolve();
+  });
+});
+
+async function openAuthorizedCodeFile(targetPath) {
+  if (!(await isLocalPathAuthorized(targetPath))) {
+    throw new Error('This item is outside the folders granted to Abhishek OS.');
+  }
+  const extension = path.extname(targetPath).slice(1).toLowerCase();
+  if (!CODE_FILE_EXTENSIONS.has(extension)) {
+    throw new Error('This file type is not supported by Code Studio.');
+  }
+
+  const executable = await findVSCodeExecutable();
+  if (executable) {
+    try {
+      await launchDetached(executable, ['--reuse-window', targetPath]);
+      return { opened: true };
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+
+  const stats = await fs.stat(targetPath);
+  if (!stats.isFile() || stats.size > 5 * 1024 * 1024) {
+    throw new Error('VS Code was not found and this file is too large to open in Code Studio (5 MB limit).');
+  }
+  return { opened: false, content: await fs.readFile(targetPath, 'utf8') };
+}
+
+async function openAuthorizedCodePath(targetPath) {
+  if (!(await isLocalPathAuthorized(targetPath))) {
+    throw new Error('This location is outside the folders granted to Abhishek OS.');
+  }
+  const stats = await fs.stat(targetPath);
+  if (stats.isFile()) return openAuthorizedCodeFile(targetPath);
+  if (!stats.isDirectory()) throw new Error('This location cannot be opened in VS Code.');
+  const executable = await findVSCodeExecutable();
+  if (!executable) return { opened: false };
+  await launchDetached(executable, ['--reuse-window', targetPath]);
+  return { opened: true };
+}
+
+async function readAuthorizedImage(targetPath) {
+  if (!(await isLocalPathAuthorized(targetPath))) {
+    throw new Error('This image is outside the folders granted to Abhishek OS.');
+  }
+  const mimeTypes = {
+    avif: 'image/avif',
+    bmp: 'image/bmp',
+    gif: 'image/gif',
+    jpeg: 'image/jpeg',
+    jpg: 'image/jpeg',
+    png: 'image/png',
+    svg: 'image/svg+xml',
+    webp: 'image/webp',
+  };
+  const extension = path.extname(targetPath).slice(1).toLowerCase();
+  const mimeType = mimeTypes[extension];
+  if (!mimeType) throw new Error('This image format cannot be previewed in Finder.');
+  const stats = await fs.stat(targetPath);
+  if (!stats.isFile() || stats.size > 2 * 1024 * 1024) {
+    throw new Error('Image preview and wallpaper actions support files up to 2 MB.');
+  }
+  const image = await fs.readFile(targetPath);
+  return `data:${mimeType};base64,${image.toString('base64')}`;
+}
+
+async function createAuthorizedLocalEntry(parentPath, name, isDirectory) {
+  if (!(await isLocalPathAuthorized(parentPath))) {
+    throw new Error('This folder has not been granted to Abhishek OS.');
+  }
+  if (
+    typeof name !== 'string' ||
+    !name.trim() ||
+    name !== path.basename(name) ||
+    /[<>:"/\\|?*\x00-\x1f]/.test(name) ||
+    name.endsWith('.')
+  ) {
+    throw new Error('Enter a valid file or folder name.');
+  }
+  const targetPath = path.join(parentPath, name);
+  if (isDirectory) {
+    await fs.mkdir(targetPath);
+  } else {
+    const handle = await fs.open(targetPath, 'wx');
+    await handle.close();
+  }
+  return targetPath;
+}
+
+async function renameAuthorizedLocalEntry(sourcePath, newName) {
+  if (!(await isLocalPathAuthorized(sourcePath))) {
+    throw new Error('This item is outside the folders granted to Abhishek OS.');
+  }
+  if (
+    typeof newName !== 'string' ||
+    !newName.trim() ||
+    newName !== path.basename(newName) ||
+    /[<>:"/\\|?*\x00-\x1f]/.test(newName) ||
+    newName.endsWith('.')
+  ) {
+    throw new Error('Enter a valid file or folder name.');
+  }
+  const parentPath = path.dirname(sourcePath);
+  if (!(await isLocalPathAuthorized(parentPath))) {
+    throw new Error('The parent folder is outside the folders granted to Abhishek OS.');
+  }
+  const destinationPath = path.join(parentPath, newName);
+  try {
+    await fs.lstat(destinationPath);
+    throw new Error(`An item named "${newName}" already exists in this folder.`);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  await fs.rename(sourcePath, destinationPath);
+  return destinationPath;
+}
+
+async function trashAuthorizedLocalEntry(targetPath) {
+  if (!(await isLocalPathAuthorized(targetPath))) {
+    throw new Error('This item is outside the folders granted to Abhishek OS.');
+  }
+  const sourcePath = await fs.realpath(targetPath);
+  const stats = await fs.lstat(targetPath);
+  if (sourcePath === path.parse(sourcePath).root) {
+    throw new Error('A drive or filesystem root cannot be moved to Trash.');
+  }
+
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const trashPath = path.join(appTrashDirectory(), id);
+  const entry = {
+    id,
+    name: path.basename(targetPath),
+    type: getTrashEntryType(targetPath, stats.isDirectory()),
+    extension: path.extname(targetPath).slice(1).toLowerCase(),
+    size: stats.isFile() ? stats.size : 0,
+    deletedAt: new Date().toISOString(),
+    originalPath: targetPath,
+    trashPath,
+  };
+
+  await ensureAppTrashDirectory();
+  const entries = await readLocalTrashManifest();
+  entries.push(entry);
+  await writeLocalTrashManifest(entries);
+  try {
+    await fs.rename(targetPath, trashPath);
+  } catch (error) {
+    if (error.code === 'EXDEV') {
+      try {
+        await fs.cp(targetPath, trashPath, { recursive: true, errorOnExist: true, force: false, dereference: false });
+      } catch (copyError) {
+        await writeLocalTrashManifest(entries.filter(item => item.id !== id));
+        throw copyError;
+      }
+      try {
+        await fs.rm(targetPath, { recursive: true });
+      } catch (removeError) {
+        throw new Error(`The item was copied into app Trash, but the original could not be removed: ${removeError.message}`);
+      }
+    } else {
+      await writeLocalTrashManifest(entries.filter(item => item.id !== id));
+      throw error;
+    }
+  }
+}
+
+function runSerializedTrashOperation(operation) {
+  const result = localTrashOperation.then(operation, operation);
+  localTrashOperation = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+function getTrashEntryType(targetPath, isDirectory) {
+  if (isDirectory) return 'folder';
+  const extension = path.extname(targetPath).slice(1).toLowerCase();
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif'].includes(extension)) return 'image';
+  if (['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v'].includes(extension)) return 'video';
+  if (['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'opus'].includes(extension)) return 'audio';
+  if (['ts', 'tsx', 'js', 'jsx', 'json', 'html', 'css', 'scss', 'py', 'java', 'c', 'cpp', 'rs', 'go', 'sh', 'sql', 'md'].includes(extension)) return 'code';
+  if (['zip', '7z', 'rar', 'tar', 'gz'].includes(extension)) return 'archive';
+  return 'file';
+}
+
+async function readLocalTrashManifest() {
+  try {
+    const parsed = JSON.parse(await fs.readFile(appTrashManifest(), 'utf8'));
+    return Array.isArray(parsed) ? parsed.filter(item =>
+      item && typeof item.id === 'string' &&
+      typeof item.originalPath === 'string' &&
+      typeof item.trashPath === 'string'
+    ) : [];
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw new Error(`Unable to read app Trash: ${error.message}`);
+  }
+}
+
+async function writeLocalTrashManifest(entries) {
+  await fs.mkdir(app.getPath('userData'), { recursive: true });
+  const filePath = appTrashManifest();
+  const temporaryPath = `${filePath}.tmp`;
+  await fs.writeFile(temporaryPath, JSON.stringify(entries, null, 2), 'utf8');
+  await fs.rename(temporaryPath, filePath);
+}
+
+async function ensureAppTrashDirectory() {
+  await fs.mkdir(app.getPath('userData'), { recursive: true });
+  try {
+    await fs.mkdir(appTrashDirectory());
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+  }
+  const rootStats = await fs.lstat(appTrashDirectory());
+  if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) {
+    throw new Error('The app Trash folder is not a safe directory.');
+  }
+}
+
+async function resolveAppTrashPath(entry) {
+  await ensureAppTrashDirectory();
+  const root = path.resolve(appTrashDirectory());
+  const target = path.resolve(entry.trashPath);
+  const relative = path.relative(root, target);
+  if (
+    !relative ||
+    relative.startsWith(`..${path.sep}`) ||
+    relative === '..' ||
+    path.isAbsolute(relative) ||
+    path.dirname(target) !== root ||
+    path.basename(target) !== entry.id
+  ) {
+    throw new Error('Invalid item path in app Trash.');
+  }
+  return target;
+}
+
+async function listLocalTrash() {
+  const entries = await readLocalTrashManifest();
+  const available = [];
+  for (const entry of entries) {
+    try {
+      const trashPath = await resolveAppTrashPath(entry);
+      await fs.lstat(trashPath);
+      available.push({
+        id: entry.id,
+        name: entry.name,
+        type: entry.type,
+        extension: entry.extension || '',
+        size: entry.size,
+        deletedAt: entry.deletedAt,
+        originalLocation: path.dirname(entry.originalPath),
+      });
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+  if (available.length !== entries.length) {
+    const availableIds = new Set(available.map(item => item.id));
+    await writeLocalTrashManifest(entries.filter(entry => availableIds.has(entry.id)));
+  }
+  return available;
+}
+
+async function restoreLocalTrashEntry(id) {
+  const entries = await readLocalTrashManifest();
+  const entry = entries.find(item => item.id === id);
+  if (!entry) throw new Error('This item is no longer in app Trash.');
+  const trashPath = await resolveAppTrashPath(entry);
+  const originalPath = path.resolve(entry.originalPath);
+  let destination = originalPath;
+  try {
+    await fs.lstat(destination);
+    const extension = entry.type === 'folder' ? '' : path.extname(originalPath);
+    const baseName = path.basename(originalPath, extension);
+    destination = path.join(path.dirname(originalPath), `${baseName} (restored)${extension}`);
+    let suffix = 2;
+    while (true) {
+      try {
+        await fs.lstat(destination);
+        destination = path.join(path.dirname(originalPath), `${baseName} (restored ${suffix++})${extension}`);
+      } catch (error) {
+        if (error.code === 'ENOENT') break;
+        throw error;
+      }
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  await fs.mkdir(path.dirname(destination), { recursive: true });
+  await fs.rename(trashPath, destination);
+  await writeLocalTrashManifest(entries.filter(item => item.id !== id));
+  return destination;
+}
+
+async function deleteLocalTrashEntry(id) {
+  const entries = await readLocalTrashManifest();
+  const entry = entries.find(item => item.id === id);
+  if (!entry) return false;
+  await fs.rm(await resolveAppTrashPath(entry), { recursive: true, force: false });
+  await writeLocalTrashManifest(entries.filter(item => item.id !== id));
+  return true;
+}
+
+async function emptyLocalTrash() {
+  const entries = await readLocalTrashManifest();
+  for (const entry of entries) {
+    try {
+      await fs.rm(await resolveAppTrashPath(entry), { recursive: true, force: false });
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+  await writeLocalTrashManifest([]);
+  return entries.length;
+}
+
+async function transferAuthorizedLocalEntries(sourcePaths, destinationPath, move) {
+  if (!(await isLocalPathAuthorized(destinationPath))) {
+    throw new Error('The destination folder has not been granted to Abhishek OS.');
+  }
+  const destinationStats = await fs.stat(destinationPath);
+  if (!destinationStats.isDirectory()) throw new Error('The destination is not a folder.');
+  if (!Array.isArray(sourcePaths) || sourcePaths.length === 0 || sourcePaths.length > 100) {
+    throw new Error('Select between 1 and 100 items to transfer.');
+  }
+
+  const transferred = [];
+  for (const sourcePath of sourcePaths) {
+    if (!(await isLocalPathAuthorized(sourcePath))) {
+      throw new Error('A selected item is outside the folders granted to Abhishek OS.');
+    }
+    const sourceStats = await fs.lstat(sourcePath);
+    if (!sourceStats.isFile() && !sourceStats.isDirectory()) {
+      throw new Error('A selected item cannot be copied or moved.');
+    }
+    const baseName = path.basename(sourcePath);
+    const normalizedSource = path.resolve(sourcePath);
+    const normalizedDestination = path.resolve(destinationPath);
+    const relativeDestination = path.relative(normalizedSource, normalizedDestination);
+    if (
+      move &&
+      (normalizedSource === normalizedDestination ||
+        (relativeDestination && !relativeDestination.startsWith(`..${path.sep}`) &&
+          relativeDestination !== '..' && !path.isAbsolute(relativeDestination)))
+    ) {
+      throw new Error('A folder cannot be moved into itself or one of its subfolders.');
+    }
+    let targetPath = path.join(destinationPath, baseName);
+    try {
+      await fs.access(targetPath);
+      if (move) throw new Error(`"${baseName}" already exists in the destination folder.`);
+      const extension = path.extname(baseName);
+      const stem = extension ? baseName.slice(0, -extension.length) : baseName;
+      let copyIndex = 1;
+      do {
+        const suffix = copyIndex === 1 ? ' - Copy' : ` - Copy ${copyIndex}`;
+        targetPath = path.join(destinationPath, `${stem}${suffix}${extension}`);
+        copyIndex += 1;
+        try {
+          await fs.access(targetPath);
+        } catch (error) {
+          if (error.code === 'ENOENT') break;
+          throw error;
+        }
+      } while (copyIndex < 1000);
+    } catch (error) {
+      if (error.message.includes('already exists')) throw error;
+      if (error.code !== 'ENOENT') throw error;
+    }
+
+    if (move) {
+      try {
+        await fs.rename(sourcePath, targetPath);
+      } catch (error) {
+        if (error.code !== 'EXDEV') throw error;
+        await fs.cp(sourcePath, targetPath, { recursive: true, errorOnExist: true, force: false, dereference: false });
+        await shell.trashItem(sourcePath);
+      }
+    } else {
+      await fs.cp(sourcePath, targetPath, { recursive: true, errorOnExist: true, force: false, dereference: false });
+    }
+    transferred.push(targetPath);
+  }
+  return transferred;
+}
+
+async function openAuthorizedTerminal(targetPath) {
+  if (!(await isLocalPathAuthorized(targetPath))) {
+    throw new Error('This folder is outside the folders granted to Abhishek OS.');
+  }
+  const command = process.platform === 'win32'
+    ? 'wt.exe'
+    : process.platform === 'darwin'
+      ? 'open'
+      : 'x-terminal-emulator';
+  const args = process.platform === 'win32'
+    ? ['-d', targetPath]
+    : process.platform === 'darwin'
+      ? ['-a', 'Terminal', targetPath]
+      : ['--working-directory', targetPath];
+  try {
+    await launchDetached(command, args);
+  } catch (error) {
+    if (process.platform !== 'win32' || error.code !== 'ENOENT') throw error;
+    const escapedPath = targetPath.replace(/'/g, "''");
+    await launchDetached('powershell.exe', [
+      '-NoExit',
+      '-Command',
+      `Set-Location -LiteralPath '${escapedPath}'`,
+    ]);
+  }
+}
+
+let connectivityCache = null;
+let connectivityCacheTime = 0;
+let connectivityRequest = null;
+
+async function getConnectivityState() {
+  if (connectivityCache && Date.now() - connectivityCacheTime < 10000) {
+    return connectivityCache;
+  }
+  if (connectivityRequest) {
+    return connectivityRequest;
+  }
+
+  connectivityRequest = queryConnectivityState()
+    .then(state => {
+      connectivityCache = state;
+      connectivityCacheTime = Date.now();
+      return state;
+    })
+    .finally(() => {
+      connectivityRequest = null;
+    });
+
+  return connectivityRequest;
+}
+
+async function queryConnectivityState() {
+  const unavailable = {
+    supported: false,
+    wifi: { enabled: null, connected: null, ssid: null },
+    bluetooth: { enabled: null, connected: null, deviceName: null },
+  };
+
+  if (process.platform !== 'win32') {
+    return unavailable;
+  }
+
+  const script = `
+[void][System.Reflection.Assembly]::LoadWithPartialName('System.Runtime.WindowsRuntime')
+function Wait-WinRtOperation($method, $target, [object[]]$arguments) {
+  $operation = $method.Invoke($target, $arguments)
+  $resultType = $method.ReturnType.GenericTypeArguments[0]
+  $asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -like 'IAsyncOperation*' } | Select-Object -First 1
+  return $asTask.MakeGenericMethod($resultType).Invoke($null, @($operation)).GetAwaiter().GetResult()
+}
+$radioType = [Windows.Devices.Radios.Radio, Windows.System.Devices, ContentType=WindowsRuntime]
+$radioMethod = $radioType.GetMethod('GetRadiosAsync')
+$radios = Wait-WinRtOperation -method $radioMethod -target $null -arguments @()
+$wifiRadio = $radios | Where-Object { $_.Kind.ToString() -eq 'WiFi' } | Select-Object -First 1
+$bluetoothRadio = $radios | Where-Object { $_.Kind.ToString() -eq 'Bluetooth' } | Select-Object -First 1
+$wifiAdapter = Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.NdisPhysicalMedium -eq 9 } | Select-Object -First 1
+$bluetoothAdapter = Get-PnpDevice -Class Bluetooth -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -match '^(USB|PCI)\\\\' -and $_.Status -eq 'OK' } | Select-Object -First 1
+$wlanOutput = netsh.exe wlan show interfaces 2>$null
+$wlanText = $wlanOutput -join [Environment]::NewLine
+$wlanState = [regex]::Match($wlanText, '(?im)^\\s*State\\s*:\\s*(.+?)\\s*$')
+$wlanSsid = [regex]::Match($wlanText, '(?im)^\\s*SSID\\s*:\\s*(.+?)\\s*$')
+$connectionStatusType = [Windows.Devices.Bluetooth.BluetoothConnectionStatus, Windows.Devices.Bluetooth, ContentType=WindowsRuntime]
+$connectionStatus = [Enum]::Parse($connectionStatusType, 'Connected')
+$leType = [Windows.Devices.Bluetooth.BluetoothLEDevice, Windows.Devices.Bluetooth, ContentType=WindowsRuntime]
+$classicType = [Windows.Devices.Bluetooth.BluetoothDevice, Windows.Devices.Bluetooth, ContentType=WindowsRuntime]
+$leSelector = $leType.GetMethod('GetDeviceSelectorFromConnectionStatus').Invoke($null, @($connectionStatus))
+$classicSelector = $classicType.GetMethod('GetDeviceSelectorFromConnectionStatus').Invoke($null, @($connectionStatus))
+$deviceInformationType = [Windows.Devices.Enumeration.DeviceInformation, Windows.Devices.Enumeration, ContentType=WindowsRuntime]
+$findAllMethod = $deviceInformationType.GetMethods() | Where-Object { $_.Name -eq 'FindAllAsync' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType -eq [string] } | Select-Object -First 1
+$connectedBleDevices = Wait-WinRtOperation -method $findAllMethod -target $null -arguments @($leSelector)
+$connectedClassicDevices = Wait-WinRtOperation -method $findAllMethod -target $null -arguments @($classicSelector)
+$connectedDeviceNames = @(@($connectedBleDevices) + @($connectedClassicDevices) | ForEach-Object { $_.Name } | Where-Object { $_ } | Select-Object -Unique)
+[PSCustomObject]@{
+  wifiEnabled = if ($wifiRadio -and $wifiAdapter) { $wifiRadio.State.ToString() -eq 'On' -and $wifiAdapter.Status -ne 'Disabled' } else { $null }
+  wifiConnected = [bool]($wlanState.Success -and $wlanState.Groups[1].Value.Trim() -eq 'connected')
+  ssid = if ($wlanState.Success -and $wlanState.Groups[1].Value.Trim() -eq 'connected' -and $wlanSsid.Success) { $wlanSsid.Groups[1].Value.Trim() } else { $null }
+  bluetoothEnabled = if ($bluetoothRadio -and $bluetoothAdapter) { $bluetoothRadio.State.ToString() -eq 'On' -and $bluetoothAdapter.Status -eq 'OK' } else { $null }
+  bluetoothConnected = [bool]($bluetoothRadio -and $bluetoothRadio.State.ToString() -eq 'On' -and $connectedDeviceNames.Count -gt 0)
+  bluetoothDeviceName = if ($bluetoothRadio -and $bluetoothRadio.State.ToString() -eq 'On') { $connectedDeviceNames -join ', ' } else { $null }
+} | ConvertTo-Json -Compress
+`;
+
+  try {
+    const { stdout } = await execFileAsync('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      script,
+    ], { timeout: 15000, windowsHide: true, maxBuffer: 1024 * 1024 });
+    const host = JSON.parse(stdout.trim() || '{}');
+
+    return {
+      supported: true,
+      wifi: {
+        enabled: typeof host.wifiEnabled === 'boolean' ? host.wifiEnabled : null,
+        connected: Boolean(host.wifiConnected),
+        ssid: typeof host.ssid === 'string' && host.ssid ? host.ssid : null,
+      },
+      bluetooth: {
+        enabled: typeof host.bluetoothEnabled === 'boolean' ? host.bluetoothEnabled : null,
+        connected: typeof host.bluetoothConnected === 'boolean' ? host.bluetoothConnected : null,
+        deviceName: typeof host.bluetoothDeviceName === 'string' && host.bluetoothDeviceName
+          ? host.bluetoothDeviceName
+          : null,
+      },
+    };
+  } catch (error) {
+    console.warn('[Abhishek OS] Connectivity query failed:', error);
+    return unavailable;
+  }
+}
+
+async function setRadioEnabled(kind, enabled) {
+  if (process.platform !== 'win32') throw new Error('Radio controls are supported on Windows only.');
+  const radioKind = kind === 'wifi' ? 'WiFi' : 'Bluetooth';
+  const state = enabled ? 'On' : 'Off';
+  const script = `[void][System.Reflection.Assembly]::LoadWithPartialName('System.Runtime.WindowsRuntime')
+function Wait-WinRtOperation($method, $target, [object[]]$arguments) {
+  $operation = $method.Invoke($target, $arguments)
+  $resultType = $method.ReturnType.GenericTypeArguments[0]
+  $asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -like 'IAsyncOperation*' } | Select-Object -First 1
+  return $asTask.MakeGenericMethod($resultType).Invoke($null, @($operation)).GetAwaiter().GetResult()
+}
+$radioType = [Windows.Devices.Radios.Radio, Windows.System.Devices, ContentType=WindowsRuntime]
+$radioStateType = [Windows.Devices.Radios.RadioState, Windows.System.Devices, ContentType=WindowsRuntime]
+$statusType = [Windows.Devices.Radios.RadioAccessStatus, Windows.System.Devices, ContentType=WindowsRuntime]
+$accessMethod = $radioType.GetMethod('RequestAccessAsync')
+$accessStatus = Wait-WinRtOperation -method $accessMethod -target $null -arguments @()
+if ($accessStatus.ToString() -ne 'Allowed') { throw '${radioKind} radio access was denied by Windows: ' + $accessStatus.ToString() }
+$radioMethod = $radioType.GetMethod('GetRadiosAsync')
+$radios = Wait-WinRtOperation -method $radioMethod -target $null -arguments @()
+$radio = $radios | Where-Object { $_.Kind.ToString() -eq '${radioKind}' } | Select-Object -First 1
+if (-not $radio) { throw '${radioKind} radio was not found.' }
+$desiredState = [Enum]::Parse($radioStateType, '${state}')
+$setMethod = $radioType.GetMethod('SetStateAsync')
+$status = Wait-WinRtOperation -method $setMethod -target $radio -arguments @($desiredState)
+if ($status.ToString() -ne 'Allowed') { throw '${radioKind} radio state change was denied by Windows: ' + $status.ToString() }`;
+  try {
+    await execFileAsync('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      script,
+    ], { timeout: 30000, windowsHide: true, maxBuffer: 1024 * 1024 });
+  } catch {
+    const adapterScript = kind === 'wifi'
+      ? `$ErrorActionPreference = 'Stop'
+$adapter = Get-NetAdapter -Physical -ErrorAction Stop | Where-Object { $_.NdisPhysicalMedium -eq 9 } | Select-Object -First 1
+if (-not $adapter) { throw 'No Wi-Fi adapter was found.' }
+${enabled ? 'Enable' : 'Disable'}-NetAdapter -Name $adapter.Name -Confirm:$false -ErrorAction Stop`
+      : `$ErrorActionPreference = 'Stop'
+    $adapter = Get-PnpDevice -Class Bluetooth -ErrorAction Stop | Where-Object { $_.InstanceId -match '^(USB|PCI)\\\\' } | Select-Object -First 1
+if (-not $adapter) { throw 'No Bluetooth adapter was found.' }
+${enabled ? 'Enable' : 'Disable'}-PnpDevice -InstanceId $adapter.InstanceId -Confirm:$false -ErrorAction Stop`;
+    const encodedScript = Buffer.from(adapterScript, 'utf16le').toString('base64');
+    const launchScript = `$ErrorActionPreference = 'Stop'; $elevated = Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList '-NoProfile -NonInteractive -EncodedCommand ${encodedScript}' -Wait -PassThru; exit $elevated.ExitCode`;
+    await execFileAsync('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      launchScript,
+    ], { timeout: 60000, windowsHide: true, maxBuffer: 1024 * 1024 });
+  }
+
+  connectivityCache = null;
+  return getConnectivityState();
+}
+
+const setWifiEnabled = enabled => setRadioEnabled('wifi', enabled);
+const setBluetoothEnabled = enabled => setRadioEnabled('bluetooth', enabled);
+
+async function scanWifiNetworks(includeProfileNames = false) {
+  if (process.platform !== 'win32') {
+    throw new Error('Nearby Wi-Fi scanning is currently supported on Windows only.');
+  }
+  const state = await getConnectivityState();
+  if (state.wifi.enabled !== true) {
+    throw new Error('Turn on Wi-Fi before scanning for nearby networks.');
+  }
+
+  const scannerSource = `
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+
+public static class AbhishekWlanScanner {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+  private struct InterfaceInfo {
+    public Guid InterfaceGuid;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string Description;
+    public uint State;
+  }
+  [StructLayout(LayoutKind.Sequential)]
+  private struct AvailableNetwork {
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string ProfileName;
+    public Ssid NetworkSsid;
+    public uint BssType;
+    public uint NumberOfBssids;
+    [MarshalAs(UnmanagedType.Bool)] public bool NetworkConnectable;
+    public uint NotConnectableReason;
+    public uint NumberOfPhyTypes;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)] public uint[] PhyTypes;
+    [MarshalAs(UnmanagedType.Bool)] public bool MorePhyTypes;
+    public uint SignalQuality;
+    [MarshalAs(UnmanagedType.Bool)] public bool SecurityEnabled;
+    public uint Authentication;
+    public uint Cipher;
+    public uint Flags;
+    public uint Reserved;
+  }
+  [StructLayout(LayoutKind.Sequential)]
+  private struct Ssid {
+    public uint Length;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)] public byte[] Bytes;
+  }
+  [DllImport("wlanapi.dll")] private static extern int WlanOpenHandle(uint version, IntPtr reserved, out uint negotiatedVersion, out IntPtr client);
+  [DllImport("wlanapi.dll")] private static extern int WlanEnumInterfaces(IntPtr client, IntPtr reserved, out IntPtr list);
+  [DllImport("wlanapi.dll")] private static extern int WlanScan(IntPtr client, ref Guid interfaceGuid, IntPtr ssid, IntPtr ies, IntPtr reserved);
+  [DllImport("wlanapi.dll")] private static extern int WlanGetAvailableNetworkList(IntPtr client, ref Guid interfaceGuid, uint flags, IntPtr reserved, out IntPtr list);
+  [DllImport("wlanapi.dll")] private static extern void WlanFreeMemory(IntPtr memory);
+  [DllImport("wlanapi.dll")] private static extern int WlanCloseHandle(IntPtr client, IntPtr reserved);
+
+  private static void Check(int error) {
+    if (error != 0) throw new Win32Exception(error);
+  }
+  public static object[] Scan() {
+    IntPtr client = IntPtr.Zero;
+    IntPtr interfaceList = IntPtr.Zero;
+    var results = new List<object>();
+    try {
+      uint version;
+      Check(WlanOpenHandle(2, IntPtr.Zero, out version, out client));
+      Check(WlanEnumInterfaces(client, IntPtr.Zero, out interfaceList));
+      uint count = (uint)Marshal.ReadInt32(interfaceList);
+      var interfaces = new List<Guid>();
+      long baseOffset = interfaceList.ToInt64() + 8;
+      int interfaceSize = Marshal.SizeOf(typeof(InterfaceInfo));
+      for (int i = 0; i < count; i++) {
+        var item = (InterfaceInfo)Marshal.PtrToStructure(new IntPtr(baseOffset + i * interfaceSize), typeof(InterfaceInfo));
+        interfaces.Add(item.InterfaceGuid);
+        Check(WlanScan(client, ref item.InterfaceGuid, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero));
+      }
+      Thread.Sleep(2500);
+      foreach (Guid interfaceGuid in interfaces) {
+        Guid currentGuid = interfaceGuid;
+        IntPtr networkList = IntPtr.Zero;
+        try {
+          Check(WlanGetAvailableNetworkList(client, ref currentGuid, 3, IntPtr.Zero, out networkList));
+          uint networkCount = (uint)Marshal.ReadInt32(networkList);
+          long networkOffset = networkList.ToInt64() + 8;
+          int networkSize = Marshal.SizeOf(typeof(AvailableNetwork));
+          for (int i = 0; i < networkCount; i++) {
+            var network = (AvailableNetwork)Marshal.PtrToStructure(new IntPtr(networkOffset + i * networkSize), typeof(AvailableNetwork));
+            uint length = Math.Min(network.NetworkSsid.Length, 32);
+            string ssid = Encoding.UTF8.GetString(network.NetworkSsid.Bytes, 0, (int)length);
+            if (String.IsNullOrWhiteSpace(ssid)) continue;
+            results.Add(new {
+              ssid = ssid,
+              signal = (int)Math.Min(network.SignalQuality, 100),
+              security = network.SecurityEnabled ? ((AuthenticationAlgorithm)network.Authentication).ToString() : "Open",
+              profileName = network.ProfileName ?? ""
+            });
+          }
+        } finally {
+          if (networkList != IntPtr.Zero) WlanFreeMemory(networkList);
+        }
+      }
+      return results.ToArray();
+    } finally {
+      if (interfaceList != IntPtr.Zero) WlanFreeMemory(interfaceList);
+      if (client != IntPtr.Zero) WlanCloseHandle(client, IntPtr.Zero);
+    }
+  }
+  private enum AuthenticationAlgorithm : uint {
+    Open = 1, Shared = 2, WPA = 3, WPA_PSK = 4, WPA2 = 6, WPA2_PSK = 7,
+    WPA3 = 8, WPA3_SAE = 9, OWE = 10, WPA3_ENT = 11, WPA3_ENT_192 = 12
+  }
+}`;
+  const script = `Add-Type -TypeDefinition @'\n${scannerSource}\n'@ -ErrorAction Stop\n$items = [AbhishekWlanScanner]::Scan()\nConvertTo-Json -InputObject @($items) -Compress -Depth 4`;
+  const { stdout } = await execFileAsync('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    script,
+  ], { timeout: 20000, windowsHide: true, maxBuffer: 1024 * 1024 });
+  const scanned = JSON.parse(stdout.trim() || '[]');
+  let networks = Array.isArray(scanned) ? scanned : [scanned];
+  if (networks.length === 0) {
+    const [{ stdout: netshOutput }, { stdout: profilesOutput }] = await Promise.all([
+      execFileAsync('netsh.exe', ['wlan', 'show', 'networks', 'mode=bssid'], {
+        timeout: 15000,
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+      }),
+      execFileAsync('netsh.exe', ['wlan', 'show', 'profiles'], {
+        timeout: 10000,
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+      }),
+    ]);
+    const savedProfiles = new Set(
+      [...profilesOutput.matchAll(/^\s*(?:All User Profile|User Profile)\s*:\s*(.+?)\s*$/gim)]
+        .map(match => match[1]),
+    );
+    const ssidMatches = [...netshOutput.matchAll(/^\s*SSID\s+\d+\s*:\s*(.*?)\s*$/gim)];
+    networks = ssidMatches.flatMap((match, index) => {
+      const ssid = match[1];
+      if (!ssid) return [];
+      const blockEnd = ssidMatches[index + 1]?.index ?? netshOutput.length;
+      const block = netshOutput.slice(match.index, blockEnd);
+      const signals = [...block.matchAll(/^\s*Signal\s*:\s*(\d+)\s*%/gim)]
+        .map(signal => Number(signal[1]));
+      const authentication = block.match(/^\s*Authentication\s*:\s*(.+?)\s*$/im)?.[1];
+      const savedProfile = savedProfiles.has(ssid) ? ssid : '';
+      return [{
+        ssid,
+        signal: signals.length ? Math.max(...signals) : 0,
+        security: authentication || 'Unknown security',
+        profileName: savedProfile,
+      }];
+    });
+  }
+  const connectedSsid = state.wifi.connected ? state.wifi.ssid : null;
+  const strongestBySsid = new Map();
+  for (const network of networks) {
+    if (typeof network.ssid !== 'string' || !network.ssid.trim()) continue;
+    const previous = strongestBySsid.get(network.ssid);
+    if (!previous || Number(network.signal) > Number(previous.signal)) {
+      strongestBySsid.set(network.ssid, network);
+    }
+  }
+  return [...strongestBySsid.values()]
+    .sort((left, right) => Number(right.signal) - Number(left.signal))
+    .map(network => {
+      const scannedNetwork = {
+        ssid: network.ssid,
+        signal: Number(network.signal),
+        security: ({
+          Open: 'Open',
+          WPA_PSK: 'WPA-Personal',
+          WPA2_PSK: 'WPA2-Personal',
+          WPA3_SAE: 'WPA3-Personal',
+          WPA: 'WPA-Enterprise',
+          WPA2: 'WPA2-Enterprise',
+          WPA3_ENT: 'WPA3-Enterprise',
+        })[network.security] || network.security || 'Unknown security',
+        connected: network.ssid === connectedSsid,
+        saved: typeof network.profileName === 'string' && network.profileName.length > 0,
+      };
+      if (includeProfileNames) scannedNetwork.profileName = network.profileName || '';
+      return scannedNetwork;
+    });
+}
+
+async function connectWifi(ssid) {
+  if (typeof ssid !== 'string' || !ssid.trim() || ssid.length > 32) {
+    throw new Error('Choose a valid Wi-Fi network name.');
+  }
+  const state = await getConnectivityState();
+  if (state.wifi.enabled !== true) throw new Error('Turn on Wi-Fi before connecting.');
+  const networks = await scanWifiNetworks(true);
+  const network = networks.find(item => item.ssid === ssid);
+  if (!network) throw new Error('That Wi-Fi network is no longer in range. Scan again and retry.');
+  if (!network.saved || !network.profileName) {
+    throw new Error('This network has no saved Windows profile. Connect to it in Windows Wi-Fi settings first.');
+  }
+  await execFileAsync('netsh.exe', [
+    'wlan',
+    'connect',
+    `name=${network.profileName}`,
+    `ssid=${network.ssid}`,
+  ], { timeout: 15000, windowsHide: true, maxBuffer: 1024 * 1024 });
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  connectivityCache = null;
+  const updatedState = await getConnectivityState();
+  if (!updatedState.wifi.connected || updatedState.wifi.ssid !== ssid) {
+    throw new Error(`Windows did not connect to ${ssid}. Check its saved profile or password.`);
+  }
+}
+
+function chooseBluetoothDevice(deviceId) {
+  if (!pendingBluetoothSelection) return false;
+  const callback = pendingBluetoothSelection;
+  pendingBluetoothSelection = null;
+  callback(typeof deviceId === 'string' ? deviceId : '');
+  return true;
+}
+
+async function openWindowsBluetoothSettings() {
+  if (process.platform !== 'win32') {
+    throw new Error('Windows Bluetooth settings are only available on Windows.');
+  }
+  await shell.openExternal('ms-settings:bluetooth');
+}
 
 /* =========================================================
    WAIT FOR VITE
 ========================================================= */
 
-function waitForServer(url, timeout = 30000) {
+function waitForServer(url, timeout = 90000) {
   const started = Date.now();
 
   return new Promise((resolve, reject) => {
@@ -110,6 +1563,7 @@ async function startDevServer() {
       env: {
         ...process.env,
         BROWSER: 'none',
+        ELECTRON_RUN_AS_NODE: '1',
       },
     }
   );
@@ -343,6 +1797,15 @@ function setupAutoUpdater() {
    CREATE WINDOW
 ========================================================= */
 
+function isAllowedBrowserUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -374,6 +1837,8 @@ async function createWindow() {
 
       sandbox: true,
 
+      webviewTag: true,
+
       spellcheck: true,
     },
   });
@@ -389,12 +1854,56 @@ async function createWindow() {
     }
   );
 
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    if (!isAllowedBrowserUrl(params.src)) {
+      event.preventDefault();
+      return;
+    }
+
+    delete webPreferences.preload;
+    delete webPreferences.preloadURL;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+    webPreferences.webSecurity = true;
+    webPreferences.allowRunningInsecureContent = false;
+    webPreferences.partition = 'persist:abhishek-browser';
+  });
+
+  mainWindow.webContents.on('did-attach-webview', (_event, webContents) => {
+    webContents.setWindowOpenHandler(({ url }) => {
+      if (isAllowedBrowserUrl(url)) {
+        mainWindow?.webContents.send('browser:open-url', url);
+      }
+      return { action: 'deny' };
+    });
+
+    const blockUnsafeNavigation = (event, url) => {
+      if (!isAllowedBrowserUrl(url)) event.preventDefault();
+    };
+    webContents.on('will-navigate', blockUnsafeNavigation);
+    webContents.on('will-redirect', blockUnsafeNavigation);
+  });
+
   mainWindow.on(
     'closed',
     () => {
+      chooseBluetoothDevice('');
       mainWindow = null;
     }
   );
+
+  mainWindow.webContents.on('select-bluetooth-device', (event, devices, callback) => {
+    event.preventDefault();
+    pendingBluetoothSelection = callback;
+    mainWindow?.webContents.send('system:bluetooth-devices', devices.map(device => ({
+      deviceId: device.deviceId,
+      deviceName: device.deviceName || 'Unnamed Bluetooth device',
+      deviceType: device.deviceType,
+      paired: device.paired,
+      connected: device.connected,
+    })));
+  });
 
   /* =======================================================
      EXTERNAL LINKS
@@ -525,6 +2034,7 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   nativeTheme.themeSource = 'dark';
+  await protocol.handle('abhishek-local', handleLocalMediaRequest);
 
   /* =======================================================
      WINDOW CONTROLS
@@ -602,6 +2112,40 @@ app.whenReady().then(async () => {
     'app:version',
     () => app.getVersion()
   );
+
+  ipcMain.handle(
+    'system:getConnectivityState',
+      event => {
+        assertTrustedFilesFrame(event);
+        return getConnectivityState();
+      }
+    );
+    ipcMain.handle('system:setWifiEnabled', (event, enabled) => {
+      assertTrustedFilesFrame(event);
+      if (typeof enabled !== 'boolean') throw new Error('Invalid Wi-Fi state.');
+      return setWifiEnabled(enabled);
+  });
+    ipcMain.handle('system:setBluetoothEnabled', (event, enabled) => {
+      assertTrustedFilesFrame(event);
+      if (typeof enabled !== 'boolean') throw new Error('Invalid Bluetooth state.');
+      return setBluetoothEnabled(enabled);
+    });
+    ipcMain.handle('system:scanWifiNetworks', event => {
+      assertTrustedFilesFrame(event);
+      return scanWifiNetworks();
+    });
+    ipcMain.handle('system:connectWifi', (event, ssid) => {
+      assertTrustedFilesFrame(event);
+      return connectWifi(ssid);
+    });
+    ipcMain.handle('system:selectBluetoothDevice', (event, deviceId) => {
+      assertTrustedFilesFrame(event);
+      return chooseBluetoothDevice(deviceId);
+    });
+    ipcMain.handle('system:openBluetoothSettings', event => {
+      assertTrustedFilesFrame(event);
+      return openWindowsBluetoothSettings();
+    });
 
   /* =======================================================
      UPDATE CONTROLS

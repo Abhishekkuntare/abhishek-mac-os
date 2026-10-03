@@ -14,6 +14,7 @@ import {
 import { sound } from '../../services/soundService';
 
 type Operator = '+' | '-' | '×' | '÷' | null;
+type CalculatorOperation = Exclude<Operator, null> | '=';
 
 interface HistoryItem {
   id: number;
@@ -171,7 +172,7 @@ export const CalculatorApp: React.FC = () => {
   }, [display, playClick]);
 
   const performOperation = useCallback(
-    (nextOperator: Exclude<Operator, null>) => {
+    (nextOperator: CalculatorOperation) => {
       playClick();
 
       const inputValue = Number.parseFloat(display);
@@ -182,6 +183,7 @@ export const CalculatorApp: React.FC = () => {
       }
 
       if (prevValue === null) {
+        if (nextOperator === '=') return;
         setPrevValue(inputValue);
         setOperator(nextOperator);
         setWaitingForOperand(true);

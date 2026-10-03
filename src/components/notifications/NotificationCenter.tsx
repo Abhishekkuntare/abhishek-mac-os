@@ -13,6 +13,7 @@ export const NotificationCenter: React.FC = () => {
     clearAllNotifications,
     openApp,
     settings,
+    resolvedTheme,
   } = useOS();
 
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -34,7 +35,7 @@ export const NotificationCenter: React.FC = () => {
 
   if (!showNotificationCenter) return null;
 
-  const isLight = settings.theme === 'light';
+  const isLight = resolvedTheme === 'light';
 
   return (
     <AnimatePresence>

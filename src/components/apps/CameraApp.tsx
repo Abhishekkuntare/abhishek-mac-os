@@ -7,7 +7,6 @@ import React, {
 } from 'react';
 import {
   Camera,
-  Download,
   Image as ImageIcon,
   Video,
   SwitchCamera,
@@ -41,6 +40,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { sound } from '../../services/soundService';
+import { useOS } from '../../context/OSContext';
+import { vfs } from '../../services/virtualFileSystem';
 
 type CameraMode = 'photo' | 'video';
 type CaptureType = 'image' | 'video';
@@ -198,8 +199,10 @@ const FILTER_OVERLAYS: Record<FilterType, string> = {
 };
 
 const CameraApp: React.FC = () => {
+  const { addNotification } = useOS();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -232,6 +235,7 @@ const CameraApp: React.FC = () => {
 
   const [lastCapture, setLastCapture] =
     useState<CapturedMedia | null>(null);
+  const [showSaveLocation, setShowSaveLocation] = useState(false);
 
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isPreviewFullscreen, setIsPreviewFullscreen] =
@@ -644,20 +648,28 @@ const CameraApp: React.FC = () => {
     setIsStudioOpen(false);
   };
 
-  const downloadLastCapture = () => {
+  const saveCaptureToApp = async (targetPath: string) => {
     if (!lastCapture) return;
-
-    const extension =
-      lastCapture.type === 'image' ? 'jpg' : 'webm';
-
-    const link = document.createElement('a');
-
-    link.href = lastCapture.url;
-    link.download = `ABHISHEK-OS-${Date.now()}.${extension}`;
-
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    const response = await fetch(lastCapture.url);
+    if (!response.ok) throw new Error('Could not read the captured media.');
+    const blob = await response.blob();
+    const extension = lastCapture.type === 'video'
+      ? 'webm'
+      : blob.type === 'image/webp'
+        ? 'webp'
+        : blob.type === 'image/jpeg'
+          ? 'jpg'
+          : 'png';
+    const name = `ABHISHEK-OS-${Date.now()}.${extension}`;
+    vfs.ensureDirectoryExists(targetPath);
+    await vfs.importBlob(blob, name, targetPath, lastCapture.type);
+    addNotification({
+      appId: 'camera',
+      title: 'Saved in Abhishek OS',
+      message: `${name} was saved in ${targetPath.split('/').pop()}.`,
+      type: 'system',
+    });
+    setShowSaveLocation(false);
   };
 
   const openLastCapture = () => {
@@ -755,6 +767,7 @@ const CameraApp: React.FC = () => {
 
             {/* Filter overlay */}
             <div
+              ref={overlayRef}
               className="pointer-events-none absolute inset-0 transition-all duration-500"
               style={{
                 background:
@@ -1211,11 +1224,11 @@ const CameraApp: React.FC = () => {
               </div>
 
               <button
-                onClick={downloadLastCapture}
+                onClick={() => setShowSaveLocation(true)}
                 className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-black transition hover:scale-105 active:scale-95"
               >
-                <Download className="h-3.5 w-3.5" />
-                Save
+                <ImageIcon className="h-3.5 w-3.5" />
+                Save to Abhishek OS
               </button>
             </div>
 
@@ -1264,7 +1277,7 @@ const CameraApp: React.FC = () => {
                     <motion.div
                       key={sticker.id}
                       drag
-                      dragConstraints="parent"
+                      dragConstraints={overlayRef}
                       initial={{
                         scale: 0,
                         rotate: -20,
@@ -1303,7 +1316,7 @@ const CameraApp: React.FC = () => {
                     <motion.div
                       key={layer.id}
                       drag
-                      dragConstraints="parent"
+                      dragConstraints={overlayRef}
                       initial={{
                         scale: 0,
                         opacity: 0,
@@ -1644,11 +1657,11 @@ const CameraApp: React.FC = () => {
                   </button>
 
                   <button
-                    onClick={downloadLastCapture}
+                    onClick={() => setShowSaveLocation(true)}
                     className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-xs font-bold text-black shadow-[0_8px_25px_rgba(245,158,11,.2)] transition hover:scale-[1.02] active:scale-[.98]"
                   >
-                    <Download className="h-4 w-4" />
-                    SAVE SNAP
+                    <ImageIcon className="h-4 w-4" />
+                    SAVE IN ABHISHEK OS
                   </button>
                 </div>
               </div>
@@ -1707,10 +1720,11 @@ const CameraApp: React.FC = () => {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={downloadLastCapture}
+                  onClick={() => setShowSaveLocation(true)}
                   className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/10 backdrop-blur-xl transition hover:bg-white/20"
+                  title="Save in Abhishek OS"
                 >
-                  <Download className="h-4 w-4" />
+                  <ImageIcon className="h-4 w-4" />
                 </button>
 
                 <button
@@ -1771,10 +1785,61 @@ const CameraApp: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {showSaveLocation && lastCapture && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[350] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
+            onClick={() => setShowSaveLocation(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="camera-save-title"
+              className="w-full max-w-sm rounded-3xl border border-white/15 bg-slate-950 p-5 text-white shadow-2xl"
+              onClick={event => event.stopPropagation()}
+            >
+              <h2 id="camera-save-title" className="text-base font-bold">Save in Abhishek OS</h2>
+              <p className="mt-1 text-xs text-slate-400">Choose where to store this capture inside the app.</p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {[
+                  ['/Users/abhishek/Desktop', 'Desktop'],
+                  ['/Users/abhishek/Documents', 'Documents'],
+                  ['/Users/abhishek/Pictures', 'Pictures'],
+                  ['/Users/abhishek/Videos', 'Videos'],
+                ].map(([path, label]) => (
+                  <button
+                    key={path}
+                    type="button"
+                    onClick={() => void saveCaptureToApp(path).catch(error => {
+                      addNotification({
+                        appId: 'camera',
+                        title: 'Could not save capture',
+                        message: error instanceof Error ? error.message : String(error),
+                        type: 'system',
+                      });
+                    })}
+                    className="rounded-xl border border-white/10 bg-white/[0.05] px-3 py-3 text-left text-sm text-slate-200 transition hover:border-sky-400/40 hover:bg-sky-500/10"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button type="button" onClick={() => setShowSaveLocation(false)} className="mt-4 w-full rounded-xl px-3 py-2 text-xs text-slate-400 hover:bg-white/10">
+                Cancel
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
 
 export default CameraApp;
 export { CameraApp };
-

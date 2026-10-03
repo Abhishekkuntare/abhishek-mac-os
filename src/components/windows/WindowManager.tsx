@@ -1,35 +1,62 @@
-import React from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
+import { AnimatePresence } from 'motion/react';
 import { useOS } from '../../context/OSContext';
 import { WindowFrame } from './WindowFrame';
 
-// Native Applications
-import { FinderApp } from '../apps/FinderApp';
-import { SettingsApp } from '../apps/SettingsApp';
-import { BrowserApp } from '../apps/BrowserApp';
-import { TerminalApp } from '../apps/TerminalApp';
-import { CodeStudioApp } from '../apps/CodeStudioApp';
-import { MusicApp } from '../apps/MusicApp';
-import { PhotosApp } from '../apps/PhotosApp';
-import { TVApp } from '../apps/TVApp';
-import { MessagesApp } from '../apps/MessagesApp';
-import { NotesApp } from '../apps/NotesApp';
-import { MailApp } from '../apps/MailApp';
-import { CalendarApp } from '../apps/CalendarApp';
-import { RemindersApp } from '../apps/RemindersApp';
-import { CalculatorApp } from '../apps/CalculatorApp';
-import { ActivityMonitorApp } from '../apps/ActivityMonitorApp';
-import { AppStoreApp } from '../apps/AppStoreApp';
-import { ScreenshotApp } from '../apps/ScreenshotApp';
-import { MobileLinkApp } from '../apps/MobileLinkApp';
-import { CameraApp } from '../apps/CameraApp';
+const FinderApp = lazy(() => import('../apps/FinderApp').then(module => ({ default: module.FinderApp })));
+const SettingsApp = lazy(() => import('../apps/SettingsApp').then(module => ({ default: module.SettingsApp })));
+const BrowserApp = lazy(() => import('../apps/BrowserApp').then(module => ({ default: module.BrowserApp })));
+const TerminalApp = lazy(() => import('../apps/TerminalApp').then(module => ({ default: module.TerminalApp })));
+const CodeStudioApp = lazy(() => import('../apps/CodeStudioApp').then(module => ({ default: module.CodeStudioApp })));
+const MusicApp = lazy(() => import('../apps/MusicApp').then(module => ({ default: module.MusicApp })));
+const PhotosApp = lazy(() => import('../apps/PhotosApp').then(module => ({ default: module.PhotosApp })));
+const TVApp = lazy(() => import('../apps/TVApp').then(module => ({ default: module.TVApp })));
+const GhostAIApp = lazy(() => import('../apps/GhostAIApp').then(module => ({ default: module.GhostAIApp })));
+const NotesApp = lazy(() => import('../apps/NotesApp').then(module => ({ default: module.NotesApp })));
+const NextpadApp = lazy(() => import('../apps/NextpadApp').then(module => ({ default: module.NextpadApp })));
+const CalendarApp = lazy(() => import('../apps/CalendarApp').then(module => ({ default: module.CalendarApp })));
+const RemindersApp = lazy(() => import('../apps/RemindersApp').then(module => ({ default: module.RemindersApp })));
+const CalculatorApp = lazy(() => import('../apps/CalculatorApp').then(module => ({ default: module.CalculatorApp })));
+const ClockApp = lazy(() => import('../apps/ClockApp').then(module => ({ default: module.ClockApp })));
+const WeatherApp = lazy(() => import('../apps/WeatherApp').then(module => ({ default: module.WeatherApp })));
+const ActivityMonitorApp = lazy(() => import('../apps/ActivityMonitorApp').then(module => ({ default: module.ActivityMonitorApp })));
+const AppStoreApp = lazy(() => import('../apps/AppStoreApp').then(module => ({ default: module.AppStoreApp })));
+const ScreenshotApp = lazy(() => import('../apps/ScreenshotApp').then(module => ({ default: module.ScreenshotApp })));
+const MobileLinkApp = lazy(() => import('../apps/MobileLinkApp').then(module => ({ default: module.MobileLinkApp })));
+const CameraApp = lazy(() => import('../apps/CameraApp').then(module => ({ default: module.CameraApp })));
+const GameCenterApp = lazy(() => import('../apps/GameCenterApp').then(module => ({ default: module.GameCenterApp })));
+
+const AppLoading: React.FC = () => (
+  <div className="flex h-full min-h-40 flex-1 items-center justify-center bg-slate-950/40 text-sm text-slate-400">
+    <span className="animate-pulse">Opening app…</span>
+  </div>
+);
 
 export const WindowManager: React.FC = () => {
-  const { windows, activeSpaceId } = useOS();
+  const { windows, minimizeWindow } = useOS();
 
-  // Filter windows by current desktop space (or windows visible on all)
-  const currentSpaceWindows = windows.filter(
-    w => !w.desktopSpaceId || w.desktopSpaceId === activeSpaceId
-  );
+  useEffect(() => {
+    const handleMinimizeShortcut = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== 'm' ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const focusedWindow = windows
+        .filter(window => !window.isMinimized)
+        .sort((a, b) => Number(b.isFocused) - Number(a.isFocused) || b.zIndex - a.zIndex)[0];
+      if (!focusedWindow) return;
+
+      event.preventDefault();
+      minimizeWindow(focusedWindow.id);
+    };
+
+    window.addEventListener('keydown', handleMinimizeShortcut);
+    return () => window.removeEventListener('keydown', handleMinimizeShortcut);
+  }, [minimizeWindow, windows]);
 
   const renderAppContent = (appId: string) => {
     switch (appId) {
@@ -53,22 +80,28 @@ export const WindowManager: React.FC = () => {
         return <PhotosApp />;
       case 'tv':
         return <TVApp />;
-      case 'messages':
-        return <MessagesApp />;
+      case 'ghostai':
+        return <GhostAIApp />;
       case 'notes':
         return <NotesApp />;
-      case 'mail':
-        return <MailApp />;
+      case 'nextpad':
+        return <NextpadApp />;
       case 'calendar':
         return <CalendarApp />;
       case 'reminders':
         return <RemindersApp />;
       case 'calculator':
         return <CalculatorApp />;
+      case 'clock':
+        return <ClockApp />;
+      case 'weather':
+        return <WeatherApp />;
       case 'activitymonitor':
         return <ActivityMonitorApp />;
       case 'appstore':
         return <AppStoreApp />;
+      case 'gamecenter':
+        return <GameCenterApp />;
       case 'screenshot':
         return <ScreenshotApp />;
       default:
@@ -84,12 +117,14 @@ export const WindowManager: React.FC = () => {
   };
 
   return (
-    <>
-      {currentSpaceWindows.map(win => (
+    <AnimatePresence initial={false}>
+      {windows.map(win => (
         <WindowFrame key={win.id} window={win}>
-          {renderAppContent(win.appId)}
+          <Suspense fallback={<AppLoading />}>
+            {renderAppContent(win.appId)}
+          </Suspense>
         </WindowFrame>
       ))}
-    </>
+    </AnimatePresence>
   );
 };

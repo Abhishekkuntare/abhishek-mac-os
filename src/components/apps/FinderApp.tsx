@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   Folder,
   FileText,
@@ -33,11 +33,23 @@ import {
   Film,
   FileCode,
   FileSpreadsheet,
+  ListFilter,
+  Terminal,
+  Code,
+  ArrowUpDown,
+  Star,
+  Share2,
+  Printer,
+  Save,
+  LockKeyhole,
+  Play,
+  Pause,
 } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { VirtualFile } from '../../types/desktop';
 import { vfs } from '../../services/virtualFileSystem';
 import { sound } from '../../services/soundService';
+import { AppIcon } from '../system/AppIcon';
 
 interface ContextMenuState {
   visible: boolean;
@@ -49,12 +61,127 @@ interface ContextMenuState {
 type SortField = 'name' | 'updatedAt' | 'size' | 'type';
 type SortOrder = 'asc' | 'desc';
 
+const getHostParentPath = (targetPath: string) => {
+  const separatorIndex = Math.max(targetPath.lastIndexOf('\\'), targetPath.lastIndexOf('/'));
+  if (separatorIndex < 0) return targetPath;
+  if (separatorIndex === 2 && /^[a-z]:/i.test(targetPath)) return targetPath.slice(0, 3);
+  return targetPath.slice(0, separatorIndex) || targetPath.slice(0, 1);
+};
+
+const mapLocalFolderEntries = async (entries: LocalFolderEntry[], currentPath: string): Promise<VirtualFile[]> => {
+  const imageExtensions = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif']);
+  const videoExtensions = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v']);
+  const audioExtensions = new Set(['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'opus']);
+  const codeExtensions = new Set(['ts', 'tsx', 'js', 'jsx', 'json', 'html', 'css', 'scss', 'py', 'java', 'c', 'cpp', 'rs', 'go', 'sh', 'sql', 'md']);
+
+  return Promise.all(entries.map(async entry => {
+    const type: VirtualFile['type'] = entry.isDirectory
+      ? 'folder'
+      : imageExtensions.has(entry.extension)
+        ? 'image'
+        : videoExtensions.has(entry.extension)
+          ? 'video'
+          : audioExtensions.has(entry.extension)
+            ? 'audio'
+            : codeExtensions.has(entry.extension)
+              ? 'code'
+              : ['exe', 'msi', 'appx'].includes(entry.extension)
+                ? 'app'
+                : ['zip', 'rar', '7z', 'tar', 'gz'].includes(entry.extension)
+                  ? 'archive'
+                  : 'document';
+    let previewUrl: string | undefined;
+    if (type === 'image' && window.electronAPI?.getMediaUrl) {
+      try {
+        previewUrl = await window.electronAPI.getMediaUrl(entry.hostPath);
+      } catch (error) {
+        console.error(`[Finder] Could not load thumbnail for "${entry.name}":`, error);
+      }
+    }
+    return {
+      id: `host:${entry.hostPath}`,
+      hostPath: entry.hostPath,
+      name: entry.name,
+      path: currentPath,
+      size: entry.size,
+      type,
+      extension: entry.extension,
+      createdAt: entry.createdAt,
+      updatedAt: entry.updatedAt,
+      previewUrl,
+    };
+  }));
+};
+
+const imageUrlToLockWallpaper = async (url: string) => {
+  const image = new window.Image();
+  image.src = url;
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error('Could not load the selected image.'));
+  });
+  const scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Could not prepare the lock screen wallpaper.');
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.82);
+};
+
 export const FinderApp: React.FC = () => {
-  const { setQuickLookFile, openApp, importLocalFiles, connectLocalDirectory, addNotification } = useOS();
+  const {
+    setQuickLookFile,
+    openApp,
+    importLocalFiles,
+    connectLocalDirectory,
+    addNotification,
+    uploadCustomWallpaper,
+    setLockScreenWallpaper,
+  } = useOS();
 
   const [filesState, setFilesState] = useState<VirtualFile[]>(() => vfs.getAllActiveFiles());
+  const [localFolders, setLocalFolders] = useState<LocalFolderGrant[]>([]);
+  const [localFiles, setLocalFiles] = useState<VirtualFile[]>([]);
+  const [favoriteHostPaths, setFavoriteHostPaths] = useState<Array<{
+    path: string;
+    name: string;
+    isDirectory: boolean;
+  }>>(() => {
+    try {
+      const saved = localStorage.getItem('finder-favorite-host-paths');
+      const parsed: unknown = saved ? JSON.parse(saved) : [];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.flatMap(item => {
+        if (typeof item === 'string') {
+          return [{
+            path: item,
+            name: item.split(/[\\/]+/).filter(Boolean).pop() || item,
+            isDirectory: false,
+          }];
+        }
+        if (
+          item &&
+          typeof item === 'object' &&
+          'path' in item &&
+          typeof item.path === 'string' &&
+          'name' in item &&
+          typeof item.name === 'string' &&
+          'isDirectory' in item &&
+          typeof item.isDirectory === 'boolean'
+        ) {
+          return [{ path: item.path, name: item.name, isDirectory: item.isDirectory }];
+        }
+        return [];
+      });
+    } catch {
+      return [];
+    }
+  });
   const [currentPath, setCurrentPath] = useState('/Users/abhishek');
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
+  const [hostClipboard, setHostClipboard] = useState<{ paths: string[]; move: boolean } | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [pathHistory, setPathHistory] = useState<string[]>(['/Users/abhishek']);
@@ -78,6 +205,7 @@ export const FinderApp: React.FC = () => {
   const [renameValue, setRenameValue] = useState('');
 
   const [showInspector, setShowInspector] = useState(false);
+  const [showFolderProperties, setShowFolderProperties] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isDraggingOverFinder, setIsDraggingOverFinder] = useState(false);
 
@@ -87,6 +215,14 @@ export const FinderApp: React.FC = () => {
     y: 0,
     fileId: null,
   });
+  const [contextSubmenu, setContextSubmenu] = useState<'view' | 'sort' | 'new' | null>(null);
+  const [saveToAppFile, setSaveToAppFile] = useState<VirtualFile | null>(null);
+  const [saveDestination, setSaveDestination] = useState('/Users/abhishek/Pictures');
+  const [imageFilmstrip, setImageFilmstrip] = useState<{
+    files: VirtualFile[];
+    index: number;
+    playing: boolean;
+  } | null>(null);
 
   const localFileInputRef = useRef<HTMLInputElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
@@ -96,17 +232,92 @@ export const FinderApp: React.FC = () => {
     setFilesState(vfs.getAllActiveFiles());
   };
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('finder-favorite-host-paths', JSON.stringify(favoriteHostPaths));
+    } catch (error) {
+      console.warn('[Finder] Could not save favorite locations:', error);
+    }
+  }, [favoriteHostPaths]);
+
+  const isBrowsingLocal = currentPath === 'local://drives' || localFolders.some(folder => {
+    const root = folder.path.toLowerCase().replace(/[\\/]+$/, '');
+    const current = currentPath.toLowerCase();
+    return current === root || current.startsWith(`${root}\\`) || current.startsWith(`${root}/`);
+  });
+
+  const refreshLocalFolders = async () => {
+    const folders = await window.electronAPI?.getLocalFolders?.();
+    if (folders) {
+      setLocalFolders(folders);
+      if (folders.some(folder => folder.isDriveRoot) && currentPath === '/Users/abhishek') {
+        setCurrentPath('local://drives');
+        setPathHistory(['local://drives']);
+        setHistoryIndex(0);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleLocalAccessChanged = () => void refreshLocalFolders();
+    void refreshLocalFolders();
+    window.addEventListener('local-access-changed', handleLocalAccessChanged);
+    return () => window.removeEventListener('local-access-changed', handleLocalAccessChanged);
+  }, []);
+
+  useEffect(() => {
+    if (!isBrowsingLocal || !window.electronAPI?.listLocalFolder) {
+      setLocalFiles([]);
+      return;
+    }
+
+    let cancelled = false;
+    window.electronAPI.listLocalFolder(currentPath).then(entries => {
+      if (cancelled) return;
+      void mapLocalFolderEntries(entries, currentPath).then(files => {
+        if (!cancelled) setLocalFiles(files);
+      }).catch(error => {
+        console.warn('[Finder] Could not load local media previews:', error);
+        if (!cancelled) setLocalFiles([]);
+      });
+    }).catch(error => {
+      console.warn('[Finder] Could not list local folder:', error);
+      if (!cancelled) setLocalFiles([]);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPath, isBrowsingLocal]);
+
   const sideNavItems = [
+    ...(localFolders.some(folder => folder.isDriveRoot)
+      ? [{ label: 'This PC', path: 'local://drives', icon: HardDrive }]
+      : []),
     { label: 'Home', path: '/Users/abhishek', icon: HardDrive },
-    { label: 'Desktop', path: '/Users/abhishek/Desktop', icon: Laptop },
-    { label: 'Documents', path: '/Users/abhishek/Documents', icon: Folder },
-    { label: 'Downloads', path: '/Users/abhishek/Downloads', icon: Download },
+    { label: 'Desktop', path: localFolders.find(folder => folder.label.toLowerCase() === 'desktop')?.path || '/Users/abhishek/Desktop', icon: Laptop },
+    { label: 'Documents', path: localFolders.find(folder => folder.label.toLowerCase() === 'documents')?.path || '/Users/abhishek/Documents', icon: Folder },
+    { label: 'Downloads', path: localFolders.find(folder => folder.label.toLowerCase() === 'downloads')?.path || '/Users/abhishek/Downloads', icon: Download },
     { label: 'Local Computer (PC)', path: '/Users/abhishek/Local Computer', icon: Laptop },
     { label: 'Applications', path: '/Applications', icon: Folder },
     { label: 'iCloud Drive', path: '/Users/abhishek/Documents', icon: Cloud },
+    ...favoriteHostPaths.map(favorite => ({
+      label: favorite.name,
+      path: favorite.isDirectory
+        ? favorite.path
+        : getHostParentPath(favorite.path),
+      icon: Star,
+      fileId: favorite.isDirectory ? undefined : `host:${favorite.path}`,
+    })),
+    ...filesState.filter(file => file.isFavorite).map(file => ({
+      label: file.name,
+      path: file.path,
+      icon: Star,
+      fileId: file.id,
+    })),
   ];
 
-  const navigateTo = (path: string) => {
+  const navigateTo = useCallback((path: string) => {
     sound.playClick();
     setCurrentPath(path);
     setSelectedFileIds([]);
@@ -114,7 +325,38 @@ export const FinderApp: React.FC = () => {
     const newHist = [...pathHistory.slice(0, historyIndex + 1), path];
     setPathHistory(newHist);
     setHistoryIndex(newHist.length - 1);
-  };
+  }, [pathHistory, historyIndex]);
+
+  useEffect(() => {
+    const openHostPath = (path: string) => {
+      navigateTo(path);
+    };
+    const handleOpenPath = (event: Event) => {
+      const path = (event as CustomEvent<string>).detail;
+      if (typeof path !== 'string' || path.length === 0) return;
+      try {
+        if (localStorage.getItem('finder-pending-open-path') === path) {
+          localStorage.removeItem('finder-pending-open-path');
+        }
+      } catch (error) {
+        console.warn('[Finder] Could not clear the pending folder request:', error);
+      }
+      openHostPath(path);
+    };
+
+    try {
+      const pendingPath = localStorage.getItem('finder-pending-open-path');
+      if (pendingPath) {
+        localStorage.removeItem('finder-pending-open-path');
+        openHostPath(pendingPath);
+      }
+    } catch (error) {
+      console.warn('[Finder] Could not read the pending folder request:', error);
+    }
+
+    window.addEventListener('finder:open-host-path', handleOpenPath);
+    return () => window.removeEventListener('finder:open-host-path', handleOpenPath);
+  }, [navigateTo]);
 
   const handleBack = () => {
     if (historyIndex > 0) {
@@ -138,7 +380,8 @@ export const FinderApp: React.FC = () => {
 
   // Only direct children when not searching, and full path search when searching
   const currentFiles = useMemo(() => {
-    let list = filesState.filter((file: VirtualFile) => {
+    const sourceFiles = isBrowsingLocal ? localFiles : filesState;
+    let list = sourceFiles.filter((file: VirtualFile) => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         return (
@@ -171,13 +414,27 @@ export const FinderApp: React.FC = () => {
     });
 
     return list;
-  }, [filesState, currentPath, searchQuery, sortField, sortOrder]);
+  }, [filesState, localFiles, isBrowsingLocal, currentPath, searchQuery, sortField, sortOrder]);
 
   const selectedFiles = useMemo(() => {
-    return filesState.filter(f => selectedFileIds.includes(f.id));
-  }, [filesState, selectedFileIds]);
+    const sourceFiles = isBrowsingLocal ? localFiles : filesState;
+    return sourceFiles.filter(f => selectedFileIds.includes(f.id));
+  }, [filesState, localFiles, isBrowsingLocal, selectedFileIds]);
 
   const primarySelectedFile = selectedFiles[0] || null;
+  const contextFile = contextMenu.fileId
+    ? currentFiles.find(file => file.id === contextMenu.fileId) ||
+      filesState.find(file => file.id === contextMenu.fileId) ||
+      null
+    : null;
+  const contextFileIsDriveRoot = !!contextFile?.hostPath && /^[a-z]:\\?$/i.test(contextFile.hostPath);
+  const browsingDriveList = currentPath === 'local://drives';
+
+  const refreshCurrentLocalFiles = async () => {
+    if (!window.electronAPI?.listLocalFolder || !isBrowsingLocal) return;
+    const entries = await window.electronAPI.listLocalFolder(currentPath);
+    setLocalFiles(await mapLocalFolderEntries(entries, currentPath));
+  };
 
   // Auto focus rename input
   useEffect(() => {
@@ -188,21 +445,170 @@ export const FinderApp: React.FC = () => {
   }, [renamingId]);
 
   // Handle open file in correct app
+  const openInCodeStudio = (file: VirtualFile, content = file.content || '') => {
+    const request = {
+      name: file.name,
+      content,
+      path: file.hostPath || `${file.path}/${file.name}`,
+    };
+    try {
+      localStorage.setItem('code-studio-pending-open-file', JSON.stringify(request));
+      openApp('codestudio');
+      window.dispatchEvent(new CustomEvent('code-studio:open-file', { detail: request }));
+    } catch (error) {
+      addNotification({
+        appId: 'finder',
+        title: 'Unable to open in Code Studio',
+        message: error instanceof Error ? error.message : String(error),
+        type: 'system',
+      });
+    }
+  };
+
+  const openCodeFile = async (file: VirtualFile) => {
+    if (!file.hostPath || !window.electronAPI?.openLocalCodeFile) {
+      if (!file.hostPath) {
+        openInCodeStudio(file);
+        return;
+      }
+      try {
+        await window.electronAPI?.openLocalPath(file.hostPath);
+        addNotification({
+          appId: 'finder',
+          title: 'Opened with your default app',
+          message: 'Update and restart Abhishek OS to enable VS Code detection and Code Studio fallback.',
+          type: 'system',
+        });
+      } catch (error) {
+        addNotification({
+          appId: 'finder',
+          title: 'Unable to open code file',
+          message: error instanceof Error ? error.message : String(error),
+          type: 'system',
+        });
+      }
+      return;
+    }
+    try {
+      const result = await window.electronAPI.openLocalCodeFile(file.hostPath);
+      if (!result.opened) openInCodeStudio(file, result.content || '');
+    } catch (error) {
+      try {
+        await window.electronAPI.openLocalPath(file.hostPath);
+        addNotification({
+          appId: 'finder',
+          title: 'Opened with your default app',
+          message: 'The VS Code/Code Studio bridge is missing. Rebuild and restart Abhishek OS to enable its editor integration.',
+          type: 'system',
+        });
+      } catch (fallbackError) {
+        addNotification({
+          appId: 'finder',
+          title: 'Unable to open code file',
+          message: fallbackError instanceof Error
+            ? fallbackError.message
+            : error instanceof Error ? error.message : String(error),
+          type: 'system',
+        });
+      }
+    }
+  };
+
   const handleOpenFile = (file: VirtualFile) => {
     sound.playClick();
     if (file.type === 'folder') {
-      navigateTo(`${currentPath}/${file.name}`);
+      if (file.hostPath) {
+        navigateTo(file.hostPath);
+      } else {
+        setQuickLookFile(file);
+      }
+    } else if (file.type === 'code') {
+      if (file.hostPath) void openCodeFile(file);
+      else setQuickLookFile(file);
+    } else if (file.type === 'image' && file.hostPath) {
+      void openFinderImage(file).catch(error => {
+        addNotification({
+          appId: 'finder',
+          title: 'Unable to preview image',
+          message: error instanceof Error ? error.message : String(error),
+          type: 'system',
+        });
+      });
+    } else if (file.hostPath) {
+      if (!window.electronAPI?.openLocalPath) {
+        addNotification({
+          appId: 'finder',
+          title: 'Desktop app update required',
+          message: 'Restart or reinstall the latest Abhishek OS build to open local files.',
+          type: 'system',
+        });
+        return;
+      }
+      void window.electronAPI.openLocalPath(file.hostPath).catch(error => {
+        addNotification({
+          appId: 'finder',
+          title: 'Unable to open item',
+          message: error instanceof Error ? error.message : String(error),
+          type: 'system',
+        });
+      });
     } else if (file.type === 'image') {
       setQuickLookFile(file);
-    } else if (file.type === 'code' || file.type === 'document') {
-      // Open in Code Studio app
-      openApp('codestudio');
+    } else if (file.type === 'document') {
+      setQuickLookFile(file);
     } else if (file.type === 'audio') {
       openApp('music');
     } else if (file.type === 'video') {
       openApp('tv');
     } else {
       setQuickLookFile(file);
+    }
+  };
+
+  const handleFileDragStart = (event: React.DragEvent, file: VirtualFile) => {
+    const draggedFiles = selectedFileIds.includes(file.id)
+      ? selectedFiles
+      : [file];
+    event.dataTransfer.setData(
+      'application/x-abhishek-os-items',
+      JSON.stringify({
+        items: draggedFiles.map(({ id, hostPath, name, type, size, extension }) => ({
+          id,
+          hostPath,
+          name,
+          type,
+          size,
+          extension,
+        })),
+      })
+    );
+    event.dataTransfer.effectAllowed = 'move';
+  };
+
+  const pasteHostClipboard = async () => {
+    if (!hostClipboard || !window.electronAPI?.transferLocalEntries) return;
+    try {
+      const pasted = await window.electronAPI.transferLocalEntries(
+        hostClipboard.paths,
+        currentPath,
+        hostClipboard.move,
+      );
+      if (hostClipboard.move) setHostClipboard(null);
+      await refreshCurrentLocalFiles();
+      setSelectedFileIds(pasted.map(filePath => `host:${filePath}`));
+      addNotification({
+        appId: 'finder',
+        title: 'Finder',
+        message: `${pasted.length} item(s) ${hostClipboard.move ? 'moved' : 'copied'} successfully`,
+        type: 'system',
+      });
+    } catch (error) {
+      addNotification({
+        appId: 'finder',
+        title: 'Paste failed',
+        message: error instanceof Error ? error.message : String(error),
+        type: 'system',
+      });
     }
   };
 
@@ -214,6 +620,10 @@ export const FinderApp: React.FC = () => {
         if (e.key === 'Escape') {
           setRenamingId(null);
         }
+        return;
+      }
+
+      if (isBrowsingLocal && (e.key === 'Delete' || e.key === 'Backspace')) {
         return;
       }
 
@@ -231,7 +641,14 @@ export const FinderApp: React.FC = () => {
       if (isMod && e.code === 'KeyC') {
         if (selectedFileIds.length > 0) {
           e.preventDefault();
-          vfs.copyFiles(selectedFileIds);
+          if (isBrowsingLocal) {
+            const paths = selectedFiles.flatMap(file =>
+              file.hostPath && !/^[a-z]:\\?$/i.test(file.hostPath) ? [file.hostPath] : []
+            );
+            if (paths.length) setHostClipboard({ paths, move: false });
+          } else {
+            vfs.copyFiles(selectedFileIds);
+          }
           sound.playClick();
           addNotification({
             appId: 'finder',
@@ -247,7 +664,14 @@ export const FinderApp: React.FC = () => {
       if (isMod && e.code === 'KeyX') {
         if (selectedFileIds.length > 0) {
           e.preventDefault();
-          vfs.cutFiles(selectedFileIds);
+          if (isBrowsingLocal) {
+            const paths = selectedFiles.flatMap(file =>
+              file.hostPath && !/^[a-z]:\\?$/i.test(file.hostPath) ? [file.hostPath] : []
+            );
+            if (paths.length) setHostClipboard({ paths, move: true });
+          } else {
+            vfs.cutFiles(selectedFileIds);
+          }
           sound.playClick();
           addNotification({
             appId: 'finder',
@@ -262,6 +686,10 @@ export const FinderApp: React.FC = () => {
       // Paste: Cmd/Ctrl + V
       if (isMod && e.code === 'KeyV') {
         e.preventDefault();
+        if (isBrowsingLocal) {
+          void pasteHostClipboard();
+          return;
+        }
         const pasted = vfs.paste(currentPath);
         if (pasted.length > 0) {
           sound.playClick();
@@ -279,6 +707,7 @@ export const FinderApp: React.FC = () => {
 
       // Duplicate: Cmd/Ctrl + D
       if (isMod && e.code === 'KeyD') {
+        if (isBrowsingLocal) return;
         if (primarySelectedFile) {
           e.preventDefault();
           const dup = vfs.duplicate(primarySelectedFile.id);
@@ -293,12 +722,9 @@ export const FinderApp: React.FC = () => {
 
       // Delete / Move to Trash: Delete, Backspace, or Cmd+Backspace
       if (e.code === 'Delete' || (isMod && e.code === 'Backspace') || e.code === 'Backspace') {
-        if (selectedFileIds.length > 0) {
+        if (selectedFiles.length > 0) {
           e.preventDefault();
-          selectedFileIds.forEach(id => vfs.moveToTrash(id));
-          sound.playTrash();
-          refreshFiles();
-          setSelectedFileIds([]);
+          void trashFinderFiles(selectedFiles);
         }
         return;
       }
@@ -358,15 +784,37 @@ export const FinderApp: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentFiles, selectedFileIds, primarySelectedFile, currentPath, addNotification, setQuickLookFile]);
+  }, [currentFiles, selectedFileIds, selectedFiles, primarySelectedFile, currentPath, addNotification, setQuickLookFile, isBrowsingLocal, hostClipboard, trashFinderFiles]);
 
   // Confirm rename
   const handleSaveRename = () => {
-    if (renamingId && renameValue.trim()) {
-      vfs.rename(renamingId, renameValue.trim());
-      sound.playClick();
-      refreshFiles();
+    if (!renamingId || !renameValue.trim()) {
+      setRenamingId(null);
+      return;
     }
+    const file = currentFiles.find(item => item.id === renamingId);
+    if (file?.name === renameValue.trim()) {
+      setRenamingId(null);
+      return;
+    }
+    if (file?.hostPath && window.electronAPI?.renameLocalEntry) {
+      void window.electronAPI.renameLocalEntry(file.hostPath, renameValue.trim())
+        .then(() => refreshCurrentLocalFiles())
+        .then(() => {
+          sound.playClick();
+          setRenamingId(null);
+        })
+        .catch(error => addNotification({
+          appId: 'finder',
+          title: 'Rename failed',
+          message: error instanceof Error ? error.message : String(error),
+          type: 'system',
+        }));
+      return;
+    }
+    vfs.rename(renamingId, renameValue.trim());
+    sound.playClick();
+    refreshFiles();
     setRenamingId(null);
   };
 
@@ -375,6 +823,22 @@ export const FinderApp: React.FC = () => {
     const rawName = newFileName.trim() || 'Untitled';
     const finalName = rawName.includes('.') ? rawName : `${rawName}.${newFileExtension}`;
     const ext = finalName.split('.').pop() || newFileExtension;
+    if (isBrowsingLocal && window.electronAPI?.createLocalEntry) {
+      void window.electronAPI.createLocalEntry(currentPath, finalName, false)
+        .then(() => refreshCurrentLocalFiles())
+        .then(() => {
+          setShowNewFileModal(false);
+          setNewFileName('');
+          sound.playClick();
+        })
+        .catch(error => addNotification({
+          appId: 'finder',
+          title: 'File creation failed',
+          message: error instanceof Error ? error.message : String(error),
+          type: 'system',
+        }));
+      return;
+    }
     const created = vfs.createFile(finalName, currentPath, newFileType, '', ext);
     refreshFiles();
     setSelectedFileIds([created.id]);
@@ -392,6 +856,21 @@ export const FinderApp: React.FC = () => {
   // Create new folder
   const handleCreateNewFolder = () => {
     const name = newFolderName.trim() || 'Untitled Folder';
+    if (isBrowsingLocal && window.electronAPI?.createLocalEntry) {
+      void window.electronAPI.createLocalEntry(currentPath, name, true)
+        .then(() => refreshCurrentLocalFiles())
+        .then(() => {
+          setShowNewFolderModal(false);
+          sound.playClick();
+        })
+        .catch(error => addNotification({
+          appId: 'finder',
+          title: 'Folder creation failed',
+          message: error instanceof Error ? error.message : String(error),
+          type: 'system',
+        }));
+      return;
+    }
     const created = vfs.createFolder(name, currentPath);
     refreshFiles();
     setSelectedFileIds([created.id]);
@@ -419,11 +898,307 @@ export const FinderApp: React.FC = () => {
       y: e.clientY,
       fileId,
     });
+    setContextSubmenu(null);
+  };
+
+  const closeContextMenu = () => {
+    setContextMenu(prev => ({ ...prev, visible: false }));
+    setContextSubmenu(null);
+  };
+
+  const copyPath = async (file: VirtualFile) => {
+    const target = file.hostPath || `${file.path}/${file.name}`;
+    await copyText(target);
+    addNotification({ appId: 'finder', title: 'Path copied', message: file.name, type: 'system' });
+  };
+
+  const copyText = async (target: string) => {
+    if (window.electronAPI?.writeClipboardText) {
+      await window.electronAPI.writeClipboardText(target);
+    } else if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(target);
+    } else {
+      throw new Error('Clipboard access is unavailable.');
+    }
+  };
+
+  const toggleFinderFavorite = (file: VirtualFile) => {
+    if (file.hostPath) {
+      setFavoriteHostPaths(current =>
+        current.some(item => item.path === file.hostPath)
+          ? current.filter(item => item.path !== file.hostPath)
+          : [...current, {
+              path: file.hostPath!,
+              name: file.name,
+              isDirectory: file.type === 'folder',
+            }]
+      );
+      return;
+    }
+    vfs.toggleFavorite(file.id);
+    refreshFiles();
+  };
+
+  async function trashFinderFiles(requestedFiles: VirtualFile[]) {
+    const filesToTrash = requestedFiles.filter(file => file.type !== 'app');
+    if (filesToTrash.length === 0) {
+      addNotification({
+        appId: 'finder',
+        title: 'Cannot move app icons to Trash',
+        message: 'System and application icons are protected.',
+        type: 'system',
+      });
+      return;
+    }
+    const names = filesToTrash.map(file => file.name).join(', ');
+    if (!window.confirm(`Move ${names} to the app Trash?`)) return;
+
+    const failures: string[] = [];
+    let movedCount = 0;
+    for (const file of filesToTrash) {
+      try {
+        if (file.hostPath) {
+          if (!window.electronAPI?.trashLocalEntry) {
+            throw new Error('Local file deletion is unavailable. Update and restart Abhishek OS.');
+          }
+          await window.electronAPI.trashLocalEntry(file.hostPath);
+        } else if (!vfs.moveToTrash(file.id)) {
+          throw new Error('This item is no longer available.');
+        }
+        movedCount += 1;
+      } catch (error) {
+        failures.push(`${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    refreshFiles();
+    if (filesToTrash.some(file => file.hostPath)) {
+      try {
+        await refreshCurrentLocalFiles();
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    setSelectedFileIds([]);
+    if (movedCount > 0) sound.playTrash();
+    if (failures.length > 0) {
+      addNotification({
+        appId: 'finder',
+        title: movedCount > 0 ? 'Some items could not be moved to Trash' : 'Unable to move items to Trash',
+        message: failures.join('; '),
+        type: 'system',
+      });
+    } else if (movedCount > 0) {
+      addNotification({
+        appId: 'finder',
+        title: 'Moved to Trash',
+        message: `${movedCount} item${movedCount === 1 ? '' : 's'} moved to the app Trash.`,
+        type: 'system',
+      });
+    }
+  }
+
+  const deleteFinderFile = async (file: VirtualFile) => {
+    await trashFinderFiles([file]);
+  };
+
+  const openFinderImage = async (file: VirtualFile, asWallpaper = false) => {
+    let previewUrl = file.previewUrl;
+    if (!previewUrl && file.hostPath) {
+      if (!window.electronAPI?.getMediaUrl) {
+        if (window.electronAPI?.openLocalPath) {
+          await window.electronAPI.openLocalPath(file.hostPath);
+          return;
+        }
+        throw new Error('Image preview is unavailable. Update and restart Abhishek OS.');
+      }
+      try {
+        previewUrl = await window.electronAPI.getMediaUrl(file.hostPath);
+      } catch (error) {
+        if (window.electronAPI?.openLocalPath) {
+          await window.electronAPI.openLocalPath(file.hostPath);
+          return;
+        }
+        throw error;
+      }
+    }
+    if (!previewUrl) throw new Error('This image has no preview data.');
+    if (asWallpaper) uploadCustomWallpaper(previewUrl, file.name);
+    else setQuickLookFile({ ...file, previewUrl });
+  };
+
+  const openImageFilmstrip = async (file: VirtualFile, playing = false) => {
+    const images = currentFiles.filter(item => item.type === 'image');
+    if (!images.some(item => item.id === file.id)) images.unshift(file);
+    const withPreviews = await Promise.all(images.map(async item => {
+      if (item.previewUrl) return item;
+      if (item.hostPath && window.electronAPI?.getMediaUrl) {
+        return { ...item, previewUrl: await window.electronAPI.getMediaUrl(item.hostPath) };
+      }
+      return null;
+    }));
+    const files = withPreviews.filter((item): item is VirtualFile => !!item?.previewUrl);
+    if (!files.length) throw new Error('No image previews are available in this folder.');
+    const index = Math.max(0, files.findIndex(item => item.id === file.id));
+    setImageFilmstrip({ files, index, playing });
+  };
+
+  useEffect(() => {
+    if (!imageFilmstrip?.playing || imageFilmstrip.files.length < 2) return;
+    const timer = window.setInterval(() => {
+      setImageFilmstrip(current => current
+        ? { ...current, index: (current.index + 1) % current.files.length }
+        : null);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [imageFilmstrip?.playing, imageFilmstrip?.files.length]);
+
+  const getMediaBlob = async (file: VirtualFile) => {
+    if (!file.hostPath) return vfs.readMedia(file);
+    const previewUrl = file.previewUrl || await window.electronAPI?.getMediaUrl?.(file.hostPath);
+    if (!previewUrl) throw new Error('Media preview is unavailable for this file.');
+    const response = await fetch(previewUrl);
+    if (!response.ok) throw new Error(`Could not read "${file.name}".`);
+    return response.blob();
+  };
+
+  const saveMediaIntoApp = async (file: VirtualFile, destination: string) => {
+    if (file.type !== 'image' && file.type !== 'video' && file.type !== 'audio') {
+      throw new Error('Only image, video, or audio files can be saved to the app library.');
+    }
+    const targetPath = destination.startsWith('/Users/abhishek/')
+      ? destination
+      : '/Users/abhishek/Pictures';
+    vfs.ensureDirectoryExists(targetPath);
+    const copy = await vfs.importBlob(await getMediaBlob(file), file.name, targetPath, file.type);
+    refreshFiles();
+    setSelectedFileIds([copy.id]);
+    addNotification({
+      appId: 'finder',
+      title: 'Saved in Abhishek OS',
+      message: `${file.name} was saved in ${targetPath.replace('/Users/abhishek/', '')}.`,
+      type: 'system',
+    });
+    setSaveToAppFile(null);
+  };
+
+  const copyImage = async (file: VirtualFile) => {
+    const blob = await getMediaBlob(file);
+    if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+      throw new Error('Image clipboard is not available in this browser. Use Save to Abhishek OS instead.');
+    }
+    const clipboardType = blob.type === 'image/png' ? 'image/png' : 'image/png';
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Could not prepare the image for copying.');
+    context.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const pngBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(result => result ? resolve(result) : reject(new Error('Could not encode the image for copying.')), clipboardType);
+    });
+    await navigator.clipboard.write([new ClipboardItem({ [pngBlob.type]: pngBlob })]);
+  };
+
+  const shareMedia = async (file: VirtualFile) => {
+    const blob = await getMediaBlob(file);
+    if (!navigator.share) throw new Error('Sharing is not supported by this device.');
+    const sharedFile = new File([blob], file.name, { type: blob.type || 'application/octet-stream' });
+    if (navigator.canShare && !navigator.canShare({ files: [sharedFile] })) {
+      throw new Error('This device cannot share this file type.');
+    }
+    await navigator.share({ files: [sharedFile], title: file.name });
+  };
+
+  const printImage = async (file: VirtualFile) => {
+    const blob = await getMediaBlob(file);
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not prepare image for printing.'));
+      reader.onerror = () => reject(reader.error || new Error('Could not prepare image for printing.'));
+      reader.readAsDataURL(blob);
+    });
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) throw new Error('Allow pop-ups to print this image.');
+    printWindow.opener = null;
+    printWindow.document.title = file.name;
+    const style = printWindow.document.createElement('style');
+    style.textContent = 'html,body{margin:0;height:100%;display:grid;place-items:center}img{max-width:100%;max-height:100%;object-fit:contain}@media print{img{max-width:100%;max-height:100vh}}';
+    const image = printWindow.document.createElement('img');
+    image.alt = file.name;
+    image.onload = () => printWindow.print();
+    image.src = dataUrl;
+    printWindow.document.head.append(style);
+    printWindow.document.body.append(image);
+  };
+
+  const resizeImage = async (file: VirtualFile) => {
+    const image = await createImageBitmap(await getMediaBlob(file));
+    const widthInput = window.prompt('New image width in pixels', String(image.width));
+    if (!widthInput) {
+      image.close();
+      return;
+    }
+    const width = Number(widthInput);
+    const heightInput = window.prompt('New image height in pixels', String(Math.max(1, Math.round(image.height * width / image.width))));
+    if (!heightInput) {
+      image.close();
+      return;
+    }
+    const height = Number(heightInput);
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 12000 || height > 12000) {
+      image.close();
+      throw new Error('Image dimensions must be between 1 and 12,000 pixels.');
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      image.close();
+      throw new Error('Could not resize the selected image.');
+    }
+    context.drawImage(image, 0, 0, width, height);
+    image.close();
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(result => result ? resolve(result) : reject(new Error('Could not export the resized image.')), 'image/jpeg', 0.9);
+    });
+    const baseName = file.name.replace(/\.[^.]+$/, '');
+    await vfs.importBlob(blob, `${baseName}-${width}x${height}.jpg`, '/Users/abhishek/Pictures', 'image');
+    refreshFiles();
+    addNotification({ appId: 'finder', title: 'Image resized', message: 'The resized image was saved in Pictures.', type: 'system' });
+  };
+
+  const setImageAsLockWallpaper = async (file: VirtualFile) => {
+    const url = file.previewUrl || (file.hostPath ? await window.electronAPI?.getMediaUrl?.(file.hostPath) : undefined);
+    if (!url) throw new Error('Image preview is unavailable.');
+    setLockScreenWallpaper(await imageUrlToLockWallpaper(url));
+    addNotification({ appId: 'finder', title: 'Lock screen updated', message: 'The lock screen background was changed. Its blur effect is unchanged.', type: 'system' });
+  };
+
+  const contextAction = async (action: () => void | Promise<void>) => {
+    closeContextMenu();
+    try {
+      await action();
+    } catch (error) {
+      addNotification({
+        appId: 'finder',
+        title: 'Finder action failed',
+        message: error instanceof Error ? error.message : String(error),
+        type: 'system',
+      });
+    }
   };
 
   // Close context menu on any global click
   useEffect(() => {
-    const closeMenu = () => {
+    const closeMenu = (event: MouseEvent) => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest('[data-finder-context-menu]')
+      ) return;
       if (contextMenu.visible) {
         setContextMenu(prev => ({ ...prev, visible: false }));
       }
@@ -442,6 +1217,9 @@ export const FinderApp: React.FC = () => {
   };
 
   const getFileIcon = (file: VirtualFile) => {
+    if (file.hostPath && /^[a-z]:\\?$/i.test(file.hostPath)) {
+      return <AppIcon assetId="pcdrive" className="h-14 w-14 object-contain" />;
+    }
     if (file.type === 'folder') return <Folder className="w-10 h-10 text-sky-400 fill-sky-400/20" />;
     switch (file.type) {
       case 'image':
@@ -459,17 +1237,53 @@ export const FinderApp: React.FC = () => {
 
   // Clickable path segments
   const pathSegments = useMemo(() => {
+    if (currentPath === 'local://drives') {
+      return [{ label: 'This PC', fullPath: 'local://drives' }];
+    }
+
+    if (isBrowsingLocal) {
+      const parts = currentPath.split(/[\\/]+/).filter(Boolean);
+      const crumbs: { label: string; fullPath: string }[] = [];
+      let accum = parts[0]?.endsWith(':') ? `${parts[0]}\\` : '';
+      parts.forEach((part, index) => {
+        accum = index === 0 ? accum || part : `${accum.replace(/[\\/]$/, '')}\\${part}`;
+        crumbs.push({ label: part, fullPath: accum });
+      });
+      return crumbs;
+    }
+
     const parts = currentPath.split('/').filter(Boolean);
     const crumbs = [{ label: 'Macintosh HD', fullPath: '/Users/abhishek' }];
     let accum = '';
     for (const part of parts) {
       accum += `/${part}`;
+      if (accum === '/Users/abhishek') continue;
       crumbs.push({ label: part === 'Users' ? 'Users' : part === 'abhishek' ? 'abhishek' : part, fullPath: accum });
     }
     return crumbs;
-  }, [currentPath]);
+  }, [currentPath, isBrowsingLocal]);
 
-  const hasClipboard = !!vfs.getClipboard() && vfs.getClipboard()!.ids.length > 0;
+  const hasVirtualClipboard = !!vfs.getClipboard() && vfs.getClipboard()!.ids.length > 0;
+  const hasClipboard = isBrowsingLocal ? !!hostClipboard : hasVirtualClipboard;
+  const contextItem = (
+    label: string,
+    icon: React.ReactNode,
+    action: () => void | Promise<void>,
+    danger = false,
+  ) => (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={() => void contextAction(action)}
+      className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
+        danger ? 'text-rose-300 hover:bg-rose-500/15' : 'text-slate-200 hover:bg-white/10'
+      }`}
+    >
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-sky-300">{icon}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </button>
+  );
+  const contextDivider = <div className="my-1 h-px bg-white/10" />;
 
   return (
     <div
@@ -547,13 +1361,14 @@ export const FinderApp: React.FC = () => {
         <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
           {/* New File Button */}
           <button
+            disabled={isBrowsingLocal}
             onClick={() => {
               setNewFileName('');
               setNewFileExtension('txt');
               setNewFileType('document');
               setShowNewFileModal(true);
             }}
-            className="px-2.5 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+            className="px-2.5 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 font-semibold flex items-center gap-1.5 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
             title="New File (Cmd+N / Ctrl+N)"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -562,11 +1377,12 @@ export const FinderApp: React.FC = () => {
 
           {/* New Folder Button */}
           <button
+            disabled={isBrowsingLocal}
             onClick={() => {
               setNewFolderName('New Folder');
               setShowNewFolderModal(true);
             }}
-            className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 border border-white/10 font-medium flex items-center gap-1.5 transition-all cursor-pointer"
+            className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 border border-white/10 font-medium flex items-center gap-1.5 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
             title="New Folder (Cmd+Shift+N / Ctrl+Shift+N)"
           >
             <Folder className="w-3.5 h-3.5 text-amber-400" />
@@ -576,14 +1392,16 @@ export const FinderApp: React.FC = () => {
           {/* Paste Button (Active if clipboard has content) */}
           {hasClipboard && (
             <button
-              onClick={() => {
-                const pasted = vfs.paste(currentPath);
-                if (pasted.length > 0) {
-                  sound.playClick();
-                  refreshFiles();
-                  setSelectedFileIds(pasted.map(f => f.id));
-                }
-              }}
+              onClick={() => isBrowsingLocal
+                ? void pasteHostClipboard()
+                : (() => {
+                    const pasted = vfs.paste(currentPath);
+                    if (pasted.length > 0) {
+                      sound.playClick();
+                      refreshFiles();
+                      setSelectedFileIds(pasted.map(file => file.id));
+                    }
+                  })()}
               className="px-2.5 py-1.5 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 font-medium flex items-center gap-1.5 transition-all"
               title="Paste (Cmd+V / Ctrl+V)"
             >
@@ -595,7 +1413,10 @@ export const FinderApp: React.FC = () => {
           {/* Connect PC Disk */}
           <button
             onClick={async () => {
-              if ('showDirectoryPicker' in window) {
+              if (window.electronAPI?.chooseLocalFolders) {
+                const result = await window.electronAPI.chooseLocalFolders();
+                setLocalFolders(result.folders);
+              } else if ('showDirectoryPicker' in window) {
                 await connectLocalDirectory(currentPath);
                 refreshFiles();
               } else {
@@ -610,7 +1431,7 @@ export const FinderApp: React.FC = () => {
           </button>
 
           {/* Upload Button */}
-          <label className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 border border-white/10 font-medium flex items-center gap-1.5 cursor-pointer transition-all">
+          {!isBrowsingLocal && <label className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 border border-white/10 font-medium flex items-center gap-1.5 cursor-pointer transition-all">
             <Upload className="w-3.5 h-3.5 text-purple-400" />
             <span className="hidden sm:inline">Upload</span>
             <input
@@ -624,7 +1445,7 @@ export const FinderApp: React.FC = () => {
               }}
               className="hidden"
             />
-          </label>
+          </label>}
 
           {/* Sort Dropdown */}
           <div className="relative">
@@ -750,6 +1571,9 @@ export const FinderApp: React.FC = () => {
                     key={item.label}
                     onClick={() => {
                       navigateTo(item.path);
+                      if ('fileId' in item && item.fileId) {
+                        setSelectedFileIds([item.fileId]);
+                      }
                       setMobileSidebarOpen(false);
                     }}
                     className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left transition-colors cursor-pointer ${
@@ -764,6 +1588,80 @@ export const FinderApp: React.FC = () => {
                 );
               })}
             </div>
+            {localFolders.length > 0 && (
+              <div className="space-y-1 pt-2">
+                <div className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  {localFolders.some(folder => folder.isDriveRoot) ? 'Drives' : 'Connected folders'}
+                </div>
+                {localFolders.map(folder => (
+                  <div key={folder.path} className="group flex items-center rounded-xl hover:bg-white/5">
+                    <button
+                      onClick={() => {
+                        navigateTo(folder.path);
+                        setMobileSidebarOpen(false);
+                      }}
+                      title={folder.path}
+                      className={`min-w-0 flex-1 flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left transition-colors ${currentPath === folder.path ? 'bg-sky-500 text-white font-semibold' : 'text-slate-300 hover:text-white'}`}
+                    >
+                      <Folder className="w-4 h-4 shrink-0 text-emerald-300" />
+                      <span className="truncate">{folder.label}</span>
+                    </button>
+                    {!folder.isDriveRoot && <button
+                      type="button"
+                      title={`Revoke access to ${folder.label}`}
+                      aria-label={`Revoke access to ${folder.label}`}
+                      onClick={async event => {
+                        event.stopPropagation();
+                        const remaining = await window.electronAPI?.removeLocalFolder?.(folder.path);
+                        if (remaining) setLocalFolders(remaining);
+                        if (currentPath.toLowerCase().startsWith(folder.path.toLowerCase())) {
+                          navigateTo('/Users/abhishek');
+                        }
+                      }}
+                      className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-500 opacity-0 transition-opacity hover:bg-rose-400/15 hover:text-rose-300 group-hover:opacity-100 focus:opacity-100"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>}
+                  </div>
+                ))}
+                {localFolders.some(folder => folder.isDriveRoot) && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const remaining = await window.electronAPI?.revokeAllDrives?.();
+                      if (remaining) setLocalFolders(remaining);
+                      navigateTo('/Users/abhishek');
+                    }}
+                    className="mt-1 w-full rounded-lg px-2.5 py-2 text-left text-[10px] text-rose-300 hover:bg-rose-400/10"
+                  >
+                    Revoke all-drive access
+                  </button>
+                )}
+              </div>
+            )}
+            {!localFolders.some(folder => folder.isDriveRoot) && (
+              <button
+                onClick={async () => {
+                  const drives = await window.electronAPI?.grantAllDrives?.();
+                  if (drives?.length) {
+                    setLocalFolders(drives);
+                    navigateTo('local://drives');
+                  }
+                }}
+                className="mt-2 w-full rounded-lg border border-emerald-300/20 bg-emerald-400/10 px-2.5 py-2 text-left text-[10px] text-emerald-200 hover:bg-emerald-400/15"
+              >
+                Allow access to all drives
+              </button>
+            )}
+            <button
+              onClick={async () => {
+                const result = await window.electronAPI?.chooseLocalFolders?.();
+                if (result) setLocalFolders(result.folders);
+              }}
+              className="mt-2 w-full rounded-lg border border-dashed border-white/15 px-2.5 py-2 text-left text-[10px] text-slate-400 hover:border-emerald-300/40 hover:text-emerald-200"
+            >
+              + Connect folders
+            </button>
           </div>
 
           <div className="p-3 rounded-2xl bg-white/5 border border-white/10 text-[11px] text-slate-400 space-y-1">
@@ -794,7 +1692,7 @@ export const FinderApp: React.FC = () => {
             e.preventDefault();
             e.stopPropagation();
             setIsDraggingOverFinder(false);
-            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            if (!isBrowsingLocal && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
               await importLocalFiles(e.dataTransfer.files, currentPath);
               refreshFiles();
             }
@@ -802,7 +1700,7 @@ export const FinderApp: React.FC = () => {
           className="flex-1 overflow-y-auto p-4 bg-slate-900/20 relative focus:outline-none"
         >
           {/* Drag & drop overlay */}
-          {isDraggingOverFinder && (
+          {isDraggingOverFinder && !isBrowsingLocal && (
             <div className="absolute inset-3 rounded-2xl border-2 border-dashed border-sky-400 bg-sky-950/80 backdrop-blur-md flex flex-col items-center justify-center z-40 pointer-events-none">
               <Upload className="w-12 h-12 text-sky-400 animate-bounce mb-2" />
               <p className="text-base font-bold text-white">Drop files to import into {currentPath}</p>
@@ -815,9 +1713,9 @@ export const FinderApp: React.FC = () => {
               <Folder className="w-16 h-16 mb-3 opacity-20 text-sky-400" />
               <p className="text-sm font-semibold text-slate-300">This folder is empty</p>
               <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                Click <strong>New File</strong>, <strong>Folder</strong>, or drag & drop files from your computer to get started.
+                {isBrowsingLocal ? 'No items are currently in this folder.' : <>Click <strong>New File</strong>, <strong>Folder</strong>, or drag &amp; drop files from your computer to get started.</>}
               </p>
-              <div className="flex gap-2 mt-4">
+              {!isBrowsingLocal && <div className="flex gap-2 mt-4">
                 <button
                   onClick={e => {
                     e.stopPropagation();
@@ -838,7 +1736,7 @@ export const FinderApp: React.FC = () => {
                   <Folder className="w-3.5 h-3.5 text-amber-400" />
                   <span>Create Folder</span>
                 </button>
-              </div>
+              </div>}
             </div>
           ) : viewMode === 'grid' ? (
             /* Grid View */
@@ -850,6 +1748,8 @@ export const FinderApp: React.FC = () => {
                 return (
                   <div
                     key={file.id}
+                    draggable={!isRenaming}
+                    onDragStart={event => handleFileDragStart(event, file)}
                     onClick={e => {
                       e.stopPropagation();
                       if (e.metaKey || e.ctrlKey) {
@@ -930,6 +1830,8 @@ export const FinderApp: React.FC = () => {
                   return (
                     <div
                       key={file.id}
+                      draggable={!isRenaming}
+                      onDragStart={event => handleFileDragStart(event, file)}
                       onClick={e => {
                         e.stopPropagation();
                         if (e.metaKey || e.ctrlKey) {
@@ -952,7 +1854,9 @@ export const FinderApp: React.FC = () => {
                     >
                       <div className="col-span-6 flex items-center gap-2.5 truncate">
                         <div className="w-6 h-6 flex items-center justify-center flex-shrink-0">
-                          {file.type === 'folder' ? (
+                          {file.hostPath && /^[a-z]:\\?$/i.test(file.hostPath) ? (
+                            <AppIcon assetId="pcdrive" className="h-6 w-6 object-contain" />
+                          ) : file.type === 'folder' ? (
                             <Folder className="w-4 h-4 text-sky-400 fill-sky-400/20" />
                           ) : file.type === 'image' ? (
                             <ImageIcon className="w-4 h-4 text-purple-400" />
@@ -1047,25 +1951,20 @@ export const FinderApp: React.FC = () => {
                     <ExternalLink className="w-3.5 h-3.5" />
                     <span>Open</span>
                   </button>
-                  <button
+                  {!primarySelectedFile.hostPath && <button
                     onClick={() => setQuickLookFile(primarySelectedFile)}
                     className="w-full py-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Eye className="w-3.5 h-3.5 text-purple-400" />
                     <span>Quick Look</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      vfs.moveToTrash(primarySelectedFile.id);
-                      sound.playTrash();
-                      refreshFiles();
-                      setSelectedFileIds([]);
-                    }}
+                  </button>}
+                  {primarySelectedFile.type !== 'app' && <button
+                    onClick={() => void deleteFinderFile(primarySelectedFile)}
                     className="w-full py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>Move to Trash</span>
-                  </button>
+                    <span>Move to App Trash</span>
+                  </button>}
                 </div>
               </div>
             ) : (
@@ -1095,188 +1994,378 @@ export const FinderApp: React.FC = () => {
       {contextMenu.visible && (
         <div
           onClick={e => e.stopPropagation()}
-          className="fixed w-56 rounded-2xl glass-panel bg-slate-900/95 border border-white/20 shadow-2xl p-1.5 z-50 text-xs text-slate-200"
-          style={{ top: Math.min(window.innerHeight - 300, contextMenu.y), left: Math.min(window.innerWidth - 240, contextMenu.x) }}
+          data-finder-context-menu
+          className="fixed z-[150] max-h-[min(75vh,560px)] w-64 overflow-y-auto rounded-xl border border-white/15 bg-slate-900/95 p-1.5 text-xs text-slate-200 shadow-2xl shadow-black/50 backdrop-blur-2xl"
+          style={{
+            top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 420)),
+            left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 280)),
+          }}
+          role="menu"
         >
-          {contextMenu.fileId ? (
-            /* File Context Menu */
+          {contextFile ? (
             <div className="space-y-0.5">
-              <button
-                onClick={() => {
-                  const f = vfs.getFileById(contextMenu.fileId!);
-                  if (f) handleOpenFile(f);
-                  setContextMenu(prev => ({ ...prev, visible: false }));
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/15 text-left"
-              >
-                <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
-                <span>Open</span>
-              </button>
-              <button
-                onClick={() => {
-                  const f = vfs.getFileById(contextMenu.fileId!);
-                  if (f) setQuickLookFile(f);
-                  setContextMenu(prev => ({ ...prev, visible: false }));
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/15 text-left"
-              >
-                <Eye className="w-3.5 h-3.5 text-purple-400" />
-                <span>Quick Look (Space)</span>
-              </button>
-              <button
-                onClick={() => {
-                  const f = vfs.getFileById(contextMenu.fileId!);
-                  if (f) {
-                    setRenamingId(f.id);
-                    setRenameValue(f.name);
-                  }
-                  setContextMenu(prev => ({ ...prev, visible: false }));
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/15 text-left"
-              >
-                <Edit3 className="w-3.5 h-3.5 text-amber-400" />
-                <span>Rename (Enter)</span>
-              </button>
-              <div className="h-px bg-white/10 my-1" />
-              <button
-                onClick={() => {
-                  vfs.copyFiles([contextMenu.fileId!]);
-                  sound.playClick();
-                  setContextMenu(prev => ({ ...prev, visible: false }));
-                  addNotification({ appId: 'finder', title: 'Finder', message: 'Item copied to clipboard', type: 'system' });
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/15 text-left"
-              >
-                <Copy className="w-3.5 h-3.5 text-slate-400" />
-                <span>Copy (Cmd+C / Ctrl+C)</span>
-              </button>
-              <button
-                onClick={() => {
-                  vfs.cutFiles([contextMenu.fileId!]);
-                  sound.playClick();
-                  setContextMenu(prev => ({ ...prev, visible: false }));
+              {contextItem('Open', <ExternalLink className="h-4 w-4" />, () => handleOpenFile(contextFile))}
+              {contextFile.type === 'code' && contextItem(
+                contextFile.hostPath ? 'Open with Code' : 'Open in Code Studio',
+                <Code className="h-4 w-4" />,
+                () => openCodeFile(contextFile),
+              )}
+              {contextFile.type === 'folder' && contextFile.hostPath &&
+                !contextFileIsDriveRoot && contextItem(
+                  'Open with Code',
+                  <Code className="h-4 w-4" />,
+                  async () => {
+                    if (!window.electronAPI?.openLocalCodePath) throw new Error('VS Code integration is unavailable.');
+                    const result = await window.electronAPI.openLocalCodePath(contextFile.hostPath!);
+                    if (!result.opened) {
+                      addNotification({
+                        appId: 'finder',
+                        title: 'VS Code not found',
+                        message: 'Open a code file to edit it in Code Studio.',
+                        type: 'system',
+                      });
+                    }
+                  },
+                )}
+              {(!contextFile.hostPath || contextFile.type === 'image') && contextItem(
+                'Quick Look',
+                <Eye className="h-4 w-4" />,
+                () => contextFile.type === 'image'
+                  ? openFinderImage(contextFile)
+                  : setQuickLookFile(contextFile),
+              )}
+              {(contextFile.type === 'image' || contextFile.type === 'video') && contextItem(
+                'Save to Abhishek OS…',
+                <Save className="h-4 w-4" />,
+                () => setSaveToAppFile(contextFile),
+              )}
+              {contextFile.type === 'image' && (
+                <>
+                  {contextItem('Share', <Share2 className="h-4 w-4" />, () => shareMedia(contextFile))}
+                  {contextItem('Print', <Printer className="h-4 w-4" />, () => printImage(contextFile))}
+                  {contextItem('Resize image', <ImageIcon className="h-4 w-4" />, () => resizeImage(contextFile))}
+                  {contextItem('Set as lock screen', <LockKeyhole className="h-4 w-4" />, () => setImageAsLockWallpaper(contextFile))}
+                  {contextItem('Show filmstrip', <Film className="h-4 w-4" />, () => openImageFilmstrip(contextFile))}
+                  {contextItem('Start slideshow', <Play className="h-4 w-4" />, () => openImageFilmstrip(contextFile, true))}
+                </>
+              )}
+              {contextDivider}
+              {!contextFile.hostPath && contextItem(
+                'Cut',
+                <Scissors className="h-4 w-4" />,
+                () => {
+                  vfs.cutFiles([contextFile.id]);
                   addNotification({ appId: 'finder', title: 'Finder', message: 'Item cut to clipboard', type: 'system' });
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/15 text-left"
-              >
-                <Scissors className="w-3.5 h-3.5 text-slate-400" />
-                <span>Cut (Cmd+X / Ctrl+X)</span>
-              </button>
-              <button
-                onClick={() => {
-                  vfs.duplicate(contextMenu.fileId!);
-                  sound.playClick();
+                },
+              )}
+              {!contextFile.hostPath && contextItem(
+                'Copy',
+                <Copy className="h-4 w-4" />,
+                async () => {
+                  if (contextFile.type === 'image') {
+                    await copyImage(contextFile);
+                    addNotification({ appId: 'finder', title: 'Image copied', message: `${contextFile.name} was copied to the clipboard.`, type: 'system' });
+                    return;
+                  }
+                  vfs.copyFiles([contextFile.id]);
+                  addNotification({ appId: 'finder', title: 'Finder', message: 'Item copied to clipboard', type: 'system' });
+                },
+              )}
+              {contextFile.hostPath && !contextFileIsDriveRoot && contextItem(
+                'Copy',
+                <Copy className="h-4 w-4" />,
+                async () => {
+                  if (contextFile.type === 'image') {
+                    await copyImage(contextFile);
+                    addNotification({ appId: 'finder', title: 'Image copied', message: `${contextFile.name} was copied to the clipboard.`, type: 'system' });
+                    return;
+                  }
+                  setHostClipboard({ paths: [contextFile.hostPath!], move: false });
+                  addNotification({ appId: 'finder', title: 'Finder', message: 'Item copied. Paste it into a connected folder.', type: 'system' });
+                },
+              )}
+              {contextFile.hostPath && !contextFileIsDriveRoot && contextItem(
+                'Cut',
+                <Scissors className="h-4 w-4" />,
+                () => {
+                  setHostClipboard({ paths: [contextFile.hostPath!], move: true });
+                  addNotification({ appId: 'finder', title: 'Finder', message: 'Item cut. Paste it into a connected folder to move it.', type: 'system' });
+                },
+              )}
+              {contextFile.hostPath && contextItem(
+                'Copy as path',
+                <Copy className="h-4 w-4" />,
+                () => copyPath(contextFile),
+              )}
+              {!contextFileIsDriveRoot && contextItem(
+                'Rename',
+                <Edit3 className="h-4 w-4" />,
+                () => {
+                  setRenamingId(contextFile.id);
+                  setRenameValue(contextFile.name);
+                },
+              )}
+              {!contextFile.hostPath && contextItem(
+                'Duplicate',
+                <Files className="h-4 w-4" />,
+                () => {
+                  vfs.duplicate(contextFile.id);
                   refreshFiles();
-                  setContextMenu(prev => ({ ...prev, visible: false }));
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/15 text-left"
-              >
-                <Files className="w-3.5 h-3.5 text-slate-400" />
-                <span>Duplicate (Cmd+D / Ctrl+D)</span>
-              </button>
-              <div className="h-px bg-white/10 my-1" />
-              <button
-                onClick={() => {
-                  vfs.moveToTrash(contextMenu.fileId!);
-                  sound.playTrash();
-                  refreshFiles();
-                  setContextMenu(prev => ({ ...prev, visible: false }));
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-rose-500/20 text-rose-300 text-left"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                <span>Move to Trash (Delete)</span>
-              </button>
+                },
+              )}
+              {contextFile.type === 'image' && contextItem(
+                'Set as desktop background',
+                <ImageIcon className="h-4 w-4" />,
+                () => openFinderImage(contextFile, true),
+              )}
+              {!contextFileIsDriveRoot && contextItem(
+                (contextFile.hostPath
+                  ? favoriteHostPaths.some(item => item.path === contextFile.hostPath)
+                  : !!contextFile.isFavorite)
+                  ? 'Remove from Favorites'
+                  : 'Add to Favorites',
+                <Star className="h-4 w-4" />,
+                () => toggleFinderFavorite(contextFile),
+              )}
+              {contextDivider}
+              {contextItem(
+                'Properties',
+                <Info className="h-4 w-4" />,
+                () => {
+                  setSelectedFileIds([contextFile.id]);
+                  setShowInspector(true);
+                },
+              )}
+              {!contextFileIsDriveRoot && contextFile.type !== 'app' && contextItem(
+                contextFile.hostPath ? 'Move to Recycle Bin' : 'Move to Trash',
+                <Trash2 className="h-4 w-4" />,
+                () => deleteFinderFile(contextFile),
+                true,
+              )}
             </div>
           ) : (
-            /* Empty Area Context Menu */
             <div className="space-y-0.5">
               <button
-                onClick={() => {
-                  setNewFileName('');
-                  setNewFileExtension('txt');
-                  setNewFileType('document');
-                  setShowNewFileModal(true);
-                  setContextMenu(prev => ({ ...prev, visible: false }));
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/15 text-left"
+                type="button"
+                role="menuitem"
+                onClick={() => setContextSubmenu(current => current === 'view' ? null : 'view')}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-white/10"
               >
-                <Plus className="w-3.5 h-3.5 text-sky-400" />
-                <span>New File...</span>
+                <Eye className="h-4 w-4 text-slate-300" />
+                <span className="flex-1">View</span>
+                <ChevronRight className="h-3.5 w-3.5 text-slate-500" />
               </button>
               <button
-                onClick={() => {
-                  setNewFolderName('New Folder');
-                  setShowNewFolderModal(true);
-                  setContextMenu(prev => ({ ...prev, visible: false }));
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/15 text-left"
+                type="button"
+                role="menuitem"
+                onClick={() => setContextSubmenu(current => current === 'sort' ? null : 'sort')}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-white/10"
               >
-                <Folder className="w-3.5 h-3.5 text-amber-400" />
-                <span>New Folder</span>
+                <ArrowUpDown className="h-4 w-4 text-slate-300" />
+                <span className="flex-1">Sort by</span>
+                <ChevronRight className="h-3.5 w-3.5 text-slate-500" />
               </button>
-
-              {hasClipboard && (
-                <button
-                  onClick={() => {
-                    const pasted = vfs.paste(currentPath);
-                    if (pasted.length > 0) {
-                      sound.playClick();
-                      refreshFiles();
-                      setSelectedFileIds(pasted.map(f => f.id));
-                    }
-                    setContextMenu(prev => ({ ...prev, visible: false }));
-                  }}
-                  className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/15 text-left"
-                >
-                  <ClipboardPaste className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Paste Item(s)</span>
-                </button>
-              )}
-
-              <div className="h-px bg-white/10 my-1" />
-
+              {contextDivider}
               <button
-                onClick={() => {
-                  localFileInputRef.current?.click();
-                  setContextMenu(prev => ({ ...prev, visible: false }));
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/15 text-left"
+                type="button"
+                role="menuitem"
+                onClick={() => setContextSubmenu(current => current === 'new' ? null : 'new')}
+                disabled={browsingDriveList}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-white/10"
               >
-                <Upload className="w-3.5 h-3.5 text-purple-400" />
-                <span>Import Files from PC...</span>
+                <Plus className="h-4 w-4 text-slate-300" />
+                <span className="flex-1">New</span>
+                <ChevronRight className="h-3.5 w-3.5 text-slate-500" />
               </button>
-
-              <button
-                onClick={async () => {
-                  setContextMenu(prev => ({ ...prev, visible: false }));
-                  if ('showDirectoryPicker' in window) {
-                    await connectLocalDirectory(currentPath);
+              {hasClipboard && contextItem(
+                'Paste item(s)',
+                <ClipboardPaste className="h-4 w-4" />,
+                () => isBrowsingLocal
+                  ? pasteHostClipboard()
+                  : (() => {
+                  const pasted = vfs.paste(currentPath);
+                  if (pasted.length) {
                     refreshFiles();
-                  } else {
-                    localFileInputRef.current?.click();
+                    setSelectedFileIds(pasted.map(file => file.id));
                   }
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/15 text-emerald-300 text-left"
-              >
-                <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Connect PC Drive / Folder</span>
-              </button>
-
-              <div className="h-px bg-white/10 my-1" />
-
-              <button
-                onClick={() => {
-                  refreshFiles();
-                  setContextMenu(prev => ({ ...prev, visible: false }));
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg flex items-center gap-2 hover:bg-white/15 text-left"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-                <span>Refresh Folder</span>
-              </button>
+                  })(),
+              )}
+              {isBrowsingLocal && !browsingDriveList && contextDivider}
+              {isBrowsingLocal && !browsingDriveList && contextItem(
+                'Open in Terminal',
+                <Terminal className="h-4 w-4" />,
+                async () => {
+                  if (!window.electronAPI?.openLocalTerminal) throw new Error('Terminal integration is unavailable.');
+                  await window.electronAPI.openLocalTerminal(currentPath);
+                },
+              )}
+              {isBrowsingLocal && !browsingDriveList && contextItem(
+                'Open with Code',
+                <Code className="h-4 w-4" />,
+                async () => {
+                  if (!window.electronAPI?.openLocalCodePath) throw new Error('VS Code integration is unavailable.');
+                  const result = await window.electronAPI.openLocalCodePath(currentPath);
+                  if (!result.opened) {
+                    addNotification({
+                      appId: 'finder',
+                      title: 'VS Code not found',
+                      message: 'VS Code is not installed or could not be located on this computer.',
+                      type: 'system',
+                    });
+                  }
+                },
+              )}
+              {contextDivider}
+              {contextItem(
+                'Folder properties',
+                <Info className="h-4 w-4" />,
+                () => setShowFolderProperties(true),
+              )}
+              {contextItem(
+                'Refresh',
+                <Sparkles className="h-4 w-4" />,
+                () => isBrowsingLocal ? refreshCurrentLocalFiles() : refreshFiles(),
+              )}
             </div>
           )}
+
+          {contextSubmenu && (
+            <div className="mt-1 border-t border-white/10 pt-1">
+              {contextSubmenu === 'view' && (
+                <>
+                  {contextItem('Large icons', <Grid className="h-4 w-4" />, () => setViewMode('grid'))}
+                  {contextItem('Details', <List className="h-4 w-4" />, () => setViewMode('list'))}
+                </>
+              )}
+              {contextSubmenu === 'sort' && (
+                <>
+                  {(['name', 'updatedAt', 'size', 'type'] as SortField[]).map(field =>
+                    contextItem(
+                      field === 'updatedAt' ? 'Date modified' : `Sort by ${field}`,
+                      <ListFilter className="h-4 w-4" />,
+                      () => {
+                        if (sortField === field) setSortOrder(current => current === 'asc' ? 'desc' : 'asc');
+                        else {
+                          setSortField(field);
+                          setSortOrder('asc');
+                        }
+                      },
+                    )
+                  )}
+                </>
+              )}
+              {contextSubmenu === 'new' && (
+                <>
+                  {contextItem('Folder', <Folder className="h-4 w-4" />, () => {
+                    setNewFolderName('New Folder');
+                    setShowNewFolderModal(true);
+                  })}
+                  {contextItem('Text file', <FileText className="h-4 w-4" />, () => {
+                    setNewFileName('');
+                    setNewFileExtension('txt');
+                    setNewFileType('document');
+                    setShowNewFileModal(true);
+                  })}
+                  {contextItem('Code file', <FileCode className="h-4 w-4" />, () => {
+                    setNewFileName('');
+                    setNewFileExtension('js');
+                    setNewFileType('code');
+                    setShowNewFileModal(true);
+                  })}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {showFolderProperties && (
+        <div
+          className="fixed inset-0 z-[160] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setShowFolderProperties(false)}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="finder-folder-properties-title"
+            className="w-full max-w-md rounded-2xl border border-white/15 bg-slate-900/95 p-5 text-white shadow-2xl"
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 id="finder-folder-properties-title" className="flex items-center gap-2 text-sm font-bold">
+                <Folder className="h-4 w-4 text-sky-400" />
+                Folder properties
+              </h2>
+              <button
+                type="button"
+                aria-label="Close folder properties"
+                onClick={() => setShowFolderProperties(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <dl className="space-y-3 text-xs">
+              <div>
+                <dt className="text-slate-400">Location</dt>
+                <dd className="mt-1 break-all font-mono text-slate-200">{currentPath}</dd>
+              </div>
+              <div className="flex justify-between border-t border-white/10 pt-3">
+                <dt className="text-slate-400">Items in this view</dt>
+                <dd>{currentFiles.length}</dd>
+              </div>
+              <div className="flex justify-between border-t border-white/10 pt-3">
+                <dt className="text-slate-400">Total size of visible files</dt>
+                <dd>{formatFileSize(currentFiles.reduce((total, file) => total + (file.size || 0), 0))}</dd>
+              </div>
+            </dl>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => void contextAction(() => copyText(currentPath))}
+                className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:bg-white/5"
+              >
+                Copy location
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFolderProperties(false)}
+                className="rounded-lg bg-sky-500/20 px-3 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-500/30"
+              >
+                Done
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {imageFilmstrip && (
+        <div
+          className="absolute inset-0 z-[200] flex flex-col bg-black/95 text-white"
+          onClick={event => event.stopPropagation()}
+        >
+          <header className="flex h-12 shrink-0 items-center justify-between border-b border-white/10 px-4">
+            <div className="min-w-0 truncate text-xs font-semibold">
+              {imageFilmstrip.files[imageFilmstrip.index]?.name}
+              <span className="ml-2 text-slate-500">{imageFilmstrip.index + 1} / {imageFilmstrip.files.length}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button type="button" aria-label="Previous image" onClick={() => setImageFilmstrip(current => current ? { ...current, index: (current.index - 1 + current.files.length) % current.files.length } : null)} className="rounded-lg p-2 text-slate-300 hover:bg-white/10"><ChevronLeft className="h-4 w-4" /></button>
+              <button type="button" aria-label={imageFilmstrip.playing ? 'Pause slideshow' : 'Start slideshow'} onClick={() => setImageFilmstrip(current => current ? { ...current, playing: !current.playing } : null)} className="rounded-lg p-2 text-slate-300 hover:bg-white/10">{imageFilmstrip.playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}</button>
+              <button type="button" aria-label="Next image" onClick={() => setImageFilmstrip(current => current ? { ...current, index: (current.index + 1) % current.files.length } : null)} className="rounded-lg p-2 text-slate-300 hover:bg-white/10"><ChevronRight className="h-4 w-4" /></button>
+              <button type="button" aria-label="Close filmstrip" onClick={() => setImageFilmstrip(null)} className="ml-2 rounded-lg p-2 text-slate-300 hover:bg-white/10"><X className="h-4 w-4" /></button>
+            </div>
+          </header>
+          <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+            <img src={imageFilmstrip.files[imageFilmstrip.index]?.previewUrl} alt={imageFilmstrip.files[imageFilmstrip.index]?.name ?? 'Image preview'} className="max-h-full max-w-full object-contain" />
+          </div>
+          <div className="flex h-24 shrink-0 gap-2 overflow-x-auto border-t border-white/10 p-2">
+            {imageFilmstrip.files.map((file, index) => (
+              <button key={file.id} type="button" onClick={() => setImageFilmstrip(current => current ? { ...current, index } : null)} aria-label={`Show ${file.name}`} aria-current={imageFilmstrip.index === index} className={`h-full w-24 shrink-0 overflow-hidden rounded-lg border ${imageFilmstrip.index === index ? 'border-sky-400' : 'border-white/10 opacity-70 hover:opacity-100'}`}>
+                <img src={file.previewUrl} alt="" className="h-full w-full object-cover" />
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1430,6 +2519,53 @@ export const FinderApp: React.FC = () => {
               >
                 Create Folder
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {saveToAppFile && (
+        <div
+          className="fixed inset-0 z-[220] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm"
+          onClick={() => setSaveToAppFile(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="save-media-title"
+            className="w-full max-w-md rounded-3xl border border-white/15 bg-slate-950/95 p-5 text-white shadow-2xl"
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 id="save-media-title" className="text-base font-bold">Save in Abhishek OS</h2>
+                <p className="mt-1 max-w-[300px] truncate text-xs text-slate-400">{saveToAppFile.name}</p>
+              </div>
+              <button type="button" aria-label="Close" onClick={() => setSaveToAppFile(null)} className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-slate-400">Choose an app folder. This creates an internal copy and does not save to your computer’s folders.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                ['/Users/abhishek/Desktop', 'Desktop'],
+                ['/Users/abhishek/Documents', 'Documents'],
+                ['/Users/abhishek/Pictures', 'Pictures'],
+                ['/Users/abhishek/Videos', 'Videos'],
+              ].map(([path, label]) => (
+                <button
+                  key={path}
+                  type="button"
+                  onClick={() => setSaveDestination(path)}
+                  className={`rounded-xl border px-3 py-3 text-left text-sm transition ${saveDestination === path ? 'border-sky-400/60 bg-sky-500/15 text-sky-100' : 'border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setSaveToAppFile(null)} className="rounded-xl px-4 py-2 text-xs text-slate-300 hover:bg-white/10">Cancel</button>
+              <button type="button" onClick={() => void contextAction(() => saveMediaIntoApp(saveToAppFile, saveDestination))} className="rounded-xl bg-sky-500 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-400">Save here</button>
             </div>
           </div>
         </div>

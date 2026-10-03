@@ -1742,7 +1742,7 @@ import {
   ShieldCheck,
   Globe2,
   Languages,
-  MapPin, UserRound, AtSign, Mail, CircleUserRound,
+  MapPin, UserRound, CircleUserRound, Mail,
 } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { UserProfile, SystemSettings, AccentColor, ThemeMode } from '../../types/desktop';
@@ -1754,6 +1754,17 @@ import { sound } from '../../services/soundService';
 type AvatarPreset = {
   name: string;
   url: string;
+};
+
+const createAvatarDataUrl = (image: CanvasImageSource, width: number, height: number) => {
+  const scale = Math.min(1, 512 / Math.max(width, height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Could not prepare the selected profile image.');
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.78);
 };
 
 const createCartoonAvatar = ({
@@ -2242,6 +2253,7 @@ const ACCENT_COLORS: { id: AccentColor; label: string; color: string }[] = [
 export const OnboardingModal: React.FC = () => {
   const { finishOnboarding } = useOS();
   const [step, setStep] = useState(1);
+  const [emailError, setEmailError] = useState('');
 
   // Draft profile
   const [profile, setProfile] = useState<UserProfile>({
@@ -2300,15 +2312,16 @@ export const OnboardingModal: React.FC = () => {
 
   const capturePhoto = () => {
     if (!videoRef.current) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth || 320;
-    canvas.height = videoRef.current.videoHeight || 320;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.drawImage(videoRef.current, 0, 0);
-      const dataUrl = canvas.toDataURL('image/jpeg');
+    try {
+      const dataUrl = createAvatarDataUrl(
+        videoRef.current,
+        videoRef.current.videoWidth || 320,
+        videoRef.current.videoHeight || 320,
+      );
       setProfile(p => ({ ...p, avatarUrl: dataUrl, avatarType: 'upload' }));
       sound.playShutter();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not capture the profile photo.');
     }
     // stop stream
     const stream = videoRef.current.srcObject as MediaStream;
@@ -2319,14 +2332,28 @@ export const OnboardingModal: React.FC = () => {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setProfile(p => ({ ...p, avatarUrl: reader.result as string, avatarType: 'upload' }));
+    if (!file.type.startsWith('image/')) {
+      alert('Choose an image file for your profile photo.');
+      e.target.value = '';
+      return;
+    }
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const dataUrl = createAvatarDataUrl(image, image.naturalWidth, image.naturalHeight);
+        setProfile(p => ({ ...p, avatarUrl: dataUrl, avatarType: 'upload' }));
         sound.playClick();
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'Could not prepare the profile image.');
+      } finally {
+        URL.revokeObjectURL(image.src);
       }
     };
-    reader.readAsDataURL(file);
+    image.onerror = () => {
+      URL.revokeObjectURL(image.src);
+      alert('The selected profile image could not be opened.');
+    };
+    image.src = URL.createObjectURL(file);
   };
 
   const toggleRole = (role: string) => {
@@ -2338,28 +2365,24 @@ export const OnboardingModal: React.FC = () => {
     });
   };
 
+  const validateEmail = (email: string) => {
+    const value = email.trim();
+    const emailPattern = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+    if (!value) return 'Email is required.';
+    return value.length > 254 || !emailPattern.test(value) || value.includes('..')
+      ? 'Enter a valid email address.'
+      : '';
+  };
+
   const handleNext = () => {
     sound.playClick();
 
-    // Validate Step 3 - Create User Profile
     if (step === 3) {
-      const email = profile.email.trim();
-
-      if (!email) {
-        setEmailError('Email is required');
+      const nextEmailError = validateEmail(profile.email);
+      setEmailError(nextEmailError);
+      if (!profile.fullName.trim() || !profile.displayName.trim() || nextEmailError) {
         return;
       }
-
-      const emailRegex =
-        /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-
-      if (!emailRegex.test(email) || email.includes('..')) {
-        setEmailError('Please enter a valid email address');
-        return;
-      }
-
-      // Clear any previous error
-      setEmailError('');
     }
 
     if (step < 6) {
@@ -2379,31 +2402,6 @@ export const OnboardingModal: React.FC = () => {
         ...personalization,
       });
     }
-  };
-
-  const [emailError, setEmailError] = useState('');
-
-  const validateEmail = (email: string) => {
-    const value = email.trim();
-
-    if (!value) {
-      return 'Email is required';
-    }
-
-    // Practical email validation:
-    const emailRegex =
-      /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-
-    if (!emailRegex.test(value)) {
-      return 'Please enter a valid email address';
-    }
-
-    // Prevent consecutive dots
-    if (value.includes('..')) {
-      return 'Please enter a valid email address';
-    }
-
-    return '';
   };
 
   return (
@@ -3639,9 +3637,7 @@ export const OnboardingModal: React.FC = () => {
                             </div>
 
                             <div className="mt-1 truncate text-[8px] text-slate-600">
-                              {profile.username
-                                ? `@${profile.username}`
-                                : "Select a character below"}
+                              {profile.fullName || 'Your Abhishek OS profile'}
                             </div>
 
                             <div className="mt-2 flex items-center gap-1.5">
@@ -4007,10 +4003,10 @@ export const OnboardingModal: React.FC = () => {
                           </div>
 
                           {/* =================================================
-                  DISPLAY NAME + USERNAME
+                  DISPLAY NAME
                  ================================================= */}
 
-                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <div className="grid grid-cols-1 gap-4">
 
                             {/* Display */}
                             <div>
@@ -4053,7 +4049,6 @@ export const OnboardingModal: React.FC = () => {
                               />
                             </div>
 
-                            {/* Username */}
                             <div>
                               <label
                                 className="
@@ -4062,103 +4057,28 @@ export const OnboardingModal: React.FC = () => {
                       tracking-[0.14em] text-slate-500
                     "
                               >
-                                <AtSign className="h-3 w-3 text-fuchsia-400" />
-                                Username
+                                <Mail className="h-3 w-3 text-cyan-400" />
+                                Email address
                               </label>
 
-                              <div className="relative">
-                                <span
-                                  className="
-                        pointer-events-none
-                        absolute left-4 top-1/2
-                        -translate-y-1/2
-                        text-xs font-bold
-                        text-slate-600
-                      "
-                                >
-                                  @
-                                </span>
-
-                                <input
-                                  placeholder="yourusername"
-                                  type="text"
-                                  value={profile.username}
-                                  onChange={e =>
-                                    setProfile(p => ({
-                                      ...p,
-                                      username: e.target.value.replace(
-                                        /\s/g,
-                                        ""
-                                      ),
-                                    }))
-                                  }
-                                  className="
-                        w-full
-                        rounded-2xl
-                        border border-white/[0.08]
-                        bg-white/[0.035]
-                        py-3.5 pl-8 pr-4
-                        text-xs font-semibold
-                        text-white
-                        outline-none
-                        placeholder:text-slate-700
-                        transition-all duration-300
-                        hover:border-white/[0.13]
-                        focus:border-fuchsia-400/40
-                        focus:bg-fuchsia-400/[0.035]
-                      "
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* =================================================
-                  EMAIL
-                 ================================================= */}
-
-                          <div>
-                            <label
-                              className="
-                    mb-2 flex items-center gap-2
-                    text-[8px] font-black uppercase
-                    tracking-[0.14em] text-slate-500
-                  "
-                            >
-                              <Mail className="h-3 w-3 text-sky-400" />
-                              Email address
-                            </label>
-
-                            <div className="relative">
                               <input
-                                placeholder="your@email.com"
-                                type="email"
-                                value={profile.email}
-                                required
                                 autoComplete="email"
+                                placeholder="you@example.com"
+                                type="email"
+                                required
+                                value={profile.email}
+                                onBlur={() => setEmailError(validateEmail(profile.email))}
                                 onChange={e => {
-                                  const value = e.target.value.replace(
-                                    /\s/g,
-                                    ""
-                                  );
-
-                                  setProfile(p => ({
-                                    ...p,
-                                    email: value,
-                                  }));
-
-                                  if (emailError) {
-                                    setEmailError(validateEmail(value));
-                                  }
+                                  const email = e.target.value;
+                                  setProfile(p => ({ ...p, email }));
+                                  if (emailError) setEmailError(validateEmail(email));
                                 }}
-                                onBlur={() => {
-                                  setEmailError(
-                                    validateEmail(profile.email)
-                                  );
-                                }}
-                                className={`
+                                aria-invalid={Boolean(emailError)}
+                                aria-describedby={emailError ? 'onboarding-email-error' : undefined}
+                                className="
                       w-full
                       rounded-2xl
-                      border
+                      border border-white/[0.08]
                       bg-white/[0.035]
                       px-4 py-3.5
                       text-xs font-semibold
@@ -4166,73 +4086,21 @@ export const OnboardingModal: React.FC = () => {
                       outline-none
                       placeholder:text-slate-700
                       transition-all duration-300
-                      ${emailError
-                                    ? `
-                            border-red-500/60
-                            focus:border-red-500
-                            focus:bg-red-500/[0.03]
-                          `
-                                    : `
-                            border-white/[0.08]
-                            hover:border-white/[0.13]
-                            focus:border-sky-400/40
-                            focus:bg-sky-400/[0.035]
-                          `
-                                  }
-                    `}
+                      hover:border-white/[0.13]
+                      focus:border-cyan-400/40
+                      focus:bg-cyan-400/[0.035]
+                    "
                               />
-
-                              {!emailError && profile.email && (
-                                <motion.div
-                                  initial={{
-                                    opacity: 0,
-                                    scale: 0.7,
-                                  }}
-                                  animate={{
-                                    opacity: 1,
-                                    scale: 1,
-                                  }}
-                                  className="
-                        absolute right-3 top-1/2
-                        flex h-6 w-6
-                        -translate-y-1/2
-                        items-center justify-center
-                        rounded-full
-                        bg-emerald-400/10
-                      "
-                                >
-                                  <Check
-                                    className="h-3 w-3 text-emerald-400"
-                                    strokeWidth={3}
-                                  />
-                                </motion.div>
+                              {emailError ? (
+                                <p id="onboarding-email-error" className="mt-1.5 text-[10px] text-rose-400">
+                                  {emailError}
+                                </p>
+                              ) : (
+                                <p className="mt-1.5 text-[9px] text-slate-500">Required for your profile.</p>
                               )}
                             </div>
 
-                            {emailError && (
-                              <motion.p
-                                initial={{
-                                  opacity: 0,
-                                  y: -3,
-                                }}
-                                animate={{
-                                  opacity: 1,
-                                  y: 0,
-                                }}
-                                className="
-                      mt-2 flex items-center gap-1.5
-                      text-[9px] font-semibold
-                      text-red-400
-                    "
-                              >
-                                <span className="h-1 w-1 rounded-full bg-red-400" />
-                                {emailError}
-                              </motion.p>
-                            )}
                           </div>
-
-
-
 
                         </div>
                       </div>
@@ -5056,7 +4924,8 @@ export const OnboardingModal: React.FC = () => {
 
           <button
             onClick={handleNext}
-            className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-sky-500/25 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+            disabled={step === 3 && (!profile.fullName.trim() || !profile.displayName.trim() || Boolean(validateEmail(profile.email)))}
+            className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-sky-500/25 flex items-center gap-2 transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span>{step === 6 ? 'Enter Abhishek OS →' : 'Continue →'}</span>
           </button>

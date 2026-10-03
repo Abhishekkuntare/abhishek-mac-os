@@ -3,11 +3,13 @@ import React, {
   useRef,
   useEffect,
   useCallback,
+  useLayoutEffect,
 } from 'react';
 
 import {
   motion,
   AnimatePresence,
+  useAnimationControls,
 } from 'motion/react';
 
 import {
@@ -83,7 +85,14 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
     resizeWindow,
     snapWindow,
     settings,
+    resolvedTheme,
+    activeSpaceId,
   } = useOS();
+  const animationControls = useAnimationControls();
+  const windowElementRef = useRef<HTMLDivElement | null>(null);
+  const wasMinimizedRef = useRef(win.isMinimized);
+  const minimizeAnimationIdRef = useRef(0);
+  const [isWindowHidden, setIsWindowHidden] = useState(win.isMinimized);
 
   /*
    * ============================================================
@@ -834,12 +843,102 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
    * ============================================================
    */
 
-  if (win.isMinimized) {
-    return null;
-  }
+  const isLight = resolvedTheme === 'light';
+  const isWindowVisible =
+    (!win.desktopSpaceId || win.desktopSpaceId === activeSpaceId);
 
-  const isLight =
-    settings.theme === 'light';
+  const getDockAnimationOrigin = useCallback(() => {
+    const element = windowElementRef.current;
+    if (!element) return null;
+
+    const windowBounds = element.getBoundingClientRect();
+    const width = windowBounds.width || win.width;
+    const height = windowBounds.height || win.height;
+    const left = windowBounds.width ? windowBounds.left : win.x;
+    const top = windowBounds.height ? windowBounds.top : win.y;
+    const dockIcon = document.querySelector<HTMLElement>(
+      `[data-dock-app-id="${win.appId}"] [data-dock-icon="true"]`,
+    );
+    if (!dockIcon) return null;
+
+    const dockBounds = dockIcon.getBoundingClientRect();
+    if (!dockBounds.width || !dockBounds.height) return null;
+
+    return {
+      opacity: 0.12,
+      scale: Math.max(dockBounds.width / width, dockBounds.height / height),
+      x: dockBounds.left + dockBounds.width / 2 - (left + width / 2),
+      y: dockBounds.top + dockBounds.height / 2 - (top + height / 2),
+    };
+  }, [win.appId, win.height, win.width, win.x, win.y]);
+
+  const animateFromDock = useCallback(() => {
+    const origin = getDockAnimationOrigin();
+    if (origin) {
+      animationControls.set(origin);
+    } else {
+      animationControls.set({ opacity: 0, scale: 0.96, y: 14 });
+    }
+
+    void animationControls.start({
+      opacity: 1,
+      scale: 1,
+      x: 0,
+      y: 0,
+      transition: {
+        duration: settings.animationLevel === 'full' ? 0.46 : 0.18,
+        ease: [0.16, 1, 0.3, 1],
+      },
+    });
+  }, [animationControls, getDockAnimationOrigin, settings.animationLevel]);
+
+  useLayoutEffect(() => {
+    if (win.isMinimized) return;
+    animateFromDock();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (wasMinimizedRef.current === win.isMinimized) return;
+    wasMinimizedRef.current = win.isMinimized;
+
+    if (win.isMinimized) {
+      const origin = getDockAnimationOrigin();
+      const animationId = ++minimizeAnimationIdRef.current;
+      if (!origin) {
+        void animationControls.start({
+          opacity: 0,
+          scale: settings.animationLevel === 'full' ? 0.88 : 0.96,
+          y: settings.animationLevel === 'full' ? 18 : 0,
+          transition: {
+            duration: settings.animationLevel === 'full' ? 0.28 : 0.12,
+            ease: [0.4, 0, 1, 1],
+          },
+        }).then(() => {
+          if (animationId === minimizeAnimationIdRef.current) {
+            setIsWindowHidden(true);
+          }
+        });
+        return;
+      }
+
+      void animationControls.start({
+        ...origin,
+        transition: {
+          duration: settings.animationLevel === 'full' ? 0.38 : 0.16,
+          ease: [0.4, 0, 1, 1],
+        },
+      }).then(() => {
+        if (animationId === minimizeAnimationIdRef.current) {
+          setIsWindowHidden(true);
+        }
+      });
+      return;
+    }
+
+    minimizeAnimationIdRef.current += 1;
+    setIsWindowHidden(false);
+    animateFromDock();
+  }, [animateFromDock, animationControls, getDockAnimationOrigin, settings.animationLevel, win.isMinimized]);
 
   /*
    * ============================================================
@@ -914,6 +1013,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
           width: '100vw',
           height: `calc(100vh - ${MENU_BAR_HEIGHT}px)`,
           zIndex: 9999,
+          display: isWindowVisible && !isWindowHidden ? undefined : 'none',
         }
       : {
           left: win.x,
@@ -921,6 +1021,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
           width: win.width,
           height: win.height,
           zIndex: win.zIndex,
+          display: isWindowVisible && !isWindowHidden ? undefined : 'none',
         };
 
   /*
@@ -936,34 +1037,28 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
       </AnimatePresence>
 
       <motion.div
-        initial={{
-          opacity: 0,
-          scale: 0.94,
-          y: 14,
+        ref={windowElementRef}
+        data-window-id={win.id}
+        initial={false}
+        animate={animationControls}
+        variants={{
+          dockExit: () => ({
+            ...(getDockAnimationOrigin() ?? {
+              opacity: 0,
+              scale: 0.92,
+              y: 12,
+            }),
+            transition: {
+              duration: settings.animationLevel === 'full' ? 0.36 : 0.12,
+              ease: [0.4, 0, 1, 1],
+            },
+          }),
         }}
-        animate={{
-          opacity: 1,
-          scale: 1,
-          y: 0,
-        }}
-        exit={{
-          opacity: 0,
-          scale: 0.95,
-        }}
-        transition={{
-          type: 'spring',
-          stiffness: 320,
-          damping: 28,
-          mass: 0.8,
-        }}
+        exit="dockExit"
         style={{
           ...windowStyle,
-
-          willChange:
-            isDragging ||
-            resizingDir
-              ? 'left, top, width, height'
-              : 'auto',
+          transformOrigin: 'center center',
+          willChange: 'transform, opacity',
         }}
         onPointerDown={() =>
           focusWindow(win.id)
