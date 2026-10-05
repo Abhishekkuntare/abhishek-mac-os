@@ -4,7 +4,7 @@ cd /d "%~dp0"
 
 echo.
 echo =============================================
-echo       ABHISHEK OS - WINDOWS BUILD
+echo       ARLO OS - WINDOWS BUILD
 echo =============================================
 echo.
 
@@ -33,10 +33,10 @@ if errorlevel 1 goto :error
 echo.
 echo =============================================
 echo BUILD COMPLETE
-echo Installer: release\ABHISHEK-OS-Setup.exe
+echo Installer: release\ARLO-OS-Setup.exe
 echo =============================================
 echo.
-if exist "release\ABHISHEK-OS-Setup.exe" start "" explorer.exe /select,"%CD%\release\ABHISHEK-OS-Setup.exe"
+if exist "release\ARLO-OS-Setup.exe" start "" explorer.exe /select,"%CD%\release\ARLO-OS-Setup.exe"
 pause
 exit /b 0
 

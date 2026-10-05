@@ -1032,7 +1032,7 @@ export const PhotosApp: React.FC = () => {
                     Photos
                   </div>
                   <div className="text-[9px] text-white/40">
-                    Abhishek OS
+                    ARLO OS
                   </div>
                 </div>
               </motion.div>
@@ -1879,7 +1879,7 @@ export const PhotosApp: React.FC = () => {
                                   {selectedPhoto.source ===
                                   'imported'
                                     ? 'Persistent local library'
-                                    : 'Abhishek OS collection'}
+                                    : 'ARLO OS collection'}
                                 </div>
                               </div>
                             </div>

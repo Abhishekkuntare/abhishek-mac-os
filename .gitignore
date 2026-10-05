@@ -8,6 +8,11 @@ release/
 # Electron
 out/
 build/
+!build/
+build/*
+!build/appx/
+build/appx/*
+!build/appx/*.png
 
 # Logs
 *.log

@@ -79,7 +79,7 @@ const SAMPLE_MOBILE_PHOTOS: MobilePhoto[] = [
     name: 'Minimal-Desk.jpg',
     url: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=800&q=80',
     date: 'Sep 15, 11:00 AM',
-    caption: 'Abhishek OS workspace & dual Studio Displays',
+    caption: 'ARLO OS workspace & dual Studio Displays',
   },
 ];
 
@@ -130,7 +130,7 @@ export const MobileLinkApp: React.FC = () => {
   // Messages App State
   const [messages, setMessages] = useState<MobileMessage[]>([
     { id: 'm-1', sender: 'contact', text: 'Hey Abhishek! Are you on your Mac right now?', time: '9:41 AM' },
-    { id: 'm-2', sender: 'abhishek', text: 'Yes, just testing the new iPhone Mirroring feature in Abhishek OS!', time: '9:42 AM' },
+    { id: 'm-2', sender: 'abhishek', text: 'Yes, just testing the new iPhone Mirroring feature in ARLO OS!', time: '9:42 AM' },
     { id: 'm-3', sender: 'contact', text: 'Awesome! Can you see the photos and dynamic island too?', time: '9:43 AM' },
   ]);
   const [newMessageText, setNewMessageText] = useState('');
@@ -293,7 +293,7 @@ export const MobileLinkApp: React.FC = () => {
         });
       }
     } catch {
-      setMobileClipboard('Abhishek OS • Next-Gen Web Desktop Experience');
+      setMobileClipboard('ARLO OS • Next-Gen Web Desktop Experience');
       sound.playClick();
     }
   };
@@ -863,7 +863,7 @@ export const MobileLinkApp: React.FC = () => {
                               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg cursor-pointer"
                             >
                               <Download className="w-4 h-4" />
-                              <span>Import to Abhishek OS Desktop</span>
+                              <span>Import to ARLO OS Desktop</span>
                             </button>
                           </div>
                         </div>
@@ -972,7 +972,7 @@ export const MobileLinkApp: React.FC = () => {
                             </button>
                           </div>
                           <p className="text-[11px] text-slate-300">
-                            Whatever you copy on Abhishek OS (text, URL, terminal command) can be instantly synced to this iPhone.
+                            Whatever you copy on ARLO OS (text, URL, terminal command) can be instantly synced to this iPhone.
                           </p>
                         </div>
                       </div>
@@ -1192,7 +1192,7 @@ export const MobileLinkApp: React.FC = () => {
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                           <span className="text-[9px] font-bold ml-1 truncate">{w.title}</span>
                         </div>
-                        <p className="text-[8px] text-slate-400">Streamed from Abhishek OS Host</p>
+                        <p className="text-[8px] text-slate-400">Streamed from ARLO OS Host</p>
                       </div>
                     ))}
                   </div>

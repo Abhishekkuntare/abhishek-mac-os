@@ -27,7 +27,8 @@ const config = {
     publisher: requiredSettings.APPX_PUBLISHER,
     publisherDisplayName: requiredSettings.APPX_PUBLISHER_DISPLAY_NAME,
     applicationId: 'AbhishekOS',
-    displayName: 'Abhishek OS',
+    backgroundColor: '#070c1a',
+    displayName: 'ARLO OS',
     languages: ['en-US'],
   },
 };

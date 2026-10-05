@@ -660,12 +660,12 @@ const CameraApp: React.FC = () => {
         : blob.type === 'image/jpeg'
           ? 'jpg'
           : 'png';
-    const name = `ABHISHEK-OS-${Date.now()}.${extension}`;
+    const name = `ARLO-OS-${Date.now()}.${extension}`;
     vfs.ensureDirectoryExists(targetPath);
     await vfs.importBlob(blob, name, targetPath, lastCapture.type);
     addNotification({
       appId: 'camera',
-      title: 'Saved in Abhishek OS',
+      title: 'Saved in ARLO OS',
       message: `${name} was saved in ${targetPath.split('/').pop()}.`,
       type: 'system',
     });
@@ -874,7 +874,7 @@ const CameraApp: React.FC = () => {
               </div>
 
               <div className="text-[9px] uppercase tracking-[0.25em] text-white/35">
-                ABHISHEK OS
+                ARLO OS
               </div>
             </div>
           </div>
@@ -1228,7 +1228,7 @@ const CameraApp: React.FC = () => {
                 className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-black transition hover:scale-105 active:scale-95"
               >
                 <ImageIcon className="h-3.5 w-3.5" />
-                Save to Abhishek OS
+                Save to ARLO OS
               </button>
             </div>
 
@@ -1357,7 +1357,7 @@ const CameraApp: React.FC = () => {
 
                   {/* Studio badge */}
                   <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[9px] uppercase tracking-[0.2em] text-white/50 backdrop-blur-xl">
-                    ABHISHEK OS
+                    ARLO OS
                   </div>
 
                   {/* Video sound control */}
@@ -1661,7 +1661,7 @@ const CameraApp: React.FC = () => {
                     className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-xs font-bold text-black shadow-[0_8px_25px_rgba(245,158,11,.2)] transition hover:scale-[1.02] active:scale-[.98]"
                   >
                     <ImageIcon className="h-4 w-4" />
-                    SAVE IN ABHISHEK OS
+                    SAVE IN ARLO OS
                   </button>
                 </div>
               </div>
@@ -1713,7 +1713,7 @@ const CameraApp: React.FC = () => {
                   </div>
 
                   <div className="text-[10px] text-white/35">
-                    ABHISHEK OS Quick Look
+                    ARLO OS Quick Look
                   </div>
                 </div>
               </div>
@@ -1722,7 +1722,7 @@ const CameraApp: React.FC = () => {
                 <button
                   onClick={() => setShowSaveLocation(true)}
                   className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/10 backdrop-blur-xl transition hover:bg-white/20"
-                  title="Save in Abhishek OS"
+                  title="Save in ARLO OS"
                 >
                   <ImageIcon className="h-4 w-4" />
                 </button>
@@ -1804,7 +1804,7 @@ const CameraApp: React.FC = () => {
               className="w-full max-w-sm rounded-3xl border border-white/15 bg-slate-950 p-5 text-white shadow-2xl"
               onClick={event => event.stopPropagation()}
             >
-              <h2 id="camera-save-title" className="text-base font-bold">Save in Abhishek OS</h2>
+              <h2 id="camera-save-title" className="text-base font-bold">Save in ARLO OS</h2>
               <p className="mt-1 text-xs text-slate-400">Choose where to store this capture inside the app.</p>
               <div className="mt-4 grid grid-cols-2 gap-2">
                 {[

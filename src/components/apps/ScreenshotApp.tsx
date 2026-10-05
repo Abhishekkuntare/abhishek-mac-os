@@ -28,7 +28,7 @@ export const ScreenshotApp: React.FC = () => {
         <Camera className="w-10 h-10" />
       </div>
 
-      <h3 className="text-xl font-bold mb-2">Abhishek OS Screen Capture</h3>
+      <h3 className="text-xl font-bold mb-2">ARLO OS Screen Capture</h3>
       <p className="text-xs text-slate-400 max-w-sm mx-auto mb-6">
         Instantly capture high-resolution screenshots of the workspace. Captured screenshots are
         saved directly to your Virtual Desktop.

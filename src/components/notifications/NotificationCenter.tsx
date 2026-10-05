@@ -19,18 +19,18 @@ export const NotificationCenter: React.FC = () => {
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const handleOutside = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        const target = e.target as HTMLElement;
-        if (!target.closest('.glass-menubar')) {
-          setShowNotificationCenter(false);
-        }
+    const handleOutside = (event: PointerEvent) => {
+      if (
+        panelRef.current &&
+        !panelRef.current.contains(event.target as Node)
+      ) {
+        setShowNotificationCenter(false);
       }
     };
     if (showNotificationCenter) {
-      window.addEventListener('mousedown', handleOutside);
+      window.addEventListener('pointerdown', handleOutside);
     }
-    return () => window.removeEventListener('mousedown', handleOutside);
+    return () => window.removeEventListener('pointerdown', handleOutside);
   }, [showNotificationCenter, setShowNotificationCenter]);
 
   if (!showNotificationCenter) return null;
@@ -102,7 +102,7 @@ export const NotificationCenter: React.FC = () => {
                       <AlertCircle className="w-3.5 h-3.5 text-sky-400" />
                     )}
                     <span className="text-[11px] font-bold text-slate-300">
-                      {notif.appName || 'Abhishek OS'}
+                      {notif.appName || 'ARLO OS'}
                     </span>
                   </div>
                   <span className="text-[10px] text-slate-400">{notif.timestamp}</span>

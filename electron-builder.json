@@ -1,6 +1,6 @@
 {
   "appId": "com.abhishekkuntare.abhishekos",
-  "productName": "Abhishek OS",
+  "productName": "ARLO OS",
   "copyright": "Copyright © 2026 Abhishek Kuntare",
   "asar": true,
   "directories": {
@@ -16,10 +16,17 @@
   "files": [
     "dist/**/*",
     "electron-main.mjs",
+    "ghost-agent-service.mjs",
     "electron-preload.cjs",
     "code-runner.mjs",
     "package.json",
     "assets/icon.ico"
+  ],
+  "extraResources": [
+    {
+      "from": "build/ghost-voice/dist/GhostVoice",
+      "to": "ghost-voice"
+    }
   ],
   "extraMetadata": {
     "main": "electron-main.mjs"
@@ -34,7 +41,7 @@
         ]
       }
     ],
-    "artifactName": "ABHISHEK-OS-Setup.${ext}"
+    "artifactName": "ARLO-OS-Setup.${ext}"
   },
   "nsis": {
     "oneClick": false,
@@ -42,7 +49,7 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "Abhishek OS",
+    "shortcutName": "ARLO OS",
     "installerIcon": "build/icon.ico",
     "uninstallerIcon": "build/icon.ico",
     "deleteAppDataOnUninstall": false,

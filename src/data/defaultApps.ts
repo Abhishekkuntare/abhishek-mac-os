@@ -278,7 +278,7 @@ export const APP_REGISTRY: Record<string, AppMetadata> = {
     id: 'appstore',
     name: 'App Store',
     category: 'system',
-    description: 'Discover software curated for Abhishek OS.',
+    description: 'Discover software curated for ARLO OS.',
     iconName: 'ShoppingBag',
     iconColor: '#3b82f6',
     iconBg: 'linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%)',

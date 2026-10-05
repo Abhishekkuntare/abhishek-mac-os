@@ -1,6 +1,7 @@
 import { VirtualFile } from '../types/desktop';
 import { INITIAL_FILES } from '../data/sampleData';
 import { deleteMediaBlob, readMediaBlob, storeMediaBlob } from './mediaStore';
+import { clearUndoHistory, pushUndoAction } from './undoManager';
 
 const VFS_STORAGE_KEY = 'abhishek_os_vfs_v1';
 
@@ -83,7 +84,75 @@ export class VirtualFileSystem {
     this.notify();
   }
 
+  private snapshotFiles(): VirtualFile[] {
+    return this.files.map(file => ({ ...file }));
+  }
+
+  private recordFilesUndo(label: string, before: VirtualFile[]): void {
+    const after = this.snapshotFiles();
+    const beforeById = new Map(before.map(file => [file.id, file]));
+    const afterById = new Map(after.map(file => [file.id, file]));
+    const beforeIndex = new Map(before.map((file, index) => [file.id, index]));
+    const afterIndex = new Map(after.map((file, index) => [file.id, index]));
+    const changedIds = new Set([...beforeById.keys(), ...afterById.keys()]);
+    const changes = [...changedIds]
+      .filter(id => JSON.stringify(beforeById.get(id)) !== JSON.stringify(afterById.get(id)))
+      .map(id => ({
+        id,
+        before: beforeById.get(id),
+        after: afterById.get(id),
+        beforeIndex: beforeIndex.get(id) ?? 0,
+        afterIndex: afterIndex.get(id) ?? 0,
+      }));
+
+    const applyChanges = (direction: 'before' | 'after') => {
+      changes.forEach(change => {
+        const target = change[direction];
+        const other = direction === 'before' ? change.after : change.before;
+        const currentIndex = this.files.findIndex(file => file.id === change.id);
+
+        if (!target) {
+          if (currentIndex >= 0) this.files.splice(currentIndex, 1);
+          return;
+        }
+
+        if (currentIndex < 0) {
+          const targetIndex = direction === 'before' ? change.beforeIndex : change.afterIndex;
+          this.files.splice(Math.min(targetIndex, this.files.length), 0, { ...target });
+          return;
+        }
+
+        const current = this.files[currentIndex];
+        if (!other) {
+          this.files[currentIndex] = { ...target };
+          return;
+        }
+
+        const keys = new Set([
+          ...Object.keys(other),
+          ...Object.keys(target),
+        ]) as Set<keyof VirtualFile>;
+        keys.forEach(key => {
+          if (JSON.stringify(other[key]) === JSON.stringify(target[key])) return;
+          if (key in target) {
+            Object.assign(current, { [key]: target[key] });
+          } else {
+            delete (current as Partial<VirtualFile>)[key];
+          }
+        });
+      });
+      this.save();
+    };
+
+    pushUndoAction({
+      label,
+      undo: () => applyChanges('before'),
+      redo: () => applyChanges('after'),
+    });
+  }
+
   public resetToDefault() {
+    clearUndoHistory();
     this.files = [...INITIAL_FILES];
     this.save();
     return this.files;
@@ -95,6 +164,10 @@ export class VirtualFileSystem {
 
   public getAllActiveFiles(): VirtualFile[] {
     return this.files.filter(f => !f.isDeleted);
+  }
+
+  public getActivitySnapshot(): VirtualFile[] {
+    return this.files.map(file => ({ ...file, waveform: file.waveform ? [...file.waveform] : undefined }));
   }
 
   public getFavorites(): VirtualFile[] {
@@ -112,6 +185,7 @@ export class VirtualFileSystem {
   }
 
   public createFolder(name: string, currentPath: string): VirtualFile {
+    const before = this.snapshotFiles();
     const newFolder: VirtualFile = {
       id: `folder-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       name: name.trim() || 'Untitled Folder',
@@ -122,6 +196,7 @@ export class VirtualFileSystem {
       updatedAt: new Date().toISOString(),
     };
     this.files.unshift(newFolder);
+    this.recordFilesUndo(`Create folder "${newFolder.name}"`, before);
     this.save();
     return newFolder;
   }
@@ -133,6 +208,7 @@ export class VirtualFileSystem {
     content = '',
     extension = 'txt'
   ): VirtualFile {
+    const before = this.snapshotFiles();
     const newFile: VirtualFile = {
       id: `file-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       name: name.trim() || `Untitled.${extension}`,
@@ -145,6 +221,7 @@ export class VirtualFileSystem {
       updatedAt: new Date().toISOString(),
     };
     this.files.unshift(newFile);
+    this.recordFilesUndo(`Create "${newFile.name}"`, before);
     this.save();
     return newFile;
   }
@@ -158,6 +235,7 @@ export class VirtualFileSystem {
     if (blob.size === 0) throw new Error('Cannot save an empty media file.');
     const safeName = name.trim();
     if (!safeName) throw new Error('A name is required to save media.');
+    const before = this.snapshotFiles();
     const id = `media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     await storeMediaBlob(id, blob);
     const file: VirtualFile = {
@@ -173,6 +251,7 @@ export class VirtualFileSystem {
       updatedAt: new Date().toISOString(),
     };
     this.files.unshift(file);
+    this.recordFilesUndo(`Import "${file.name}"`, before);
     this.save();
     return file;
   }
@@ -246,6 +325,7 @@ export class VirtualFileSystem {
       };
     }
 
+    const before = this.snapshotFiles();
     const now = new Date().toISOString();
     directlyMoved.forEach(file => {
       const previousItemPath = `${file.path.replace(/\/+$/, '')}/${file.name}`.replace(/\/+/g, '/');
@@ -262,6 +342,7 @@ export class VirtualFileSystem {
       }
     });
 
+    this.recordFilesUndo(`Move ${directlyMoved.length} item(s)`, before);
     this.save();
     return { moved: directlyMoved };
   }
@@ -270,6 +351,7 @@ export class VirtualFileSystem {
     file: Pick<VirtualFile, 'hostPath' | 'name' | 'type' | 'size' | 'extension'>,
     targetPath: string
   ): VirtualFile {
+    const before = this.snapshotFiles();
     const shortcut: VirtualFile = {
       id: `host-shortcut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       hostPath: file.hostPath,
@@ -282,6 +364,7 @@ export class VirtualFileSystem {
       updatedAt: new Date().toISOString(),
     };
     this.files.unshift(shortcut);
+    this.recordFilesUndo(`Add "${shortcut.name}" to Desktop`, before);
     this.save();
     return shortcut;
   }
@@ -306,6 +389,7 @@ export class VirtualFileSystem {
     const original = this.files.find(f => f.id === id);
     if (!original) return undefined;
 
+    const before = this.snapshotFiles();
     let newName = original.name;
     const parts = original.name.split('.');
     if (parts.length > 1 && original.type !== 'folder') {
@@ -324,12 +408,14 @@ export class VirtualFileSystem {
     };
 
     this.files.unshift(dup);
+    this.recordFilesUndo(`Duplicate "${original.name}"`, before);
     this.save();
     return dup;
   }
 
   public paste(targetPath: string): VirtualFile[] {
     if (!this.clipboard || this.clipboard.ids.length === 0) return [];
+    const before = this.snapshotFiles();
     const results: VirtualFile[] = [];
 
     for (const id of this.clipboard.ids) {
@@ -368,6 +454,9 @@ export class VirtualFileSystem {
     if (this.clipboard.mode === 'cut') {
       this.clipboard = null;
     }
+    if (results.length > 0) {
+      this.recordFilesUndo(`Paste ${results.length} item(s)`, before);
+    }
     this.save();
     return results;
   }
@@ -375,8 +464,11 @@ export class VirtualFileSystem {
   public rename(id: string, newName: string): boolean {
     const file = this.files.find(f => f.id === id);
     if (!file || !newName.trim()) return false;
+    const before = this.snapshotFiles();
+    const previousName = file.name;
     file.name = newName.trim();
     file.updatedAt = new Date().toISOString();
+    this.recordFilesUndo(`Rename "${previousName}"`, before);
     this.save();
     return true;
   }
@@ -384,7 +476,9 @@ export class VirtualFileSystem {
   public toggleFavorite(id: string): boolean {
     const file = this.files.find(f => f.id === id);
     if (!file) return false;
+    const before = this.snapshotFiles();
     file.isFavorite = !file.isFavorite;
+    this.recordFilesUndo(`${file.isFavorite ? 'Favorite' : 'Unfavorite'} "${file.name}"`, before);
     this.save();
     return !!file.isFavorite;
   }
@@ -392,6 +486,7 @@ export class VirtualFileSystem {
   public moveToTrash(id: string): boolean {
     const file = this.files.find(f => f.id === id);
     if (!file || file.isDeleted) return false;
+    const before = this.snapshotFiles();
     const trashGroupId = file.id;
     const now = new Date().toISOString();
     const affectedFiles = file.type === 'folder'
@@ -406,6 +501,7 @@ export class VirtualFileSystem {
       candidate.trashGroupId = trashGroupId;
       candidate.updatedAt = now;
     });
+    this.recordFilesUndo(`Move "${file.name}" to Trash`, before);
     this.save();
     return true;
   }
@@ -413,6 +509,7 @@ export class VirtualFileSystem {
   public restoreFromTrash(id: string): boolean {
     const file = this.files.find(f => f.id === id);
     if (!file || !file.isDeleted) return false;
+    const before = this.snapshotFiles();
     const now = new Date().toISOString();
     const groupId = file.trashGroupId || file.id;
     this.files
@@ -426,6 +523,7 @@ export class VirtualFileSystem {
       file.isDeleted = false;
       file.updatedAt = now;
     }
+    this.recordFilesUndo(`Restore "${file.name}"`, before);
     this.save();
     return true;
   }
@@ -433,6 +531,7 @@ export class VirtualFileSystem {
   public deletePermanently(id: string): boolean {
     const file = this.files.find(f => f.id === id && f.isDeleted);
     if (!file) return false;
+    clearUndoHistory();
     const groupId = file.trashGroupId || file.id;
     const removedFiles = this.files.filter(candidate =>
       (candidate.isDeleted && candidate.trashGroupId === groupId) || candidate.id === id
@@ -448,6 +547,7 @@ export class VirtualFileSystem {
 
   public emptyTrash(): number {
     const initialCount = this.files.length;
+    if (this.files.some(file => file.isDeleted)) clearUndoHistory();
     this.removeStoredMedia(this.files.filter(file => file.isDeleted));
     this.files = this.files.filter(f => !f.isDeleted);
     this.save();
@@ -476,13 +576,14 @@ export class VirtualFileSystem {
   }
 
   /**
-   * Imports files from the user's computer into Abhishek OS.
+   * Imports files from the user's computer into ARLO OS.
    * Reads real files (images, audio, videos, code, documents) preserving folder hierarchy
    */
   public async importLocalFiles(
     files: FileList | File[],
     targetPath = '/Users/abhishek/Desktop'
   ): Promise<VirtualFile[]> {
+    const before = this.snapshotFiles();
     const fileArray = Array.from(files);
     const createdFiles: VirtualFile[] = [];
 
@@ -541,6 +642,9 @@ export class VirtualFileSystem {
       }
     }
 
+    if (createdFiles.length > 0) {
+      this.recordFilesUndo(`Import ${createdFiles.length} item(s)`, before);
+    }
     this.save();
     return createdFiles;
   }

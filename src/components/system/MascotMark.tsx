@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { motion, useReducedMotion } from 'motion/react';
+import { motion, useMotionValue, useReducedMotion, useSpring } from 'motion/react';
 import { useOS } from '../../context/OSContext';
 
 export const MASCOT_FAMILY_NAMES = [
@@ -14,6 +14,18 @@ export const MASCOT_FAMILY_NAMES = [
   'Curious Bug',
   'Portrait',
   'Doodle Hair',
+  'Star Sprite',
+  'Bunny Pal',
+  'Fox Scout',
+  'Cloud Puff',
+  'Cactus Buddy',
+  'Moon Cat',
+  'Tiny Dragon',
+  'Ocean Friend',
+  'Forest Owl',
+  'Pixel Pal',
+  'Little Dino',
+  'Sunshine',
 ] as const;
 
 export const MASCOT_VARIATIONS = [
@@ -37,6 +49,9 @@ interface MascotMarkProps {
   interactive?: boolean;
   styleId?: number;
   color?: string;
+  showTileBackground?: boolean;
+  hairStyle?: 'soft' | 'spiky' | 'curly' | 'none';
+  accessory?: 'none' | 'glasses' | 'headphones' | 'crown';
 }
 
 const clampStyleId = (styleId: number) =>
@@ -49,14 +64,24 @@ export const MascotMark: React.FC<MascotMarkProps> = ({
   interactive = true,
   styleId,
   color,
+  showTileBackground = true,
+  hairStyle,
+  accessory = 'none',
 }) => {
   const { settings } = useOS();
   const mascotRef = useRef<SVGSVGElement | null>(null);
-  const [gaze, setGaze] = useState({ x: 0, y: 0 });
+  const rawGazeX = useMotionValue(0);
+  const rawGazeY = useMotionValue(0);
+  const gazeXSpring = useSpring(rawGazeX, { stiffness: 420, damping: 28, mass: 0.35 });
+  const gazeYSpring = useSpring(rawGazeY, { stiffness: 420, damping: 28, mass: 0.35 });
   const [isHovered, setIsHovered] = useState(false);
   const [isSurprised, setIsSurprised] = useState(false);
   const surpriseTimerRef = useRef<number | null>(null);
+  const pointerFrameRef = useRef<number | null>(null);
+  const pointerPositionRef = useRef<{ x: number; y: number } | null>(null);
   const shouldReduceMotion = useReducedMotion();
+  const gazeX = shouldReduceMotion ? rawGazeX : gazeXSpring;
+  const gazeY = shouldReduceMotion ? rawGazeY : gazeYSpring;
   const id = useId().replace(/:/g, '');
   const activeStyleId = clampStyleId(styleId ?? settings.mascotStyle);
   const familyIndex = Math.floor(activeStyleId / MASCOT_VARIATIONS.length);
@@ -74,53 +99,61 @@ export const MascotMark: React.FC<MascotMarkProps> = ({
     if (!interactive) return;
 
     const followPointer = (event: PointerEvent) => {
-      const bounds = mascotRef.current?.getBoundingClientRect();
-      if (!bounds) return;
+      pointerPositionRef.current = { x: event.clientX, y: event.clientY };
+      if (pointerFrameRef.current !== null) return;
 
-      const horizontalPosition = Math.max(
-        -1,
-        Math.min(
-          1,
-          (event.clientX - (bounds.left + bounds.width / 2)) /
-            Math.max(window.innerWidth * 0.38, bounds.width),
-        ),
-      );
-      const verticalPosition = Math.max(
-        -1,
-        Math.min(
-          1,
-          (event.clientY - (bounds.top + bounds.height / 2)) /
-            Math.max(window.innerHeight * 0.38, bounds.height),
-        ),
-      );
+      pointerFrameRef.current = window.requestAnimationFrame(() => {
+        pointerFrameRef.current = null;
+        const pointer = pointerPositionRef.current;
+        const bounds = mascotRef.current?.getBoundingClientRect();
+        if (!pointer || !bounds) return;
 
-      setGaze({
-        x: horizontalPosition * 2.6,
-        y: verticalPosition * (verticalPosition > 0 ? 9 : 5.5),
+        const horizontalPosition = Math.max(
+          -1,
+          Math.min(
+            1,
+            (pointer.x - (bounds.left + bounds.width / 2)) /
+              Math.max(window.innerWidth * 0.38, bounds.width),
+          ),
+        );
+        const verticalPosition = Math.max(
+          -1,
+          Math.min(
+            1,
+            (pointer.y - (bounds.top + bounds.height / 2)) /
+              Math.max(window.innerHeight * 0.38, bounds.height),
+          ),
+        );
+
+        rawGazeX.set(horizontalPosition * 2.6);
+        rawGazeY.set(verticalPosition * (verticalPosition > 0 ? 9 : 5.5));
       });
     };
 
-    const reactToClick = () => {
-      setIsSurprised(true);
-      if (surpriseTimerRef.current !== null) {
-        window.clearTimeout(surpriseTimerRef.current);
-      }
-      surpriseTimerRef.current = window.setTimeout(() => {
-        setIsSurprised(false);
-        surpriseTimerRef.current = null;
-      }, 1100);
-    };
-
     window.addEventListener('pointermove', followPointer, { passive: true });
-    window.addEventListener('pointerdown', reactToClick);
     return () => {
       window.removeEventListener('pointermove', followPointer);
-      window.removeEventListener('pointerdown', reactToClick);
+      if (pointerFrameRef.current !== null) {
+        window.cancelAnimationFrame(pointerFrameRef.current);
+        pointerFrameRef.current = null;
+      }
       if (surpriseTimerRef.current !== null) {
         window.clearTimeout(surpriseTimerRef.current);
       }
     };
-  }, [interactive]);
+  }, [interactive, rawGazeX, rawGazeY]);
+
+  const handlePointerDown = () => {
+    if (!interactive) return;
+    setIsSurprised(true);
+    if (surpriseTimerRef.current !== null) {
+      window.clearTimeout(surpriseTimerRef.current);
+    }
+    surpriseTimerRef.current = window.setTimeout(() => {
+      setIsSurprised(false);
+      surpriseTimerRef.current = null;
+    }, 1100);
+  };
 
   const renderEyes = () => {
     switch (variationIndex) {
@@ -166,12 +199,14 @@ export const MascotMark: React.FC<MascotMarkProps> = ({
 
     return (
       <>
-        <rect
-          width="128"
-          height="128"
-          rx="23"
-          fill={`color-mix(in srgb, ${faceColor} ${familyIndex === 1 ? 36 : 22}%, #fffaf0)`}
-        />
+        {showTileBackground && (
+          <rect
+            width="128"
+            height="128"
+            rx="23"
+            fill={`color-mix(in srgb, ${faceColor} ${familyIndex === 1 ? 36 : 22}%, #fffaf0)`}
+          />
+        )}
         {familyIndex === 1 && (
           <g fill="none" stroke="#17120f" strokeLinecap="round" strokeLinejoin="round">
             <path d="M53 37c-2-12-1-17 3-18 7 4 14 11 20 19" strokeWidth="5" />
@@ -243,11 +278,46 @@ export const MascotMark: React.FC<MascotMarkProps> = ({
             <path d="M42 68v9m43-9v9m-31 11h20" stroke="#151515" strokeWidth="3" />
           </g>
         )}
+        {familyIndex >= 11 && (
+          <g stroke="#182133" strokeWidth="3" strokeLinejoin="round">
+            <path
+              d={[
+              'M30 48 40 22l17 12 7-18 9 18 18-12 10 26v34q0 25-32 25T30 82Z',
+              'M36 48 31 15q-1-8 7-3l26 25 26-25q8-5 7 3l-5 33v35q0 26-28 26T36 83Z',
+              'M30 48 32 18l27 17q6-2 12 0l27-17 2 30v34q0 27-35 27T30 82Z',
+              'M22 64q-2-33 27-37 8-26 31-10 34-6 33 31 18 10 3 30-5 28-39 27-48 6-55-22-18-5 0-19Z',
+              'M38 35q-7-20 5-23 16 3 17 22 21-24 31-10 5 13-8 24v43q-20 20-41 0Z',
+              'M36 48q-17-14-7-25 12-11 30 8 8-4 16 0 18-19 29-8 9 12-9 25v36q-7 25-29 25T38 84Z',
+              'M34 48q-17-20-6-26 15-7 30 17 7-2 14 0 14-23 28-16 12 9-6 27v34q-8 19-30 19T34 84Z',
+              'M34 49q-17-20-6-26 15-7 30 17 7-2 14 0 14-23 28-16 12 9-6 27v35q-8 19-30 19T34 85Z',
+              'M31 47q-8-28 3-30 10-2 19 15 11-7 22 0 9-17 19-15 11 2 3 30v38q-2 25-33 25T31 85Z',
+              'M31 45q0-15 15-15h36q15 0 15 15v39q0 20-20 20H51Q31 104 31 84Z',
+              'M31 48q-3-29 14-34l7 13q9-5 20 0l7-13q18 5 18 34v37q0 26-33 26T31 85Z',
+              'M27 53q0-38 37-38t37 38v29q0 26-37 26T27 82Z',
+              ][familyIndex - 11]}
+              fill={`color-mix(in srgb, ${faceColor} ${familyIndex === 14 ? 38 : 52}%, ${['#fff2a8', '#fff0f6', '#ffe0aa', 'white', '#a8dc87', '#e6d6ff', '#9be8ef', '#9be8ef', '#d7c4a5', '#d1ebff', '#9ee2b5', '#ffe792'][familyIndex - 11]})`}
+            />
+            {familyIndex === 11 && <path d="m48 25 5 9m29-9-5 9" fill="none" stroke="#fff3b0" strokeWidth="5" />}
+            {familyIndex === 12 && <path d="M37 19q11 4 15 22m39-22q-11 4-15 22" fill="none" stroke="#f1a0bc" strokeWidth="5" />}
+            {familyIndex === 13 && <path d="M33 24 55 38m40-14L73 38" fill="none" stroke="#d97642" strokeWidth="5" />}
+            {familyIndex === 15 && <path d="M32 37 22 32m74 5 10-5" fill="none" stroke="#51426f" strokeWidth="4" />}
+            {familyIndex === 17 && <path d="M43 101q-7 11-16 4m57 0q9 8 16-3" fill="none" stroke="#42aeb8" strokeWidth="4" strokeLinecap="round" />}
+            {familyIndex === 18 && <path d="M29 48h70" fill="none" stroke="#8f7656" strokeWidth="4" />}
+            {familyIndex === 19 && <path d="M39 43h50v45H39Zm10 24 8 7-8 7m19 0h11" fill="none" stroke="#175a92" strokeWidth="4" strokeLinecap="round" />}
+            {familyIndex === 20 && <path d="m31 48-12-6 7 25 8-5m63-14 12-6-7 25-8-5m-43 8h2m22 0h2" fill={`color-mix(in srgb, ${faceColor} 36%, #4c9e73)`} stroke="#296a55" strokeWidth="2" />}
+            {familyIndex === 21 && <path d="m49 22 5 10m25-10-5 10m-33 25h4m36 0h4" fill="none" stroke="#557d43" strokeWidth="4" strokeLinecap="round" />}
+            <motion.g
+              className="mascot-pupils"
+              style={interactive ? { x: gazeX, y: gazeY } : undefined}
+            >
+              <g className="mascot-blink">{renderEyes()}</g>
+            </motion.g>
+          </g>
+        )}
         {[1, 2, 4, 6, 9, 10].includes(familyIndex) && (
           <motion.g
             className="mascot-pupils"
-            animate={interactive ? { x: gaze.x, y: gaze.y } : { x: 0, y: 0 }}
-            transition={shouldReduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 28, mass: 0.35 }}
+            style={interactive ? { x: gazeX, y: gazeY } : undefined}
           >
             <g className="mascot-blink" transform={familyIndex === 6 ? 'translate(0 12)' : undefined}>{renderEyes()}</g>
           </motion.g>
@@ -255,8 +325,7 @@ export const MascotMark: React.FC<MascotMarkProps> = ({
         {familyIndex === 3 && (
           <motion.g
             className="mascot-pupils"
-            animate={interactive ? { x: gaze.x, y: gaze.y } : { x: 0, y: 0 }}
-            transition={shouldReduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 28, mass: 0.35 }}
+            style={interactive ? { x: gazeX, y: gazeY } : undefined}
           >
             <g className="mascot-blink">
               <ellipse cx="51" cy="49" rx="8" ry="5" fill="#171717" />
@@ -268,8 +337,7 @@ export const MascotMark: React.FC<MascotMarkProps> = ({
         {familyIndex === 5 && (
           <motion.g
             className="mascot-pupils"
-            animate={interactive ? { x: gaze.x, y: gaze.y } : { x: 0, y: 0 }}
-            transition={shouldReduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 28, mass: 0.35 }}
+            style={interactive ? { x: gazeX, y: gazeY } : undefined}
           >
             <g className="mascot-blink">
               <path d="M43 51q5-7 10 0v5q-5 5-10 0v-5Zm34 0q5-7 10 0v5q-5 5-10 0v-5Z" fill="#15110f" />
@@ -279,8 +347,7 @@ export const MascotMark: React.FC<MascotMarkProps> = ({
         {familyIndex === 7 && (
           <motion.g
             className="mascot-pupils"
-            animate={interactive ? { x: gaze.x, y: gaze.y } : { x: 0, y: 0 }}
-            transition={shouldReduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 28, mass: 0.35 }}
+            style={interactive ? { x: gazeX, y: gazeY } : undefined}
           >
             <g className="mascot-blink">
                 <circle cx="51" cy="58" r="3.5" fill="#171717" />
@@ -291,8 +358,7 @@ export const MascotMark: React.FC<MascotMarkProps> = ({
         {familyIndex === 8 && (
           <motion.g
             className="mascot-pupils"
-            animate={interactive ? { x: gaze.x, y: gaze.y } : { x: 0, y: 0 }}
-            transition={shouldReduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 28, mass: 0.35 }}
+            style={interactive ? { x: gazeX, y: gazeY } : undefined}
           >
             <g className="mascot-blink">
               <ellipse cx="48" cy="49" rx="7" ry="8" fill="#111" />
@@ -327,11 +393,12 @@ export const MascotMark: React.FC<MascotMarkProps> = ({
       className={`mascot-mark ${expression} ${className}`}
       onPointerEnter={interactive ? () => setIsHovered(true) : undefined}
       onPointerLeave={interactive ? () => setIsHovered(false) : undefined}
+      onPointerDown={interactive ? handlePointerDown : undefined}
       data-mood={mood}
       data-clicked={isSurprised ? 'true' : undefined}
       viewBox="0 0 128 128"
       role="img"
-      aria-label={`Abhishek OS ${mood} ${MASCOT_FAMILY_NAMES[familyIndex]} mascot`}
+      aria-label={`ARLO OS ${mood} ${MASCOT_FAMILY_NAMES[familyIndex]} mascot`}
       xmlns="http://www.w3.org/2000/svg"
     >
       <defs>
@@ -349,25 +416,27 @@ export const MascotMark: React.FC<MascotMarkProps> = ({
           <stop stopColor="#FFFFFF" stopOpacity="0.45" />
           <stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
         </linearGradient>
-        <filter id={`${id}-shadow`} x="0" y="0" width="128" height="128" colorInterpolationFilters="sRGB" filterUnits="userSpaceOnUse">
-          <feGaussianBlur stdDeviation="3" />
-        </filter>
       </defs>
 
       {familyIndex === 0 ? (
         <>
-          <rect x="9" y="13" width="110" height="108" rx="28" fill="#064DAB" opacity="0.24" filter={`url(#${id}-shadow)`} />
-          <rect x="6" y="5" width="116" height="116" rx="29" fill={`url(#${id}-shell)`} />
-          <rect x="9" y="8" width="110" height="110" rx="26" fill="none" stroke="#FFFFFF" strokeOpacity="0.24" strokeWidth="2" />
-          <rect x="17" y="16" width="94" height="94" rx="23" fill={`url(#${id}-face)`} />
-          <path d="M20 37C20 25.954 28.954 17 40 17h48c11.046 0 20 8.954 20 20v14H20V37Z" fill={`url(#${id}-gloss)`} />
-          <rect x="18" y="17" width="92" height="92" rx="22" fill="none" stroke="#E8F8FF" strokeOpacity="0.38" strokeWidth="2" />
+          {showTileBackground ? (
+            <>
+              <rect x="6" y="5" width="116" height="116" rx="29" fill={`url(#${id}-shell)`} />
+              <rect x="9" y="8" width="110" height="110" rx="26" fill="none" stroke="#FFFFFF" strokeOpacity="0.24" strokeWidth="2" />
+              <rect x="17" y="16" width="94" height="94" rx="23" fill={`url(#${id}-face)`} />
+              <path d="M20 37C20 25.954 28.954 17 40 17h48c11.046 0 20 8.954 20 20v14H20V37Z" fill={`url(#${id}-gloss)`} />
+              <rect x="18" y="17" width="92" height="92" rx="22" fill="none" stroke="#E8F8FF" strokeOpacity="0.38" strokeWidth="2" />
+            </>
+          ) : (
+            <path
+              d="M64 10c-26 0-45 18-46 44-1 29 15 55 46 64 31-9 47-35 46-64-1-26-20-44-46-44Z"
+              fill={`url(#${id}-face)`}
+            />
+          )}
           <motion.g
             className="mascot-pupils"
-            animate={interactive ? { x: gaze.x, y: gaze.y } : { x: 0, y: 0 }}
-            transition={shouldReduceMotion
-              ? { duration: 0 }
-              : { type: 'spring', stiffness: 420, damping: 28, mass: 0.35 }}
+            style={interactive ? { x: gazeX, y: gazeY } : undefined}
           >
             <g className="mascot-blink">{renderEyes()}</g>
           </motion.g>
@@ -393,6 +462,41 @@ export const MascotMark: React.FC<MascotMarkProps> = ({
         >
           {renderReferenceArt()}
         </motion.g>
+      )}
+      {hairStyle && hairStyle !== 'none' && (
+        hairStyle === 'curly' ? (
+          <g fill="#302238" stroke="#171313" strokeWidth="2">
+            <circle cx="45" cy="23" r="9" /><circle cx="59" cy="17" r="10" />
+            <circle cx="74" cy="18" r="10" /><circle cx="86" cy="25" r="8" />
+          </g>
+        ) : (
+          <path
+            d={hairStyle === 'spiky'
+              ? 'M37 32 35 15l16 11 9-18 8 18 19-12-5 19Z'
+              : 'M37 32q4-18 26-19 22 0 29 19-15-8-27-8-13 0-28 8Z'}
+            fill={hairStyle === 'soft' ? '#302238' : '#26232a'}
+            stroke="#171313"
+            strokeWidth="2.5"
+            strokeLinejoin="round"
+          />
+        )
+      )}
+      {accessory === 'glasses' && (
+        <g fill="none" stroke="#182133" strokeWidth="3">
+          <rect x="34" y="42" width="25" height="19" rx="7" />
+          <rect x="69" y="42" width="25" height="19" rx="7" />
+          <path d="M59 50h10m-35-1-6-2m66 3 6-2" />
+        </g>
+      )}
+      {accessory === 'headphones' && (
+        <g fill="none" stroke="#272542" strokeWidth="6">
+          <path d="M28 54V45a36 36 0 0 1 72 0v9" />
+          <rect x="23" y="49" width="12" height="24" rx="6" fill="#7065a3" />
+          <rect x="93" y="49" width="12" height="24" rx="6" fill="#7065a3" />
+        </g>
+      )}
+      {accessory === 'crown' && (
+        <path d="m40 27 4-15 16 12 5-17 7 17 16-12 3 15Z" fill="#ffd166" stroke="#a97621" strokeWidth="2.5" strokeLinejoin="round" />
       )}
     </svg>
   );

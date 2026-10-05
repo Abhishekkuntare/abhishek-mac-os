@@ -30,6 +30,8 @@ import {
 } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { sound } from '../../services/soundService';
+import { redo, undo } from '../../services/undoManager';
+import { ArloLogo } from '../system/ArloLogo';
 import { MascotMark } from '../system/MascotMark';
 import { BatteryStatusIcon } from '../system/BatteryStatusIcon';
 
@@ -45,6 +47,8 @@ export const MenuBar: React.FC = () => {
     restartSystem,
     setShowPowerDialog,
     setShowAboutModal,
+    setShowActivityHistory,
+    recordActivity,
     setShowSpotlight,
     showControlCenter,
     setShowControlCenter,
@@ -63,6 +67,20 @@ export const MenuBar: React.FC = () => {
   );
 
   const menuBarRef = useRef<HTMLDivElement | null>(null);
+  const openActivityHistory = () => {
+    void recordActivity({ category: 'system', title: 'Opened Activity History' });
+    setShowActivityHistory(true);
+    sound.playClick();
+  };
+  const openMascotOptions = (x: number, y: number) => {
+    window.dispatchEvent(new CustomEvent('arlo:mascot-context', { detail: { x, y } }));
+  };
+  const handleMascotDrop = (event: React.DragEvent<HTMLButtonElement>) => {
+    if (event.clientY < 70) return;
+    window.dispatchEvent(new CustomEvent('arlo:mascot-place', {
+      detail: { x: event.clientX, y: event.clientY },
+    }));
+  };
 
   useEffect(() => {
     const syncLocalAccessResponse = () => {
@@ -153,16 +171,17 @@ export const MenuBar: React.FC = () => {
   ) => {
     sound.playClick();
 
+    if (action === 'undo') {
+      if (!document.execCommand('undo')) undo();
+      return;
+    }
+    if (action === 'redo') {
+      if (!document.execCommand('redo')) redo();
+      return;
+    }
+
     try {
       switch (action) {
-        case 'undo':
-          document.execCommand('undo');
-          break;
-
-        case 'redo':
-          document.execCommand('redo');
-          break;
-
         case 'cut':
           document.execCommand('cut');
           break;
@@ -239,10 +258,29 @@ export const MenuBar: React.FC = () => {
         <div className="electron-no-drag flex h-full w-full flex-col items-center gap-2">
           <button
             type="button"
-            aria-label="Abhishek OS menu"
-            title="Abhishek OS"
+            aria-label="ARLO OS menu"
+            title="ARLO OS"
             onClick={() => setShowAboutModal(true)}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl hover:bg-white/10"
+          >
+            <ArloLogo className="h-7 w-7 object-contain" />
+          </button>
+          <button
+            type="button"
+            aria-label="Activity History"
+            title="Activity History"
+            draggable
+            onClick={openActivityHistory}
+            onContextMenu={event => {
+              event.preventDefault();
+              openMascotOptions(event.clientX, event.clientY);
+            }}
+            onDragStartCapture={event => {
+              event.dataTransfer.effectAllowed = 'copy';
+              event.dataTransfer.setData('text/plain', 'arlo-mascot-companion');
+            }}
+            onDragEndCapture={handleMascotDrop}
+            className="rounded-lg p-1 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
           >
             <MascotMark className="h-7 w-7" />
           </button>
@@ -283,14 +321,14 @@ export const MenuBar: React.FC = () => {
 
       <div className="flex items-center gap-1">
         {/* =====================================================
-            ABHISHEK OS LOGO MENU
+            ARLO OS LOGO MENU
         ====================================================== */}
 
         <div className="relative">
           <button
             type="button"
-            aria-label="Abhishek OS menu"
-            title="Abhishek OS"
+            aria-label="ARLO OS menu"
+            title="ARLO OS"
             className={`electron-no-drag flex items-center justify-center px-2 py-0.5 rounded-md transition-colors ${
               activeMenu === 'os'
                 ? 'bg-white/20'
@@ -298,7 +336,7 @@ export const MenuBar: React.FC = () => {
             }`}
             onClick={() => toggleMenu('os')}
           >
-            <MascotMark className="h-7 w-7" />
+            <ArloLogo className="h-7 w-7 object-contain" />
           </button>
 
           <AnimatePresence>
@@ -332,7 +370,7 @@ export const MenuBar: React.FC = () => {
                   }}
                 >
                   <Info className="w-3.5 h-3.5 text-sky-400" />
-                  <span>About Abhishek OS</span>
+                  <span>About ARLO OS</span>
                 </button>
 
                 <button
@@ -968,7 +1006,49 @@ export const MenuBar: React.FC = () => {
           RIGHT STATUS CONTROLS
       ====================================================== */}
 
+      <motion.button
+        type="button"
+        aria-label="Activity History"
+        title="Activity History"
+        draggable
+        onClick={openActivityHistory}
+        onContextMenu={event => {
+          event.preventDefault();
+          openMascotOptions(event.clientX, event.clientY);
+        }}
+        onDragStartCapture={event => {
+          event.dataTransfer.effectAllowed = 'copy';
+          event.dataTransfer.setData('text/plain', 'arlo-mascot-companion');
+        }}
+        onDragEndCapture={handleMascotDrop}
+        whileHover={{ scale: 1.12, y: -1 }}
+        whileTap={{ scale: 0.92 }}
+        transition={{ type: 'spring', stiffness: 420, damping: 24 }}
+        className="electron-no-drag absolute left-1/2 top-1/2 hidden h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition-colors hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60 min-[900px]:flex"
+      >
+        <MascotMark className="h-8 w-8" />
+      </motion.button>
+
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-label="Activity History"
+          title="Activity History"
+          draggable
+          onClick={openActivityHistory}
+          onContextMenu={event => {
+            event.preventDefault();
+            openMascotOptions(event.clientX, event.clientY);
+          }}
+          onDragStartCapture={event => {
+            event.dataTransfer.effectAllowed = 'copy';
+            event.dataTransfer.setData('text/plain', 'arlo-mascot-companion');
+          }}
+          onDragEndCapture={handleMascotDrop}
+          className="electron-no-drag flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60 min-[900px]:hidden"
+        >
+          <MascotMark className="h-7 w-7" />
+        </button>
 
         {/* Sound Volume */}
         <button

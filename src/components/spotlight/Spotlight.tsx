@@ -82,7 +82,7 @@
 //       action: () => updateSettings({ theme: settings.theme === 'light' ? 'dark' : 'light' }),
 //     },
 //     { id: 'cmd-lock', title: 'Lock Screen', desc: 'Secure this session', action: () => lockSystem() },
-//     { id: 'cmd-sleep', title: 'Sleep Abhishek OS', desc: 'Low power sleep mode', action: () => sleepSystem() },
+//     { id: 'cmd-sleep', title: 'Sleep ARLO OS', desc: 'Low power sleep mode', action: () => sleepSystem() },
 //     {
 //       id: 'cmd-power',
 //       title: 'Shut Down...',
@@ -303,6 +303,7 @@ export const Spotlight: React.FC = () => {
     setShowPowerDialog,
     updateSettings,
     settings,
+    recordActivity,
   } = useOS();
 
   const [query, setQuery] = useState('');
@@ -665,7 +666,7 @@ export const Spotlight: React.FC = () => {
         ? 'Laptop battery is fully charged'
         : `Laptop is currently charging at ${batteryLevel}%`
       : `Laptop battery is currently at ${batteryLevel}%`
-    : 'Using Abhishek OS battery status';
+    : 'Using ARLO OS battery status';
 
   /*
    * ---------------------------------------------------------
@@ -696,7 +697,7 @@ export const Spotlight: React.FC = () => {
 
     {
       id: 'cmd-sleep',
-      title: 'Sleep Abhishek OS',
+      title: 'Sleep ARLO OS',
       desc: 'Low power sleep mode',
       action: () => sleepSystem(),
     },
@@ -824,6 +825,14 @@ export const Spotlight: React.FC = () => {
       );
     } else if (e.key === 'Enter') {
       e.preventDefault();
+      const submittedQuery = query.trim();
+      if (submittedQuery) {
+        void recordActivity({
+          category: 'search',
+          title: 'Spotlight search',
+          details: submittedQuery,
+        });
+      }
 
       if (allResults[selectedIndex]) {
         sound.playClick();
@@ -939,6 +948,13 @@ export const Spotlight: React.FC = () => {
                   onClick={() => {
                     sound.playClick();
 
+                    if (query.trim()) {
+                      void recordActivity({
+                        category: 'search',
+                        title: 'Spotlight search',
+                        details: query.trim(),
+                      });
+                    }
                     item.onSelect();
 
                     setShowSpotlight(false);

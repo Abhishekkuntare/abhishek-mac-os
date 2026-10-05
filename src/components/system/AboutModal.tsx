@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { X, Cpu, HardDrive, Monitor, ShieldCheck, Mail, Sparkles } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { sound } from '../../services/soundService';
-import { MascotMark } from './MascotMark';
+import { ArloLogo } from './ArloLogo';
 
 export const AboutModal: React.FC = () => {
   const { showAboutModal, setShowAboutModal, openApp } = useOS();
@@ -39,11 +39,11 @@ export const AboutModal: React.FC = () => {
             whileTap={{ scale: 0.94 }}
             transition={{ type: 'spring', stiffness: 360, damping: 22 }}
           >
-            <MascotMark className="h-16 w-16" />
+            <ArloLogo className="h-16 w-16 object-contain" />
           </motion.div>
 
           <div>
-            <h2 className="text-xl font-extrabold tracking-tight">Abhishek OS</h2>
+            <h2 className="text-xl font-extrabold tracking-tight">ARLO OS</h2>
             <p className="text-xs text-slate-300 font-medium">Version 1.0.0 Pro (Build 26A382)</p>
             <div className="flex items-center gap-1.5 mt-1 text-[11px] text-sky-400 font-medium">
               <Sparkles className="w-3 h-3" />

@@ -88,6 +88,34 @@ declare global {
     content: string;
   }
 
+  interface GhostAITranscript {
+    text: string;
+    language: string;
+  }
+
+  interface GhostAIContext {
+    displayName: string;
+    availableApps: Array<{ id: string; name: string }>;
+  }
+
+  interface GhostAIToolCall {
+    id: string;
+    name: string;
+    args: Record<string, unknown>;
+  }
+
+  interface GhostAIToolResult {
+    id: string;
+    name: string;
+    success: boolean;
+    result: string;
+  }
+
+  type GhostAIChatResponse =
+    | { success: true; kind: 'message'; message: string }
+    | { success: true; kind: 'tool_calls'; toolCalls: GhostAIToolCall[] }
+    | { success: false; code: string; message: string; details?: string };
+
   interface Window {
     electronAPI?: {
       minimize: () => Promise<void>;
@@ -135,9 +163,25 @@ declare global {
       ghostAISetApiKey: (apiKey: string) => Promise<boolean>;
       ghostAIRemoveApiKey: () => Promise<boolean>;
       ghostAIChat: (request: {
-        model: string;
+        model?: 'gemini-3.8-flash';
+        requestId: string;
         messages: GhostAIMessage[];
-      }) => Promise<string>;
+        context: GhostAIContext;
+        pendingToolCalls?: GhostAIToolCall[];
+        toolResults?: GhostAIToolResult[];
+      }) => Promise<GhostAIChatResponse>;
+      ghostAICancelChat: (requestId: string) => Promise<boolean>;
+      ghostAISetGlobalShortcut: (shortcut: 'ctrl-shift-space' | 'ctrl-alt-space' | 'ctrl-shift-g') => Promise<boolean>;
+      onGhostAIToggle: (callback: () => void) => () => void;
+      ghostAIWakeDetected: () => Promise<void>;
+      ghostAIStartWakeListener: () => Promise<boolean>;
+      ghostAIStopWakeListener: () => Promise<void>;
+      ghostAISetWakePaused: (paused: boolean) => Promise<void>;
+      onGhostAITranscript: (callback: (transcript: GhostAITranscript) => void) => () => void;
+      onGhostAIWakeState: (callback: (state: {
+        status: 'starting' | 'ready' | 'paused' | 'stopped' | 'error';
+        message?: string;
+      }) => void) => () => void;
       readClipboardText: () => Promise<string>;
       writeClipboardText: (text: string) => Promise<void>;
       setAirDropEnabled?: (enabled: boolean) => Promise<void>;

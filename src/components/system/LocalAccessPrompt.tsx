@@ -46,7 +46,7 @@ export const LocalAccessPrompt: React.FC = () => {
         setError('Windows did not report any accessible drives.');
       }
     } catch {
-      setError('Abhishek OS could not enable drive access. Try again.');
+      setError('ARLO OS could not enable drive access. Try again.');
     } finally {
       setIsGranting(false);
     }
@@ -79,7 +79,7 @@ export const LocalAccessPrompt: React.FC = () => {
               <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-300">Your files, your choice</p>
               <h2 id="local-access-title" className="mt-2 text-xl font-semibold">Let Finder browse this PC?</h2>
               <p className="mt-2 max-w-md text-sm leading-6 text-slate-300">
-                Allow Abhishek OS to browse files and folders on every accessible drive, including Downloads, Documents, Pictures, Videos, and connected drives.
+                Allow ARLO OS to browse files and folders on every accessible drive, including Downloads, Documents, Pictures, Videos, and connected drives.
               </p>
             </div>
 

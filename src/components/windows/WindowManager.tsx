@@ -109,7 +109,7 @@ export const WindowManager: React.FC = () => {
           <div className="flex-1 flex items-center justify-center p-8 text-center text-slate-400">
             <div>
               <p className="text-sm font-semibold text-white">Application Initialized</p>
-              <p className="text-xs text-slate-500 mt-1">Ready for input on Abhishek OS.</p>
+              <p className="text-xs text-slate-500 mt-1">Ready for input on ARLO OS.</p>
             </div>
           </div>
         );

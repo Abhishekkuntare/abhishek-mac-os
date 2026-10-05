@@ -1,8 +1,8 @@
-# Abhishek OS
+# ARLO OS
 
 ### A modern, open-source desktop environment for Windows.
 
-Abhishek OS is an open-source desktop environment designed to provide a modern, customizable and immersive desktop experience for Windows.
+ARLO OS is an open-source desktop environment designed to provide a modern, customizable and immersive desktop experience for Windows.
 
 The project combines a familiar desktop workflow with a responsive interface, built-in applications, productivity tools, system utilities and a strong focus on visual design and user experience.
 
@@ -32,7 +32,7 @@ Features may evolve as the project develops.
 
 ### Desktop themes
 
-The Themes section in Settings offers animated previews for 29 visual themes. Abhishek OS's original appearance is the default; selecting a theme applies its colors and surfaces across the desktop, system panels, and built-in applications, and the choice is saved between launches. Use **Original Desktop** to restore the default appearance.
+The Themes section in Settings offers animated previews for 29 visual themes. ARLO OS's original appearance is the default; selecting a theme applies its colors and surfaces across the desktop, system panels, and built-in applications, and the choice is saved between launches. Use **Original Desktop** to restore the default appearance.
 
 ### Code Studio runtimes
 
@@ -40,7 +40,7 @@ Code Studio runs C++ and Java programs using local toolchains. On Windows, if a 
 
 ### Finder context menus
 
-Finder context menus work in both the virtual workspace and user-connected local folders. Local file operations are limited to folders the user has granted to Abhishek OS. Deleting a file or folder moves it into the app's Trash; restoring returns local files to their original folder (with a renamed copy if a name collision exists), while permanent deletion and Empty Trash remove the stored data. System and app icons are protected from deletion. Code files open in VS Code when it is detected; otherwise Finder opens the file in Code Studio. Actions such as sharing or editing in third-party apps are only shown when an actual integration is available.
+Finder context menus work in both the virtual workspace and user-connected local folders. Local file operations are limited to folders the user has granted to ARLO OS. Deleting a file or folder moves it into the app's Trash; restoring returns local files to their original folder (with a renamed copy if a name collision exists), while permanent deletion and Empty Trash remove the stored data. System and app icons are protected from deletion. Code files open in VS Code when it is detected; otherwise Finder opens the file in Code Studio. Actions such as sharing or editing in third-party apps are only shown when an actual integration is available.
 
 The desktop System widget polls live CPU load and memory usage from the host computer through Electron's main process. A metric that cannot be read is shown as unavailable.
 
@@ -54,6 +54,28 @@ Images and videos in Quick Look are streamed via a custom `abhishek-local://` pr
 
 When Electron's main-process or preload code changes, rebuild and reinstall/relaunch the desktop app; rebuilding only the renderer does not update its IPC handlers.
 
+### Ghost AI and Gemini
+
+Ghost AI uses Google's official `@google/genai` SDK from Electron's main process
+with the `gemini-3.8-flash` model. The key is read from `GEMINI_API_KEY` in the
+main-process environment or saved encrypted for the current Windows account in
+Ghost AI settings; it is not used to call Gemini from the React renderer. Chat
+requests continue through the `ghost-ai:chat` IPC handler and return structured,
+bounded errors.
+
+Gemini can request explicitly registered Ghost tools for opening/closing installed
+apps, creating named desktop files/folders, showing the desktop, reading local
+time and battery status, and toggling Focus Mode. Tool execution is checked
+against the registry and the OS APIs; high- and critical-risk actions remain
+disabled until a confirmation workflow exists. General AI chat requires a valid
+Gemini API key and an internet connection.
+
+The optional Windows wake listener uses a bundled multilingual Whisper base model
+for local English, Hindi, and Marathi speech recognition. Microphone audio stays
+on-device; recognized text may be sent to Gemini only when the user requests an AI
+response and configures that service. Voice response language and installed Windows
+speech voices affect pronunciation quality.
+
 ---
 
 ## 📸 Screenshots
@@ -66,7 +88,7 @@ Screenshots and demonstrations are available in the repository and project relea
 
 The current Windows installer is distributed through GitHub Releases and is not Authenticode-signed. Windows may show an **Unknown publisher** or SmartScreen warning.
 
-**[Download Abhishek OS](https://abhishek-operating-system.netlify.app)**
+**[Download ARLO OS](https://abhishek-operating-system.netlify.app)**
 
 The project is preparing a Microsoft Store MSIX package. Once the app passes Store certification and is published, install it from its Microsoft Store listing to receive a Microsoft-signed package. The Store listing is not available yet.
 
@@ -92,7 +114,7 @@ Get the exact package identity and publisher values from the app's **App identit
 
 ## 🔒 Privacy
 
-Abhishek OS is designed with user privacy in mind.
+ARLO OS is designed with user privacy in mind.
 
 The application does not intentionally collect or sell personal information for advertising or profiling purposes.
 
@@ -108,7 +130,7 @@ Third-party services and libraries used by the project may have their own privac
 
 ## 🧩 Open Source
 
-Abhishek OS is released under the:
+ARLO OS is released under the:
 
 **MIT License**
 
@@ -122,7 +144,7 @@ The project source code is publicly available so that users and contributors can
 
 ## 🛠️ Technology
 
-Abhishek OS is built using modern web and desktop technologies, including:
+ARLO OS is built using modern web and desktop technologies, including:
 
 * React
 * TypeScript
@@ -141,7 +163,7 @@ The exact dependency versions used for a release are defined by the project's so
 
 ### Requirements
 
-To develop Abhishek OS locally, you should have:
+To develop ARLO OS locally, you should have:
 
 * Node.js
 * npm
@@ -166,6 +188,14 @@ Run the development environment:
 npm run dev
 ```
 
+Run ARLO OS in Electron without rebuilding the offline voice listener:
+
+```bash
+npm run electron:dev
+```
+
+The wake listener starts shortly after the desktop is rendered so it does not delay the initial screen. To rebuild the listener before launching Electron, use `npm run electron:dev:voice`.
+
 Build the renderer:
 
 ```bash
@@ -178,7 +208,7 @@ Build the Windows installer and Microsoft Store package:
 npm run package:win
 ```
 
-This creates both `ABHISHEK-OS-Setup.exe` and `ABHISHEK-OS-Setup.appx` in `release/`. The Store package uses this app's Partner Center identity by default. If the identity changes, override it with `APPX_IDENTITY_NAME`, `APPX_PUBLISHER`, and `APPX_PUBLISHER_DISPLAY_NAME` using the exact values from Partner Center.
+This creates the ARLO OS Windows installer and Store package in `release/`. The Store package keeps this app's existing Partner Center identity so updates remain attached to the reserved listing. If Microsoft assigns a different identity, override `APPX_IDENTITY_NAME`, `APPX_PUBLISHER`, and `APPX_PUBLISHER_DISPLAY_NAME` with the exact Partner Center values.
 
 To build only the standalone Windows installer:
 
@@ -234,7 +264,7 @@ https://github.com/Abhishekkuntare/abhishek-mac-os/issues
 
 When reporting a problem, include:
 
-* Abhishek OS version
+* ARLO OS version
 * Windows version
 * Steps to reproduce the issue
 * Expected behavior
@@ -276,7 +306,7 @@ Security reports should include enough information to reproduce and investigate 
 
 Copyright © 2026 Abhishek Kuntare.
 
-Abhishek OS is licensed under the MIT License.
+ARLO OS is licensed under the MIT License.
 
 See [LICENSE](LICENSE) for the complete license text.
 
@@ -298,7 +328,7 @@ https://github.com/Abhishekkuntare/abhishek-mac-os
 
 ## ⭐ Support the Project
 
-If you find Abhishek OS useful, consider:
+If you find ARLO OS useful, consider:
 
 * ⭐ Starring the repository
 * 🐛 Reporting bugs

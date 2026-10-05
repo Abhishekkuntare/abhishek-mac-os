@@ -89,7 +89,7 @@ export const LockScreen: React.FC = () => {
       {/* Bottom hint */}
       <div className="relative z-10 text-xs text-slate-400 flex items-center gap-1.5">
         {/* <Lock className="w-3.5 h-3.5" />
-        <span>Abhishek OS Session Protected</span> */}
+        <span>ARLO OS Session Protected</span> */}
       </div>
     </div>
   );

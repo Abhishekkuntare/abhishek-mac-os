@@ -63,6 +63,14 @@ import { sound } from '../../services/soundService';
 import { vfs } from '../../services/virtualFileSystem';
 import { AppFeaturesModal } from '../system/AppFeaturesModal';
 import { AppIcon, getAppIconAsset } from '../system/AppIcon';
+import { VirtualFile } from '../../types/desktop';
+import {
+  DESKTOP_ICON_SHAPE_EVENT,
+  DESKTOP_ICON_SHAPE_KEY,
+  getDesktopIconShapeStyle,
+  isDesktopIconShape,
+  type DesktopIconShape,
+} from '../../utils/desktopIconShape';
 
 /* ============================================================
    ICON REGISTRY
@@ -130,6 +138,7 @@ type TrashSortMode =
 const CONTEXT_MENU_WIDTH = 224;
 const CONTEXT_MENU_HEIGHT = 235;
 const SCREEN_PADDING = 10;
+const DOCK_FILE_SHORTCUTS_KEY = 'abhishek_os_dock_file_shortcuts_v1';
 
 /* ============================================================
    TRASH ICON
@@ -500,7 +509,7 @@ const TrashModal: React.FC<TrashModalProps> = ({
       try {
         if (item.source === 'local') {
           if (!window.electronAPI?.restoreLocalTrashEntry) {
-            throw new Error('Local Trash is unavailable. Update and restart Abhishek OS.');
+            throw new Error('Local Trash is unavailable. Update and restart ARLO OS.');
           }
           await window.electronAPI.restoreLocalTrashEntry(item.sourceId);
         } else if (!vfs.restoreFromTrash(item.sourceId)) {
@@ -534,7 +543,7 @@ const TrashModal: React.FC<TrashModalProps> = ({
     try {
       const localCount = items.filter(item => item.source === 'local').length;
       if (localCount > 0 && !window.electronAPI?.emptyLocalTrash) {
-        throw new Error('Local Trash is unavailable. Update and restart Abhishek OS.');
+        throw new Error('Local Trash is unavailable. Update and restart ARLO OS.');
       }
       await window.electronAPI?.emptyLocalTrash?.();
     } catch (error) {
@@ -567,7 +576,7 @@ const TrashModal: React.FC<TrashModalProps> = ({
       try {
         if (item.source === 'local') {
           if (!window.electronAPI?.deleteLocalTrashEntry) {
-            throw new Error('Local Trash is unavailable. Update and restart Abhishek OS.');
+            throw new Error('Local Trash is unavailable. Update and restart ARLO OS.');
           }
           await window.electronAPI.deleteLocalTrashEntry(item.sourceId);
         } else if (!vfs.deletePermanently(item.sourceId)) {
@@ -1550,10 +1559,106 @@ export const Dock: React.FC = () => {
     moveDockApp,
     toggleDockPin,
     addNotification,
+    setQuickLookFile,
   } = useOS();
 
   const dockRef =
     useRef<HTMLDivElement | null>(null);
+
+  const [dockFileIds, setDockFileIds] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(DOCK_FILE_SHORTCUTS_KEY);
+      return stored ? [...new Set(JSON.parse(stored) as string[])] : [];
+    } catch (error) {
+      console.warn('Could not load Dock file shortcuts.', error);
+      return [];
+    }
+  });
+  const [availableFiles, setAvailableFiles] = useState<VirtualFile[]>(() => vfs.getAllActiveFiles());
+  const dockFiles = dockFileIds
+    .map(id => availableFiles.find(file => file.id === id))
+    .filter((file): file is VirtualFile => Boolean(file));
+  const [isDesktopItemOverDock, setIsDesktopItemOverDock] = useState(false);
+  const [desktopIconShape, setDesktopIconShape] = useState<DesktopIconShape>(() => {
+    try {
+      const stored = localStorage.getItem(DESKTOP_ICON_SHAPE_KEY);
+      return isDesktopIconShape(stored) ? stored : 'rounded';
+    } catch (error) {
+      console.warn('Could not load the desktop icon shape for the Dock.', error);
+      return 'rounded';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DOCK_FILE_SHORTCUTS_KEY, JSON.stringify(dockFileIds));
+    } catch (error) {
+      console.warn('Could not save Dock file shortcuts.', error);
+    }
+    window.dispatchEvent(new CustomEvent('dock:file-shortcuts-changed', {
+      detail: dockFileIds,
+    }));
+  }, [dockFileIds]);
+
+  useEffect(() => {
+    const handleShapeChange = (event: Event) => {
+      const shape: unknown = (event as CustomEvent<unknown>).detail;
+      if (isDesktopIconShape(shape)) setDesktopIconShape(shape);
+    };
+    window.addEventListener(DESKTOP_ICON_SHAPE_EVENT, handleShapeChange);
+    return () => window.removeEventListener(DESKTOP_ICON_SHAPE_EVENT, handleShapeChange);
+  }, []);
+
+  useEffect(() => vfs.subscribe(() => {
+    setAvailableFiles(vfs.getAllActiveFiles());
+  }), []);
+
+  useEffect(() => {
+    const handleDesktopDrop = (event: Event) => {
+      const detail = (event as CustomEvent<{ appId?: string; fileId?: string }>).detail;
+      if (detail?.appId) {
+        const app = APP_REGISTRY[detail.appId];
+        if (!app?.installed || dockAppIds.includes(detail.appId)) return;
+        toggleDockPin(detail.appId);
+        sound.playClick();
+        addNotification({
+          appId: detail.appId,
+          title: 'Added to Dock',
+          message: `${app.name} is now available in the Dock.`,
+          type: 'system',
+        });
+        return;
+      }
+
+      if (detail?.fileId) {
+        const file = vfs.getFileById(detail.fileId);
+        if (!file || file.isDeleted) return;
+        setDockFileIds(previous =>
+          previous.includes(file.id) ? previous : [...previous, file.id],
+        );
+        sound.playClick();
+      }
+    };
+    const handleDesktopRemove = (event: Event) => {
+      const detail = (event as CustomEvent<{ fileId?: string }>).detail;
+      if (detail?.fileId) {
+        setDockFileIds(previous => previous.filter(id => id !== detail.fileId));
+      }
+    };
+    const handleDragState = (event: Event) => {
+      const detail = (event as CustomEvent<{ overDock?: boolean }>).detail;
+      setIsDesktopItemOverDock(detail?.overDock === true);
+    };
+
+    window.addEventListener('desktop:item-drop-to-dock', handleDesktopDrop);
+    window.addEventListener('desktop:item-remove-from-dock', handleDesktopRemove);
+    window.addEventListener('desktop:item-drag-state', handleDragState);
+    return () => {
+      window.removeEventListener('desktop:item-drop-to-dock', handleDesktopDrop);
+      window.removeEventListener('desktop:item-remove-from-dock', handleDesktopRemove);
+      window.removeEventListener('desktop:item-drag-state', handleDragState);
+    };
+  }, [addNotification, dockAppIds, toggleDockPin]);
 
   const dockPointerRef = useRef<{ x: number; y: number } | null>(null);
   const dockMagnificationFrameRef = useRef<number | null>(null);
@@ -2180,12 +2285,14 @@ export const Dock: React.FC = () => {
             transition-all
             duration-200
             overflow-visible
+            ${isDesktopItemOverDock ? 'ring-2 ring-sky-400/80 bg-sky-400/10' : ''}
             ${
               isLight
                 ? 'glass-dock-light'
                 : 'glass-dock'
             }
           `}
+          data-dock-drop-zone="true"
           onContextMenu={e => {
             e.preventDefault();
           }}
@@ -2538,7 +2645,9 @@ export const Dock: React.FC = () => {
                           : ''
                       }
                     `}
+                    data-desktop-icon-shape={desktopIconShape}
                     style={{
+                      ...getDesktopIconShapeStyle(desktopIconShape),
                       background: iconAsset
                         ? 'transparent'
                         : app.iconBg,
@@ -2564,6 +2673,7 @@ export const Dock: React.FC = () => {
                     <AppIcon
                       appId={appId}
                       className="relative z-10 h-full w-full object-contain"
+                      style={getDesktopIconShapeStyle(desktopIconShape)}
                       fallback={
                         <IconComp
                           className="
@@ -2612,6 +2722,95 @@ export const Dock: React.FC = () => {
               );
             },
           )}
+
+          <AnimatePresence>
+            {dockFiles.map(file => {
+              const hasArtwork = file.type === 'folder' || file.extension?.toLowerCase() === 'pdf';
+              const icon = file.type === 'folder'
+                ? <AppIcon assetId="folder" className="h-full w-full object-contain" style={getDesktopIconShapeStyle(desktopIconShape)} />
+                : file.extension?.toLowerCase() === 'pdf'
+                  ? <AppIcon assetId="pdf" className="h-full w-full object-contain" style={getDesktopIconShapeStyle(desktopIconShape)} />
+                  : file.type === 'image'
+                    ? <FileImage className="h-6 w-6 text-amber-200" strokeWidth={1.8} />
+                    : file.type === 'code'
+                      ? <FileCode2 className="h-6 w-6 text-sky-200" strokeWidth={1.8} />
+                      : file.type === 'archive'
+                        ? <FileArchive className="h-6 w-6 text-violet-200" strokeWidth={1.8} />
+                        : <FileText className="h-6 w-6 text-white/90" strokeWidth={1.8} />;
+
+              return (
+                <motion.div
+                  key={file.id}
+                  layout
+                  initial={{ opacity: 0, scale: 0.65, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.65, y: 10 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+                  data-dock-file-id={file.id}
+                  className="group/dockfile relative flex shrink-0 flex-col items-center"
+                  onMouseEnter={() => setTooltipApp(file.name)}
+                  onMouseLeave={() => setTooltipApp(null)}
+                >
+                  <button
+                    type="button"
+                    data-dock-icon="true"
+                    title={file.name}
+                    aria-label={`Open ${file.name}`}
+                    onClick={() => {
+                      if (file.type === 'folder') {
+                        const folderPath = `${file.path.replace(/\/+$/, '')}/${file.name}`.replace(/\/+/g, '/');
+                        try {
+                          localStorage.setItem('finder-pending-open-path', folderPath);
+                        } catch (error) {
+                          console.warn('Could not save the folder to open in Finder.', error);
+                        }
+                        openApp('finder');
+                        window.dispatchEvent(new CustomEvent('finder:open-host-path', { detail: folderPath }));
+                      } else {
+                        setQuickLookFile(file);
+                      }
+                      sound.playClick();
+                    }}
+                    className={`relative flex h-12 w-12 appearance-none items-center justify-center overflow-hidden p-0 outline-none transition-[filter,scale] duration-150 hover:brightness-110 focus-visible:outline-none ${
+                      hasArtwork
+                        ? 'border-0 bg-transparent shadow-none'
+                        : 'border border-white/15 bg-gradient-to-br from-white/[0.17] via-white/[0.08] to-slate-950/45 shadow-[0_8px_20px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.18)]'
+                    }`}
+                    data-desktop-icon-shape={desktopIconShape}
+                    style={getDesktopIconShapeStyle(desktopIconShape)}
+                  >
+                    {icon}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${file.name} from Dock`}
+                    title="Remove from Dock"
+                    onClick={() => {
+                      setDockFileIds(previous => previous.filter(id => id !== file.id));
+                      setTooltipApp(null);
+                      sound.playClick();
+                    }}
+                    className="absolute -right-1 -top-1 z-20 hidden h-[18px] w-[18px] items-center justify-center rounded-full border border-white/25 bg-slate-950/95 text-white shadow-[0_3px_10px_rgba(0,0,0,0.45)] transition-transform hover:scale-110 group-hover/dockfile:flex group-focus-within/dockfile:flex"
+                  >
+                    <X className="h-2.5 w-2.5" strokeWidth={2.5} />
+                  </button>
+                  <AnimatePresence>
+                    {tooltipApp === file.name && !isDesktopItemOverDock && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: -10 }}
+                        exit={{ opacity: 0, y: 5 }}
+                        className="pointer-events-none absolute -top-10 z-50 max-w-48 truncate whitespace-nowrap rounded-lg border border-white/20 px-2.5 py-1 text-[11px] font-medium text-white shadow-xl glass-panel"
+                      >
+                        {file.name}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  <div className="mt-1.5 flex h-1.5 items-center justify-center" aria-hidden="true" />
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
 
           {/* ==================================================
               DIVIDER
@@ -2715,12 +2914,13 @@ export const Dock: React.FC = () => {
                 overflow-hidden
               "
               style={{
+                ...getDesktopIconShapeStyle(desktopIconShape),
                 transformOrigin: getDockIconOrigin(),
                 transition: 'scale 90ms cubic-bezier(0.2, 0.8, 0.2, 1)',
               }}
               data-dock-icon="true"
             >
-              <AppIcon appId="trash" className="relative z-10 h-full w-full object-contain" />
+              <AppIcon appId="trash" className="relative z-10 h-full w-full object-contain" style={getDesktopIconShapeStyle(desktopIconShape)} />
             </motion.div>
 
             <div className="h-1.5 mt-1" />

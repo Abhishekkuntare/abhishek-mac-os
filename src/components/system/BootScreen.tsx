@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useOS } from '../../context/OSContext';
+import { ArloLogo } from './ArloLogo';
 
 interface Particle {
   id: number;
@@ -267,47 +268,8 @@ export const BootScreen: React.FC = () => {
         "
       >
         {/* Brand */}
-        <div className="flex items-center gap-3">
-          <div
-            className="
-              relative
-              flex
-              h-9
-              w-9
-              items-center
-              justify-center
-              overflow-hidden
-              rounded-xl
-              border
-              border-white/10
-              bg-white/[0.05]
-              shadow-[0_10px_35px_rgba(0,0,0,0.3)]
-              backdrop-blur-xl
-            "
-          >
-            <div
-              className="
-                absolute
-                inset-0
-                bg-gradient-to-br
-                from-white/20
-                via-transparent
-                to-indigo-500/10
-              "
-            />
-
-            <span className="relative text-sm font-semibold">A</span>
-          </div>
-
-          <div>
-            <div className="text-sm font-medium tracking-wide text-white/80">
-              Abhishek OS
-            </div>
-
-            <div className="text-[9px] uppercase tracking-[0.28em] text-white/25">
-              System Startup
-            </div>
-          </div>
+        <div className="flex items-center">
+          <ArloLogo className="h-10 w-10 object-contain" />
         </div>
 
         {/* Version */}
@@ -567,22 +529,10 @@ export const BootScreen: React.FC = () => {
           }}
           className="mb-8 text-center"
         >
-          <h1
-            className="
-              bg-gradient-to-b
-              from-white
-              via-white
-              to-white/50
-              bg-clip-text
-              text-2xl
-              font-medium
-              tracking-[-0.025em]
-              text-transparent
-              sm:text-3xl
-            "
-          >
-            Abhishek OS
-          </h1>
+          <ArloLogo
+            variant="wordmark"
+            className="mx-auto w-[min(64vw,260px)] object-contain"
+          />
 
           <p className="mt-2 text-[10px] uppercase tracking-[0.35em] text-white/25">
             Starting your workspace
@@ -781,7 +731,7 @@ export const BootScreen: React.FC = () => {
           text-white/10
         "
       >
-        Abhishek OS • Personal Computing Environment
+        ARLO OS • Personal Computing Environment
       </motion.div>
     </motion.div>
   );

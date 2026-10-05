@@ -187,6 +187,42 @@ contextBridge.exposeInMainWorld(
     ghostAIChat: (request) =>
       ipcRenderer.invoke('ghost-ai:chat', request),
 
+    ghostAICancelChat: (requestId) =>
+      ipcRenderer.invoke('ghost-ai:cancelChat', requestId),
+
+    ghostAISetGlobalShortcut: (shortcut) =>
+      ipcRenderer.invoke('ghost-ai:setGlobalShortcut', shortcut),
+
+    ghostAIWakeDetected: () =>
+      ipcRenderer.invoke('ghost-ai:wakeDetected'),
+
+    ghostAIStartWakeListener: () =>
+      ipcRenderer.invoke('ghost-ai:startWakeListener'),
+
+    ghostAIStopWakeListener: () =>
+      ipcRenderer.invoke('ghost-ai:stopWakeListener'),
+
+    ghostAISetWakePaused: (paused) =>
+      ipcRenderer.invoke('ghost-ai:setWakePaused', paused),
+
+    onGhostAITranscript: (callback) => {
+      const listener = (_event, transcript) => callback(transcript);
+      ipcRenderer.on('ghost-ai:transcript', listener);
+      return () => ipcRenderer.removeListener('ghost-ai:transcript', listener);
+    },
+
+    onGhostAIWakeState: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on('ghost-ai:wakeState', listener);
+      return () => ipcRenderer.removeListener('ghost-ai:wakeState', listener);
+    },
+
+    onGhostAIToggle: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on('ghost-ai:toggle', listener);
+      return () => ipcRenderer.removeListener('ghost-ai:toggle', listener);
+    },
+
     readClipboardText: () =>
       ipcRenderer.invoke('studio:clipboardRead'),
 
@@ -207,7 +243,7 @@ contextBridge.exposeInMainWorld(
       ),
 
     /*
-     * Restart Abhishek OS and install the
+     * Restart ARLO OS and install the
      * downloaded update.
      */
 

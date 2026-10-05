@@ -56,12 +56,12 @@ const STORAGE_KEY = 'abhishek-os-notes';
 const DEFAULT_NOTES: Note[] = [
   {
     id: 'n1',
-    title: 'Abhishek OS Architecture Blueprint',
+    title: 'ARLO OS Architecture Blueprint',
     date: 'Sep 19, 2026',
     folder: 'Work',
     pinned: true,
     body: `
-      <h1>Abhishek OS Architecture</h1>
+      <h1>ARLO OS Architecture</h1>
       <p>Engineered by Abhishek Kuntare (abhishekkuntare02@gmail.com).</p>
 
       <h2>Core Principles:</h2>
@@ -1030,7 +1030,7 @@ export const NotesApp: React.FC = () => {
               </div>
 
               <div className="text-[9px] text-slate-500 mt-0.5">
-                Abhishek OS
+                ARLO OS
               </div>
             </div>
           </div>

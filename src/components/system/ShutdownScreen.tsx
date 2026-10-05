@@ -274,7 +274,7 @@ export const ShutdownScreen: React.FC = () => {
                 text-white/75
               "
             >
-              Abhishek OS is off
+              ARLO OS is off
             </h1>
 
             <p
@@ -481,7 +481,7 @@ export const ShutdownScreen: React.FC = () => {
 
             <div>
               <div className="text-sm font-medium text-white/70">
-                Abhishek OS
+                ARLO OS
               </div>
 
               <div className="text-[9px] uppercase tracking-[0.28em] text-white/20">

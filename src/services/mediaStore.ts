@@ -24,7 +24,7 @@ const getDatabase = () => {
       };
       request.onblocked = () => {
         databasePromise = null;
-        reject(new Error('Local media storage is busy. Close other Abhishek OS tabs and try again.'));
+        reject(new Error('Local media storage is busy. Close other ARLO OS tabs and try again.'));
       };
     });
   }

@@ -363,7 +363,7 @@ export const SleepOverlay: React.FC = () => {
 
             <div className="hidden sm:block">
               <div className="text-sm font-medium tracking-wide text-white/85">
-                Abhishek OS
+                ARLO OS
               </div>
 
               <div className="text-[10px] uppercase tracking-[0.25em] text-white/30">
@@ -755,7 +755,7 @@ export const SleepOverlay: React.FC = () => {
             </motion.div>
 
             <div className="text-[9px] uppercase tracking-[0.3em] text-white/15">
-              Abhishek OS • Power Nap
+              ARLO OS • Power Nap
             </div>
           </motion.div>
         </motion.main>

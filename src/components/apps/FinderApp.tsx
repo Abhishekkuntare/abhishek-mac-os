@@ -139,6 +139,7 @@ export const FinderApp: React.FC = () => {
     addNotification,
     uploadCustomWallpaper,
     setLockScreenWallpaper,
+    recordActivity,
   } = useOS();
 
   const [filesState, setFilesState] = useState<VirtualFile[]>(() => vfs.getAllActiveFiles());
@@ -186,6 +187,14 @@ export const FinderApp: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [pathHistory, setPathHistory] = useState<string[]>(['/Users/abhishek']);
   const [historyIndex, setHistoryIndex] = useState(0);
+  const previousPathRef = useRef(currentPath);
+
+  useEffect(() => {
+    if (previousPathRef.current === currentPath) return;
+    previousPathRef.current = currentPath;
+    const folderName = currentPath.split(/[\\/]+/).filter(Boolean).pop() || 'Computer';
+    void recordActivity({ category: 'workspace', title: 'Opened Finder location', details: folderName });
+  }, [currentPath, recordActivity]);
 
   // Sorting
   const [sortField, setSortField] = useState<SortField>('name');
@@ -476,7 +485,7 @@ export const FinderApp: React.FC = () => {
         addNotification({
           appId: 'finder',
           title: 'Opened with your default app',
-          message: 'Update and restart Abhishek OS to enable VS Code detection and Code Studio fallback.',
+          message: 'Update and restart ARLO OS to enable VS Code detection and Code Studio fallback.',
           type: 'system',
         });
       } catch (error) {
@@ -498,7 +507,7 @@ export const FinderApp: React.FC = () => {
         addNotification({
           appId: 'finder',
           title: 'Opened with your default app',
-          message: 'The VS Code/Code Studio bridge is missing. Rebuild and restart Abhishek OS to enable its editor integration.',
+          message: 'The VS Code/Code Studio bridge is missing. Rebuild and restart ARLO OS to enable its editor integration.',
           type: 'system',
         });
       } catch (fallbackError) {
@@ -539,7 +548,7 @@ export const FinderApp: React.FC = () => {
         addNotification({
           appId: 'finder',
           title: 'Desktop app update required',
-          message: 'Restart or reinstall the latest Abhishek OS build to open local files.',
+          message: 'Restart or reinstall the latest ARLO OS build to open local files.',
           type: 'system',
         });
         return;
@@ -959,7 +968,7 @@ export const FinderApp: React.FC = () => {
       try {
         if (file.hostPath) {
           if (!window.electronAPI?.trashLocalEntry) {
-            throw new Error('Local file deletion is unavailable. Update and restart Abhishek OS.');
+            throw new Error('Local file deletion is unavailable. Update and restart ARLO OS.');
           }
           await window.electronAPI.trashLocalEntry(file.hostPath);
         } else if (!vfs.moveToTrash(file.id)) {
@@ -1010,7 +1019,7 @@ export const FinderApp: React.FC = () => {
           await window.electronAPI.openLocalPath(file.hostPath);
           return;
         }
-        throw new Error('Image preview is unavailable. Update and restart Abhishek OS.');
+        throw new Error('Image preview is unavailable. Update and restart ARLO OS.');
       }
       try {
         previewUrl = await window.electronAPI.getMediaUrl(file.hostPath);
@@ -1075,7 +1084,7 @@ export const FinderApp: React.FC = () => {
     setSelectedFileIds([copy.id]);
     addNotification({
       appId: 'finder',
-      title: 'Saved in Abhishek OS',
+      title: 'Saved in ARLO OS',
       message: `${file.name} was saved in ${targetPath.replace('/Users/abhishek/', '')}.`,
       type: 'system',
     });
@@ -1085,7 +1094,7 @@ export const FinderApp: React.FC = () => {
   const copyImage = async (file: VirtualFile) => {
     const blob = await getMediaBlob(file);
     if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
-      throw new Error('Image clipboard is not available in this browser. Use Save to Abhishek OS instead.');
+      throw new Error('Image clipboard is not available in this browser. Use Save to ARLO OS instead.');
     }
     const clipboardType = blob.type === 'image/png' ? 'image/png' : 'image/png';
     const bitmap = await createImageBitmap(blob);
@@ -1523,6 +1532,15 @@ export const FinderApp: React.FC = () => {
               placeholder="Search"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && searchQuery.trim()) {
+                  void recordActivity({
+                    category: 'search',
+                    title: 'Finder search',
+                    details: searchQuery.trim(),
+                  });
+                }
+              }}
               className="w-28 sm:w-36 md:w-44 py-1 pl-8 pr-2.5 rounded-xl bg-white/10 text-xs text-white placeholder:text-slate-400 outline-none border border-white/10 focus:border-sky-400 focus:bg-white/15 transition-all"
             />
             {searchQuery && (
@@ -1667,7 +1685,7 @@ export const FinderApp: React.FC = () => {
           <div className="p-3 rounded-2xl bg-white/5 border border-white/10 text-[11px] text-slate-400 space-y-1">
             <div className="font-semibold text-slate-200 flex items-center gap-1.5">
               <HardDrive className="w-3.5 h-3.5 text-sky-400" />
-              <span>Abhishek OS Drive</span>
+              <span>ARLO OS Drive</span>
             </div>
             <div className="text-[10px]">824 GB free of 1 TB</div>
             <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden mt-1">
@@ -2035,7 +2053,7 @@ export const FinderApp: React.FC = () => {
                   : setQuickLookFile(contextFile),
               )}
               {(contextFile.type === 'image' || contextFile.type === 'video') && contextItem(
-                'Save to Abhishek OS…',
+                'Save to ARLO OS…',
                 <Save className="h-4 w-4" />,
                 () => setSaveToAppFile(contextFile),
               )}
@@ -2538,7 +2556,7 @@ export const FinderApp: React.FC = () => {
           >
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 id="save-media-title" className="text-base font-bold">Save in Abhishek OS</h2>
+                <h2 id="save-media-title" className="text-base font-bold">Save in ARLO OS</h2>
                 <p className="mt-1 max-w-[300px] truncate text-xs text-slate-400">{saveToAppFile.name}</p>
               </div>
               <button type="button" aria-label="Close" onClick={() => setSaveToAppFile(null)} className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white">

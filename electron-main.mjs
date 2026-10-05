@@ -7,6 +7,7 @@ import {
   ipcMain,
   nativeTheme,
   clipboard,
+  globalShortcut,
   net,
   protocol,
   safeStorage,
@@ -14,7 +15,7 @@ import {
 
 import electronUpdater from 'electron-updater';
 import dotenv from 'dotenv';
-import { GoogleGenAI } from '@google/genai';
+import { GHOST_GEMINI_MODEL, GHOST_TOOL_DECLARATIONS, runGhostAgent } from './ghost-agent-service.mjs';
 
 
 
@@ -46,6 +47,13 @@ protocol.registerSchemesAsPrivileged([{
 }]);
 
 let mainWindow = null;
+let activeGhostShortcut = '';
+let pendingGhostToggle = false;
+let ghostWakeProcess = null;
+let ghostWakeStopping = false;
+let ghostWakeStatus = 'stopped';
+const ghostWakeStateWaiters = new Set();
+const ghostChatControllers = new Map();
 let viteProcess = null;
 let pendingBluetoothSelection = null;
 let previousCpuTimes = null;
@@ -62,14 +70,237 @@ const fullAccessFile = () => path.join(app.getPath('userData'), 'full-filesystem
 const appTrashDirectory = () => path.join(app.getPath('userData'), 'file-trash');
 const appTrashManifest = () => path.join(app.getPath('userData'), 'file-trash.json');
 const geminiApiKeyFile = () => path.join(app.getPath('userData'), 'gemini-api-key.enc');
+const ghostVoiceExecutable = () => app.isPackaged
+  ? path.join(process.resourcesPath, 'ghost-voice', 'GhostVoice.exe')
+  : path.join(__dirname, 'build', 'ghost-voice', 'dist', 'GhostVoice', 'GhostVoice.exe');
 const assertTrustedFilesFrame = event => {
   if (
     event.sender !== mainWindow?.webContents ||
     !isTrustedCodeRunnerFrame(event.senderFrame)
   ) {
-    throw new Error('Local file access is only available to the Abhishek OS desktop window.');
+    throw new Error('Local file access is only available to the ARLO OS desktop window.');
   }
 };
+
+const GHOST_SHORTCUT_ACCELERATORS = {
+  'ctrl-shift-space': 'CommandOrControl+Shift+Space',
+  'ctrl-alt-space': 'CommandOrControl+Alt+Space',
+  'ctrl-shift-g': 'CommandOrControl+Shift+G',
+};
+
+const registerGhostShortcut = shortcut => {
+  const accelerator = GHOST_SHORTCUT_ACCELERATORS[shortcut];
+  if (!accelerator) throw new Error('Choose one of the supported Ghost AI shortcuts.');
+  if (accelerator === activeGhostShortcut) return true;
+  if (!globalShortcut.register(accelerator, () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.show();
+    mainWindow.focus();
+    if (mainWindow.webContents.isLoading()) {
+      pendingGhostToggle = true;
+      return;
+    }
+    mainWindow.webContents.send('ghost-ai:toggle');
+  })) {
+    return false;
+  }
+  if (activeGhostShortcut) globalShortcut.unregister(activeGhostShortcut);
+  activeGhostShortcut = accelerator;
+  return true;
+};
+
+ipcMain.handle('ghost-ai:setGlobalShortcut', (event, shortcut) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Ghost AI shortcuts can only be changed from ARLO OS settings.');
+  }
+  if (typeof shortcut !== 'string' || !Object.hasOwn(GHOST_SHORTCUT_ACCELERATORS, shortcut)) {
+    throw new Error('That Ghost AI shortcut is not supported.');
+  }
+  return registerGhostShortcut(shortcut);
+});
+
+ipcMain.handle('ghost-ai:wakeDetected', event => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Ghost AI wake detection is only available to ARLO OS.');
+  }
+  mainWindow.show();
+  mainWindow.focus();
+});
+
+const sendGhostWakeState = state => {
+  ghostWakeStatus = state.status;
+  ghostWakeStateWaiters.forEach(waiter => {
+    if (waiter.status === state.status) waiter.resolve();
+    else if (state.status === 'error' || state.status === 'stopped') {
+      waiter.reject(new Error(state.message || `The local speech recognizer is ${state.status}.`));
+    }
+  });
+  if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send('ghost-ai:wakeState', state);
+};
+
+const waitForGhostWakeState = status => {
+  if (ghostWakeStatus === status) return Promise.resolve();
+  if (ghostWakeStatus === 'error' || ghostWakeStatus === 'stopped') {
+    return Promise.reject(new Error(`The local speech recognizer is ${ghostWakeStatus}.`));
+  }
+  return new Promise((resolve, reject) => {
+    const waiter = {
+      status,
+      resolve: () => {
+        clearTimeout(timeout);
+        ghostWakeStateWaiters.delete(waiter);
+        resolve();
+      },
+      reject: error => {
+        clearTimeout(timeout);
+        ghostWakeStateWaiters.delete(waiter);
+        reject(error);
+      },
+    };
+    const timeout = setTimeout(() => {
+      ghostWakeStateWaiters.delete(waiter);
+      reject(new Error(`Timed out waiting for the local speech recognizer to ${status}.`));
+    }, 10_000);
+    ghostWakeStateWaiters.add(waiter);
+  });
+};
+
+ipcMain.handle('ghost-ai:startWakeListener', async event => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Ghost AI voice activation is only available to ARLO OS.');
+  }
+  if (process.platform !== 'win32') {
+    throw new Error('Local Hey Ghost voice activation is currently available on Windows only.');
+  }
+  if (ghostWakeProcess && ghostWakeProcess.exitCode === null && ghostWakeStopping) {
+    await new Promise(resolve => ghostWakeProcess.once('exit', resolve));
+  }
+  if (ghostWakeProcess && ghostWakeProcess.exitCode === null) return true;
+
+  const executable = ghostVoiceExecutable();
+  try {
+    await fs.access(executable);
+  } catch (error) {
+    throw new Error(
+      'The bundled offline voice listener is missing. Rebuild the app with "npm run build:voice".',
+      { cause: error },
+    );
+  }
+  const speechProcess = spawn(executable, [], {
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  ghostWakeProcess = speechProcess;
+  ghostWakeStopping = false;
+  sendGhostWakeState({ status: 'starting' });
+
+  let outputBuffer = '';
+  speechProcess.stdout.setEncoding('utf8');
+  speechProcess.stdout.on('data', chunk => {
+    outputBuffer += chunk;
+    const lines = outputBuffer.split(/\r?\n/);
+    outputBuffer = lines.pop() ?? '';
+    lines.forEach(line => {
+      if (!line.trim()) return;
+      try {
+        const message = JSON.parse(line);
+        if (message.type === 'transcript' && typeof message.text === 'string') {
+          mainWindow?.webContents.send('ghost-ai:transcript', {
+            text: message.text,
+            language: typeof message.language === 'string' ? message.language : 'en',
+          });
+        } else if (message.type === 'ready' || message.type === 'paused') {
+          sendGhostWakeState({ status: message.type });
+        } else if (message.type === 'error') {
+          console.error('[Ghost AI] Local speech recognition failed:', message.message);
+          sendGhostWakeState({ status: 'error', message: message.message });
+        }
+      } catch (error) {
+        console.error('[Ghost AI] Could not parse local speech recognizer output:', error);
+      }
+    });
+  });
+  speechProcess.stderr.setEncoding('utf8');
+  let stderrBuffer = '';
+  speechProcess.stderr.on('data', chunk => {
+    stderrBuffer += chunk;
+    const lines = stderrBuffer.split(/\r?\n/);
+    stderrBuffer = lines.pop() ?? '';
+    lines.forEach(line => {
+      const detail = line.trim();
+      if (
+        !detail ||
+        /microphone input warning: input overflow/i.test(detail) ||
+        /^#<\s*CLIXML$/i.test(detail) ||
+        /^<Objs\b|<\/Objs>/i.test(detail) ||
+        /Preparing modules for first use\./i.test(detail)
+      ) return;
+      console.warn('[Ghost AI] Local speech recognizer:', detail);
+    });
+  });
+  speechProcess.on('error', error => {
+    console.error('[Ghost AI] Could not launch the local Windows speech recognizer:', error);
+    if (ghostWakeProcess === speechProcess) {
+      ghostWakeProcess = null;
+      ghostWakeStopping = false;
+    }
+    sendGhostWakeState({ status: 'error', message: error.message });
+  });
+  speechProcess.on('exit', (code, signal) => {
+    if (ghostWakeProcess === speechProcess) {
+      ghostWakeProcess = null;
+      ghostWakeStopping = false;
+    }
+    if (code !== 0 && code !== null) {
+      sendGhostWakeState({ status: 'error', message: `The local speech recognizer exited with code ${code}.` });
+    } else if (code === 0 && !ghostWakeStopping) {
+      sendGhostWakeState({ status: 'error', message: 'The local speech recognizer stopped unexpectedly.' });
+    } else if (signal) {
+      sendGhostWakeState({ status: 'stopped' });
+    }
+  });
+  return true;
+});
+
+ipcMain.handle('ghost-ai:stopWakeListener', event => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Ghost AI voice activation is only available to ARLO OS.');
+  }
+  if (ghostWakeProcess && ghostWakeProcess.exitCode === null) {
+    ghostWakeStopping = true;
+    ghostWakeProcess.stdin.write('stop\n');
+  }
+  sendGhostWakeState({ status: 'stopped' });
+});
+
+ipcMain.handle('ghost-ai:setWakePaused', (event, paused) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Ghost AI voice activation is only available to ARLO OS.');
+  }
+  if (typeof paused !== 'boolean') throw new Error('Invalid Ghost AI listener state.');
+  if (ghostWakeProcess && ghostWakeProcess.exitCode === null) {
+    const expectedState = paused ? 'paused' : 'ready';
+    if (ghostWakeStatus === expectedState) return;
+    const stateChanged = waitForGhostWakeState(expectedState);
+    ghostWakeProcess.stdin.write(`${paused ? 'pause' : 'resume'}\n`);
+    return stateChanged;
+  }
+});
 
 const isTrustedCodeRunnerFrame = frame => {
   if (!frame || frame !== mainWindow?.webContents.mainFrame) return false;
@@ -102,7 +333,7 @@ ipcMain.handle('code:run', (event, request) => {
     event.sender !== mainWindow?.webContents ||
     !isTrustedCodeRunnerFrame(event.senderFrame)
   ) {
-    throw new Error('Code execution is only available to the Abhishek OS desktop window.');
+    throw new Error('Code execution is only available to the ARLO OS desktop window.');
   }
   if (!request || typeof request !== 'object' || Array.isArray(request)) {
     throw new Error('Invalid code execution request.');
@@ -115,7 +346,7 @@ ipcMain.handle('code:installRuntime', (event, language) => {
     event.sender !== mainWindow?.webContents ||
     !isTrustedCodeRunnerFrame(event.senderFrame)
   ) {
-    throw new Error('Runtime installation is only available to the Abhishek OS desktop window.');
+    throw new Error('Runtime installation is only available to the ARLO OS desktop window.');
   }
   return installCodeRuntime(language);
 });
@@ -125,7 +356,7 @@ ipcMain.handle('ghost-ai:isConfigured', event => {
     event.sender !== mainWindow?.webContents ||
     !isTrustedCodeRunnerFrame(event.senderFrame)
   ) {
-    throw new Error('Ghost AI is only available to the Abhishek OS desktop window.');
+    throw new Error('Ghost AI is only available to the ARLO OS desktop window.');
   }
   return getGeminiApiKey().then(apiKey => Boolean(apiKey));
 });
@@ -157,7 +388,7 @@ ipcMain.handle('ghost-ai:setApiKey', async (event, apiKey) => {
     event.sender !== mainWindow?.webContents ||
     !isTrustedCodeRunnerFrame(event.senderFrame)
   ) {
-    throw new Error('Ghost AI settings are only available to the Abhishek OS desktop window.');
+    throw new Error('Ghost AI settings are only available to the ARLO OS desktop window.');
   }
   if (typeof apiKey !== 'string' || !apiKey.trim() || apiKey.trim().length > 512) {
     throw new Error('Enter a valid Gemini API key (1–512 characters).');
@@ -175,7 +406,7 @@ ipcMain.handle('ghost-ai:removeApiKey', async event => {
     event.sender !== mainWindow?.webContents ||
     !isTrustedCodeRunnerFrame(event.senderFrame)
   ) {
-    throw new Error('Ghost AI settings are only available to the Abhishek OS desktop window.');
+    throw new Error('Ghost AI settings are only available to the ARLO OS desktop window.');
   }
   try {
     await fs.unlink(geminiApiKeyFile());
@@ -192,28 +423,35 @@ ipcMain.handle('ghost-ai:chat', async (event, request) => {
     event.sender !== mainWindow?.webContents ||
     !isTrustedCodeRunnerFrame(event.senderFrame)
   ) {
-    throw new Error('Ghost AI is only available to the Abhishek OS desktop window.');
+    return {
+      success: false,
+      code: 'UNTRUSTED_CALLER',
+      message: 'Ghost AI is only available to the ARLO OS desktop window.',
+    };
   }
 
-  const apiKey = await getGeminiApiKey();
-  if (!apiKey) {
-    throw new Error('Gemini is not configured. Open Ghost AI settings and add your Gemini API key.');
-  }
-
-  const allowedModels = new Set(['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro']);
   if (
     !request ||
     typeof request !== 'object' ||
     Array.isArray(request) ||
-    !allowedModels.has(request.model) ||
+    (request.model !== undefined && request.model !== GHOST_GEMINI_MODEL) ||
+    typeof request.requestId !== 'string' ||
+    !/^[\w-]{1,100}$/.test(request.requestId) ||
     !Array.isArray(request.messages) ||
     request.messages.length < 1 ||
-    request.messages.length > 40
+    request.messages.length > 40 ||
+    !request.context ||
+    typeof request.context.displayName !== 'string' ||
+    !request.context.displayName.trim() ||
+    request.context.displayName.length > 100 ||
+    !Array.isArray(request.context.availableApps) ||
+    request.context.availableApps.length > 100
   ) {
-    throw new Error('Invalid Ghost AI chat request.');
+    return { success: false, code: 'INVALID_REQUEST', message: 'Ghost received an invalid chat request.' };
   }
 
-  const messages = request.messages.map(message => {
+  const messages = [];
+  for (const message of request.messages) {
     if (
       !message ||
       typeof message !== 'object' ||
@@ -222,34 +460,120 @@ ipcMain.handle('ghost-ai:chat', async (event, request) => {
       !message.content.trim() ||
       message.content.length > 20_000
     ) {
-      throw new Error('Invalid message in Ghost AI chat request.');
+      return { success: false, code: 'INVALID_REQUEST', message: 'Ghost received an invalid chat message.' };
     }
-    return { role: message.role, content: message.content };
-  });
+    messages.push({ role: message.role, content: message.content });
+  }
   const totalCharacters = messages.reduce((sum, message) => sum + message.content.length, 0);
   if (totalCharacters > 100_000) {
-    throw new Error('This conversation is too long. Start a new chat and try again.');
+    return { success: false, code: 'CONVERSATION_TOO_LONG', message: 'This conversation is too long. Start a new chat and try again.' };
   }
 
-  const genAI = new GoogleGenAI({ apiKey });
-  const response = await genAI.models.generateContent({
-    model: request.model,
-    contents: messages.map(message => ({
-      role: message.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: message.content }],
-    })),
-    config: {
-      systemInstruction:
-        'You are Ghost, a thoughtful, helpful assistant inside Abhishek OS. Be clear, accurate, and warm. If you are unsure or lack current information, say so. Use concise answers unless the user asks for detail.',
-      abortSignal: AbortSignal.timeout(60_000),
-    },
-  });
-
-  const content = response.text;
-  if (typeof content !== 'string' || !content.trim()) {
-    throw new Error('Gemini returned an empty response.');
+  const context = {
+    displayName: request.context.displayName.trim(),
+    availableApps: request.context.availableApps.filter(app =>
+      app &&
+      typeof app.id === 'string' &&
+      typeof app.name === 'string' &&
+      app.id.length <= 80 &&
+      app.name.length <= 120,
+    ),
+  };
+  if (context.availableApps.length !== request.context.availableApps.length) {
+    return { success: false, code: 'INVALID_REQUEST', message: 'Ghost received invalid app context.' };
   }
-  return content.trim();
+
+  let pendingToolCalls;
+  let toolResults;
+  if (request.pendingToolCalls !== undefined || request.toolResults !== undefined) {
+    if (
+      !Array.isArray(request.pendingToolCalls) ||
+      request.pendingToolCalls.length < 1 ||
+      request.pendingToolCalls.length > 5 ||
+      !Array.isArray(request.toolResults) ||
+      request.toolResults.length !== request.pendingToolCalls.length
+    ) {
+      return { success: false, code: 'INVALID_TOOL_RESULTS', message: 'Ghost received invalid tool results.' };
+    }
+    pendingToolCalls = [];
+    toolResults = [];
+    for (let index = 0; index < request.pendingToolCalls.length; index += 1) {
+      const call = request.pendingToolCalls[index];
+      const result = request.toolResults[index];
+      if (
+        !call || typeof call.id !== 'string' || !call.id ||
+        call.name !== 'open_app' ||
+        !call.args || typeof call.args !== 'object' || Array.isArray(call.args) ||
+        !result || result.id !== call.id || result.name !== call.name ||
+        typeof result.success !== 'boolean' ||
+        typeof result.result !== 'string' || result.result.length > 2_000
+      ) {
+        return { success: false, code: 'INVALID_TOOL_RESULTS', message: 'Ghost received invalid tool results.' };
+      }
+      pendingToolCalls.push(call);
+      toolResults.push(result);
+    }
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new Error('Ghost AI request timed out.')), 30_000);
+  ghostChatControllers.set(request.requestId, controller);
+  let apiKey = '';
+  try {
+    apiKey = await getGeminiApiKey();
+    if (!apiKey) {
+      return {
+        success: false,
+        code: 'MISSING_API_KEY',
+        message: 'Ghost AI needs a Gemini API key.',
+      };
+    }
+    const { GoogleGenAI } = await import('@google/genai');
+    const genAI = new GoogleGenAI({ apiKey });
+    const response = await runGhostAgent(genAI, {
+      model: GHOST_GEMINI_MODEL,
+      messages,
+      context,
+      ...(pendingToolCalls ? { pendingToolCalls, toolResults } : {}),
+    }, controller.signal);
+    return response.kind === 'message'
+      ? { success: true, kind: 'message', message: response.message }
+      : { success: true, kind: 'tool_calls', toolCalls: response.toolCalls };
+  } catch (error) {
+    const timedOut = controller.signal.reason?.message === 'Ghost AI request timed out.';
+    const cancelled = controller.signal.reason?.message === 'Ghost AI request cancelled.';
+    const rawDetail = error instanceof Error ? error.message : String(error);
+    const detail = apiKey ? rawDetail.replaceAll(apiKey, '[REDACTED]') : rawDetail;
+    console.error('[Ghost AI] Gemini request failed:', detail.slice(0, 500));
+    return {
+      success: false,
+      code: timedOut ? 'REQUEST_TIMEOUT' : cancelled ? 'CANCELLED' : 'AI_SERVICE_ERROR',
+      message: timedOut
+        ? 'Ghost AI timed out. Please try again.'
+        : cancelled
+          ? 'Ghost AI request was cancelled.'
+          : "Ghost couldn't connect to its AI service.",
+      details: detail.slice(0, 500),
+    };
+  } finally {
+    clearTimeout(timeout);
+    if (ghostChatControllers.get(request.requestId) === controller) {
+      ghostChatControllers.delete(request.requestId);
+    }
+  }
+});
+
+ipcMain.handle('ghost-ai:cancelChat', (event, requestId) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    return false;
+  }
+  const controller = ghostChatControllers.get(requestId);
+  if (!controller) return false;
+  controller.abort(new Error('Ghost AI request cancelled.'));
+  return true;
 });
 
 ipcMain.handle('window:capturePreview', async (event, bounds) => {
@@ -257,7 +581,7 @@ ipcMain.handle('window:capturePreview', async (event, bounds) => {
     event.sender !== mainWindow?.webContents ||
     !isTrustedCodeRunnerFrame(event.senderFrame)
   ) {
-    throw new Error('Window previews are only available to the Abhishek OS desktop window.');
+    throw new Error('Window previews are only available to the ARLO OS desktop window.');
   }
   if (
     !bounds ||
@@ -296,7 +620,7 @@ ipcMain.handle('studio:clipboardRead', event => {
     event.sender !== mainWindow?.webContents ||
     !isTrustedCodeRunnerFrame(event.senderFrame)
   ) {
-    throw new Error('Clipboard access is only available to the Abhishek OS desktop window.');
+    throw new Error('Clipboard access is only available to the ARLO OS desktop window.');
   }
   return clipboard.readText();
 });
@@ -306,7 +630,7 @@ ipcMain.handle('studio:clipboardWrite', (event, text) => {
     event.sender !== mainWindow?.webContents ||
     !isTrustedCodeRunnerFrame(event.senderFrame)
   ) {
-    throw new Error('Clipboard access is only available to the Abhishek OS desktop window.');
+    throw new Error('Clipboard access is only available to the ARLO OS desktop window.');
   }
   if (typeof text !== 'string') {
     throw new Error('Clipboard contents must be text.');
@@ -357,7 +681,7 @@ ipcMain.handle('files:readImage', (event, targetPath) => {
 ipcMain.handle('files:getMediaUrl', async (event, targetPath) => {
   assertTrustedFilesFrame(event);
   if (!(await isLocalPathAuthorized(targetPath))) {
-    throw new Error('This media file is outside the folders granted to Abhishek OS.');
+    throw new Error('This media file is outside the folders granted to ARLO OS.');
   }
   return `abhishek-local://media/?path=${encodeURIComponent(await fs.realpath(targetPath))}`;
 });
@@ -596,7 +920,7 @@ async function isLocalPathAuthorized(candidate) {
 
 async function chooseLocalFolders() {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Choose folders for Abhishek OS Finder',
+    title: 'Choose folders for ARLO OS Finder',
     properties: ['openDirectory', 'multiSelections'],
   });
 
@@ -644,7 +968,7 @@ async function listLocalFolder(folderPath) {
   }
 
   if (!(await isLocalPathAuthorized(folderPath))) {
-    throw new Error('This folder has not been granted to Abhishek OS.');
+    throw new Error('This folder has not been granted to ARLO OS.');
   }
 
   const entries = await fs.readdir(folderPath, { withFileTypes: true });
@@ -676,7 +1000,7 @@ async function listLocalFolder(folderPath) {
 
 async function openAuthorizedLocalPath(targetPath) {
   if (!(await isLocalPathAuthorized(targetPath))) {
-    throw new Error('This item is outside the folders granted to Abhishek OS.');
+    throw new Error('This item is outside the folders granted to ARLO OS.');
   }
   const errorMessage = await shell.openPath(targetPath);
   if (errorMessage) throw new Error(errorMessage);
@@ -799,7 +1123,7 @@ const launchDetached = (executable, args) => new Promise((resolve, reject) => {
 
 async function openAuthorizedCodeFile(targetPath) {
   if (!(await isLocalPathAuthorized(targetPath))) {
-    throw new Error('This item is outside the folders granted to Abhishek OS.');
+    throw new Error('This item is outside the folders granted to ARLO OS.');
   }
   const extension = path.extname(targetPath).slice(1).toLowerCase();
   if (!CODE_FILE_EXTENSIONS.has(extension)) {
@@ -825,7 +1149,7 @@ async function openAuthorizedCodeFile(targetPath) {
 
 async function openAuthorizedCodePath(targetPath) {
   if (!(await isLocalPathAuthorized(targetPath))) {
-    throw new Error('This location is outside the folders granted to Abhishek OS.');
+    throw new Error('This location is outside the folders granted to ARLO OS.');
   }
   const stats = await fs.stat(targetPath);
   if (stats.isFile()) return openAuthorizedCodeFile(targetPath);
@@ -838,7 +1162,7 @@ async function openAuthorizedCodePath(targetPath) {
 
 async function readAuthorizedImage(targetPath) {
   if (!(await isLocalPathAuthorized(targetPath))) {
-    throw new Error('This image is outside the folders granted to Abhishek OS.');
+    throw new Error('This image is outside the folders granted to ARLO OS.');
   }
   const mimeTypes = {
     avif: 'image/avif',
@@ -863,7 +1187,7 @@ async function readAuthorizedImage(targetPath) {
 
 async function createAuthorizedLocalEntry(parentPath, name, isDirectory) {
   if (!(await isLocalPathAuthorized(parentPath))) {
-    throw new Error('This folder has not been granted to Abhishek OS.');
+    throw new Error('This folder has not been granted to ARLO OS.');
   }
   if (
     typeof name !== 'string' ||
@@ -886,7 +1210,7 @@ async function createAuthorizedLocalEntry(parentPath, name, isDirectory) {
 
 async function renameAuthorizedLocalEntry(sourcePath, newName) {
   if (!(await isLocalPathAuthorized(sourcePath))) {
-    throw new Error('This item is outside the folders granted to Abhishek OS.');
+    throw new Error('This item is outside the folders granted to ARLO OS.');
   }
   if (
     typeof newName !== 'string' ||
@@ -899,7 +1223,7 @@ async function renameAuthorizedLocalEntry(sourcePath, newName) {
   }
   const parentPath = path.dirname(sourcePath);
   if (!(await isLocalPathAuthorized(parentPath))) {
-    throw new Error('The parent folder is outside the folders granted to Abhishek OS.');
+    throw new Error('The parent folder is outside the folders granted to ARLO OS.');
   }
   const destinationPath = path.join(parentPath, newName);
   try {
@@ -914,7 +1238,7 @@ async function renameAuthorizedLocalEntry(sourcePath, newName) {
 
 async function trashAuthorizedLocalEntry(targetPath) {
   if (!(await isLocalPathAuthorized(targetPath))) {
-    throw new Error('This item is outside the folders granted to Abhishek OS.');
+    throw new Error('This item is outside the folders granted to ARLO OS.');
   }
   const sourcePath = await fs.realpath(targetPath);
   const stats = await fs.lstat(targetPath);
@@ -1113,7 +1437,7 @@ async function emptyLocalTrash() {
 
 async function transferAuthorizedLocalEntries(sourcePaths, destinationPath, move) {
   if (!(await isLocalPathAuthorized(destinationPath))) {
-    throw new Error('The destination folder has not been granted to Abhishek OS.');
+    throw new Error('The destination folder has not been granted to ARLO OS.');
   }
   const destinationStats = await fs.stat(destinationPath);
   if (!destinationStats.isDirectory()) throw new Error('The destination is not a folder.');
@@ -1124,7 +1448,7 @@ async function transferAuthorizedLocalEntries(sourcePaths, destinationPath, move
   const transferred = [];
   for (const sourcePath of sourcePaths) {
     if (!(await isLocalPathAuthorized(sourcePath))) {
-      throw new Error('A selected item is outside the folders granted to Abhishek OS.');
+      throw new Error('A selected item is outside the folders granted to ARLO OS.');
     }
     const sourceStats = await fs.lstat(sourcePath);
     if (!sourceStats.isFile() && !sourceStats.isDirectory()) {
@@ -1183,7 +1507,7 @@ async function transferAuthorizedLocalEntries(sourcePaths, destinationPath, move
 
 async function openAuthorizedTerminal(targetPath) {
   if (!(await isLocalPathAuthorized(targetPath))) {
-    throw new Error('This folder is outside the folders granted to Abhishek OS.');
+    throw new Error('This folder is outside the folders granted to ARLO OS.');
   }
   const command = process.platform === 'win32'
     ? 'wt.exe'
@@ -1309,7 +1633,7 @@ $connectedDeviceNames = @(@($connectedBleDevices) + @($connectedClassicDevices) 
       },
     };
   } catch (error) {
-    console.warn('[Abhishek OS] Connectivity query failed:', error);
+    console.warn('[ARLO OS] Connectivity query failed:', error);
     return unavailable;
   }
 }
@@ -1659,15 +1983,6 @@ async function startDevServer() {
     'vite.js'
   );
 
-  console.log(
-    '[Abhishek OS] Starting Vite development server...'
-  );
-
-  console.log(
-    '[Abhishek OS] Vite:',
-    viteCli
-  );
-
   viteProcess = spawn(
     process.execPath,
     [
@@ -1679,7 +1994,7 @@ async function startDevServer() {
     ],
     {
       cwd: __dirname,
-      stdio: 'inherit',
+      stdio: ['ignore', 'ignore', 'inherit'],
       shell: false,
       windowsHide: true,
       env: {
@@ -1692,14 +2007,8 @@ async function startDevServer() {
 
   viteProcess.on('error', (error) => {
     console.error(
-      '[Abhishek OS] Vite process error:',
+      '[ARLO OS] Vite process error:',
       error
-    );
-  });
-
-  viteProcess.on('exit', (code, signal) => {
-    console.log(
-      `[Abhishek OS] Vite exited: code=${code}, signal=${signal}`
     );
   });
 
@@ -1735,7 +2044,7 @@ function sendUpdateEvent(channel, payload = {}) {
 function setupAutoUpdater() {
   if (isStorePackage) {
     console.log(
-      '[Abhishek OS] Updates for Microsoft Store packages are managed by the Store.'
+      '[ARLO OS] Updates for Microsoft Store packages are managed by the Store.'
     );
 
     return;
@@ -1745,15 +2054,11 @@ function setupAutoUpdater() {
    * Never run the updater while developing.
    */
   if (!app.isPackaged) {
-    console.log(
-      '[Abhishek OS] Auto updater disabled in development.'
-    );
-
     return;
   }
 
   console.log(
-    '[Abhishek OS] Automatic updater enabled.'
+    '[ARLO OS] Automatic updater enabled.'
   );
 
   /*
@@ -1781,7 +2086,7 @@ function setupAutoUpdater() {
     'checking-for-update',
     () => {
       console.log(
-        '[Abhishek OS] Checking for updates...'
+        '[ARLO OS] Checking for updates...'
       );
 
       sendUpdateEvent(
@@ -1798,7 +2103,7 @@ function setupAutoUpdater() {
     'update-available',
     (info) => {
       console.log(
-        '[Abhishek OS] Update available:',
+        '[ARLO OS] Update available:',
         info.version
       );
 
@@ -1819,7 +2124,7 @@ function setupAutoUpdater() {
     'update-not-available',
     (info) => {
       console.log(
-        '[Abhishek OS] Already up to date:',
+        '[ARLO OS] Already up to date:',
         info.version
       );
 
@@ -1844,7 +2149,7 @@ function setupAutoUpdater() {
       );
 
       console.log(
-        `[Abhishek OS] Downloading update: ${percent}%`
+        `[ARLO OS] Downloading update: ${percent}%`
       );
 
       sendUpdateEvent(
@@ -1868,7 +2173,7 @@ function setupAutoUpdater() {
     'update-downloaded',
     (info) => {
       console.log(
-        '[Abhishek OS] Update downloaded:',
+        '[ARLO OS] Update downloaded:',
         info.version
       );
 
@@ -1889,7 +2194,7 @@ function setupAutoUpdater() {
     'error',
     (error) => {
       console.error(
-        '[Abhishek OS] Auto update error:',
+        '[ARLO OS] Auto update error:',
         error
       );
 
@@ -1898,7 +2203,7 @@ function setupAutoUpdater() {
         {
           message:
             error?.message ||
-            'Unable to update Abhishek OS.',
+            'Unable to update ARLO OS.',
         }
       );
     }
@@ -1916,7 +2221,7 @@ function setupAutoUpdater() {
       .checkForUpdates()
       .catch((error) => {
         console.error(
-          '[Abhishek OS] Update check failed:',
+          '[ARLO OS] Update check failed:',
           error
         );
       });
@@ -1950,7 +2255,7 @@ async function createWindow() {
 
     frame: false,
 
-    title: 'Abhishek OS',
+    title: 'ARLO OS',
 
     // Application icon
     icon: path.join(__dirname, 'build', 'icon.ico'),
@@ -2060,15 +2365,10 @@ async function createWindow() {
       const url =
         await startDevServer();
 
-      console.log(
-        '[Abhishek OS] Development renderer:',
-        url
-      );
-
       await mainWindow.loadURL(url);
     } catch (error) {
       console.error(
-        '[Abhishek OS] Failed to start development server:',
+        '[ARLO OS] Failed to start development server:',
         error
       );
 
@@ -2088,22 +2388,14 @@ async function createWindow() {
     'index.html'
   );
 
-  console.log(
-    '[Abhishek OS] Production renderer:',
-    productionIndex
-  );
-
   try {
     await mainWindow.loadFile(
       productionIndex
     );
 
-    console.log(
-      '[Abhishek OS] Production renderer loaded successfully.'
-    );
   } catch (error) {
     console.error(
-      '[Abhishek OS] FAILED TO LOAD PRODUCTION RENDERER:',
+      '[ARLO OS] FAILED TO LOAD PRODUCTION RENDERER:',
       error
     );
 
@@ -2117,24 +2409,10 @@ async function createWindow() {
   mainWindow.webContents.on(
     'did-finish-load',
     () => {
-      console.log(
-        '[Abhishek OS] Renderer finished loading.'
-      );
-
-      console.log(
-        '[Abhishek OS] Packaged:',
-        app.isPackaged
-      );
-
-      console.log(
-        '[Abhishek OS] App path:',
-        app.getAppPath()
-      );
-
-      console.log(
-        '[Abhishek OS] Version:',
-        app.getVersion()
-      );
+      if (pendingGhostToggle) {
+        pendingGhostToggle = false;
+        mainWindow.webContents.send('ghost-ai:toggle');
+      }
     }
   );
 
@@ -2147,7 +2425,7 @@ async function createWindow() {
       validatedURL
     ) => {
       console.error(
-        '[Abhishek OS] Renderer failed to load:',
+        '[ARLO OS] Renderer failed to load:',
         {
           errorCode,
           errorDescription,
@@ -2314,7 +2592,7 @@ app.whenReady().then(async () => {
         };
       } catch (error) {
         console.error(
-          '[Abhishek OS] Manual update check failed:',
+          '[ARLO OS] Manual update check failed:',
           error
         );
 
@@ -2341,7 +2619,7 @@ app.whenReady().then(async () => {
       }
 
       console.log(
-        '[Abhishek OS] Installing update and restarting...'
+        '[ARLO OS] Installing update and restarting...'
       );
 
       autoUpdater.quitAndInstall(
@@ -2358,6 +2636,7 @@ app.whenReady().then(async () => {
   ======================================================= */
 
   await createWindow();
+  registerGhostShortcut('ctrl-shift-space');
 
   /* =======================================================
      START AUTOMATIC UPDATER
@@ -2401,6 +2680,14 @@ app.on(
     }
   }
 );
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  if (ghostWakeProcess && ghostWakeProcess.exitCode === null) {
+    ghostWakeProcess.kill();
+    ghostWakeProcess = null;
+  }
+});
 
 /* =========================================================
    BEFORE QUIT

@@ -1,4 +1,4 @@
-# Abhishek OS — Desktop Application
+# ARLO OS — Desktop Application
 
 This project is now packaged as a real desktop application using **Electron + React + Vite**. It is not only a browser website.
 
@@ -9,7 +9,7 @@ npm install
 npm run electron:dev
 ```
 
-Electron starts the Vite renderer automatically and opens Abhishek OS in a native desktop window.
+Electron starts the Vite renderer automatically and opens ARLO OS in a native desktop window.
 
 ## Build Windows installers
 

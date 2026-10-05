@@ -430,7 +430,7 @@ export const ClockApp: React.FC = () => {
               Local alarms
             </div>
             <p className="mt-2 text-[10px] leading-relaxed text-slate-600">
-              Alarm reminders run while Abhishek OS is open.
+              Alarm reminders run while ARLO OS is open.
             </p>
           </div>
         </nav>
@@ -670,7 +670,7 @@ export const ClockApp: React.FC = () => {
                     <div className="rounded-2xl border border-dashed border-white/10 px-4 py-12 text-center">
                       <AlarmClock className="mx-auto h-7 w-7 text-slate-600" />
                       <p className="mt-3 text-sm font-semibold">No alarms yet</p>
-                      <p className="mt-1 text-[10px] text-slate-500">Add an alarm above to get a reminder while Abhishek OS is running.</p>
+                      <p className="mt-1 text-[10px] text-slate-500">Add an alarm above to get a reminder while ARLO OS is running.</p>
                     </div>
                   ) : alarms.map(alarm => (
                     <motion.article layout key={alarm.id} className="flex items-center gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4">
@@ -715,7 +715,7 @@ export const ClockApp: React.FC = () => {
                 </div>
                 <div className="flex gap-2 rounded-xl border border-amber-400/10 bg-amber-400/[0.035] p-3 text-[10px] leading-relaxed text-amber-100/55">
                   <Bell className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300/70" />
-                  Alarms trigger while the app is open. Keep Abhishek OS running to receive reminders.
+                  Alarms trigger while the app is open. Keep ARLO OS running to receive reminders.
                 </div>
               </motion.section>
             )}

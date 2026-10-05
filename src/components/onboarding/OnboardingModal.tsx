@@ -523,7 +523,7 @@
 //     avatarUrl: '',
 //     avatarType: 'initials',
 //     roles: ['Developer'],
-//     bio: 'Architecting Abhishek OS — a desktop experience built for you.',
+//     bio: 'Architecting ARLO OS — a desktop experience built for you.',
 //     pin: '',
 //   });
 
@@ -700,7 +700,7 @@
 //               <path d="M12 2L2 22h4.5l2-4.5h7l2 4.5H22L12 2zm0 6l2.3 5.5h-4.6L12 8z" />
 //             </svg>
 //             <span className="text-xs font-extrabold uppercase tracking-widest text-slate-300">
-//               Abhishek OS
+//               ARLO OS
 //             </span>
 //           </div>
 //           <div className="flex items-center gap-1.5">
@@ -741,7 +741,7 @@
 //                 </motion.div>
 
 //                 <h1 className="text-4xl font-extrabold tracking-tight text-white mb-2">
-//                   ABHISHEK OS
+//                   ARLO OS
 //                 </h1>
 //                 <p className="text-base text-slate-300 font-medium">
 //                   Welcome to a different desktop.
@@ -762,7 +762,7 @@
 //                 exit={{ opacity: 0, y: -15 }}
 //                 className="py-4"
 //               >
-//                 <h2 className="text-2xl font-bold mb-1">Let&apos;s get Abhishek OS ready for you.</h2>
+//                 <h2 className="text-2xl font-bold mb-1">Let&apos;s get ARLO OS ready for you.</h2>
 //                 <p className="text-xs text-slate-400 mb-6">Select your primary language and regional formatting.</p>
 
 //                 <div className="grid grid-cols-2 gap-6">
@@ -1094,7 +1094,7 @@
 //           </h2>
 
 //           <p className="text-xs text-slate-400 mt-1 max-w-md">
-//             Tell Abhishek OS what inspires you.
+//             Tell ARLO OS what inspires you.
 //             <span className="text-slate-500"> Select everything that feels like you.</span>
 //           </p>
 //         </motion.div>
@@ -1662,7 +1662,7 @@
 //                 <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
 //                   <Sparkles className="w-8 h-8" />
 //                 </div>
-//                 <h2 className="text-3xl font-extrabold mb-2">Welcome to Abhishek OS.</h2>
+//                 <h2 className="text-3xl font-extrabold mb-2">Welcome to ARLO OS.</h2>
 //                 <p className="text-xs text-slate-300 max-w-md mx-auto mb-6">
 //                   Your personalized workstation is initialized. Here are quick pro-tips:
 //                 </p>
@@ -1710,7 +1710,7 @@
 //             onClick={handleNext}
 //             className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-sky-500/25 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
 //           >
-//             <span>{step === 6 ? 'Enter Abhishek OS →' : 'Continue →'}</span>
+//             <span>{step === 6 ? 'Enter ARLO OS →' : 'Continue →'}</span>
 //           </button>
 //         </div>
 //       </div>
@@ -1747,6 +1747,7 @@ import {
 import { useOS } from '../../context/OSContext';
 import { UserProfile, SystemSettings, AccentColor, ThemeMode } from '../../types/desktop';
 import { sound } from '../../services/soundService';
+import { ArloLogo } from '../system/ArloLogo';
 import { MascotMark } from '../system/MascotMark';
 
 // Cute cartoon / 3D character avatars.
@@ -2240,7 +2241,19 @@ const getRoleDescription = (role: string) => {
   return 'Make something great';
 };
 
-const AmbientBackground = () => { return (<div className="pointer-events-none absolute inset-0 overflow-hidden"> {/* Main glow */} <motion.div animate={{ x: [0, 35, -20, 0], y: [0, -25, 20, 0], scale: [1, 1.08, 0.96, 1], }} transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut', }} className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-sky-500/10 blur-[100px]" /> <motion.div animate={{ x: [0, -30, 25, 0], y: [0, 30, -20, 0], scale: [1, 0.94, 1.08, 1], }} transition={{ duration: 15, repeat: Infinity, ease: 'easeInOut', }} className="absolute -right-32 top-1/4 h-96 w-96 rounded-full bg-purple-600/10 blur-[120px]" /> <motion.div animate={{ x: [0, 20, -20, 0], y: [0, -30, 25, 0], }} transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut', }} className="absolute bottom-[-120px] left-1/3 h-80 w-80 rounded-full bg-fuchsia-500/[0.06] blur-[110px]" /> {/* Tiny floating particles */} {[...Array(18)].map((_, i) => (<motion.span key={i} initial={{ opacity: 0, y: 30, }} animate={{ opacity: [0, 0.35, 0], y: [-10, -80, -150], x: [0, i % 2 === 0 ? 15 : -15, i % 2 === 0 ? -10 : 10], }} transition={{ duration: 5 + (i % 4), repeat: Infinity, delay: i * 0.35, ease: 'easeOut', }} className="absolute bottom-0 left-[var(--left)] h-1 w-1 rounded-full bg-sky-300" style={{ '--left': `${(i * 17) % 100}%`, } as React.CSSProperties} />))} </div>); }; /* ========================================================= GLASS SECTION ========================================================= */ const GlassPanel = ({ children, className = '', }: { children: React.ReactNode; className?: string; }) => { return (<div className={` relative overflow-hidden rounded-[28px] border border-white/[0.10] bg-white/[0.035] shadow-[0_30px_100px_rgba(0,0,0,0.35)] backdrop-blur-2xl ${className} `} > {/* top reflection */} <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" /> {/* inner glow */} <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.035] via-transparent to-transparent" /> {children} </div>); };
+const AmbientBackground = () => (
+  <div
+    aria-hidden="true"
+    className="pointer-events-none absolute inset-0"
+    style={{
+      background:
+        'radial-gradient(ellipse at 18% 12%, rgba(14, 165, 233, 0.11), transparent 34%), radial-gradient(ellipse at 82% 38%, rgba(147, 51, 234, 0.09), transparent 36%), radial-gradient(ellipse at 48% 100%, rgba(217, 70, 239, 0.05), transparent 35%)',
+    }}
+  />
+);
+
+/* ========================================================= GLASS SECTION ========================================================= */
+const GlassPanel = ({ children, className = '', }: { children: React.ReactNode; className?: string; }) => { return (<div className={` relative overflow-hidden rounded-[28px] border border-white/[0.10] bg-white/[0.035] shadow-[0_30px_100px_rgba(0,0,0,0.35)] backdrop-blur-2xl ${className} `} > {/* top reflection */} <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" /> {/* inner glow */} <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.035] via-transparent to-transparent" /> {children} </div>); };
 
 const ACCENT_COLORS: { id: AccentColor; label: string; color: string }[] = [
   { id: 'blue', label: 'Blue', color: '#3b82f6' },
@@ -2265,7 +2278,7 @@ export const OnboardingModal: React.FC = () => {
     avatarUrl: '',
     avatarType: 'initials',
     roles: ['Developer'],
-    bio: 'Architecting Abhishek OS — a desktop experience built for you.',
+    bio: 'Architecting ARLO OS — a desktop experience built for you.',
     pin: '',
   });
 
@@ -2408,26 +2421,21 @@ export const OnboardingModal: React.FC = () => {
   return (
     <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center p-4 select-none font-sans overflow-hidden">
       {/* Background ambient light */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <motion.div
-          animate={{
-            scale: [1, 1.25, 1],
-            opacity: [0.35, 0.55, 0.35],
-          }}
-          transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-          className="w-[650px] h-[650px] rounded-full bg-gradient-to-tr from-sky-600/30 via-indigo-600/25 to-pink-600/20 blur-[130px]"
-        />
-      </div>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(ellipse at 50% 42%, rgba(37, 99, 235, 0.17), transparent 48%), radial-gradient(ellipse at 14% 88%, rgba(14, 165, 233, 0.08), transparent 36%)',
+        }}
+      />
 
       {/* Modal Container */}
       <div className="relative z-10 w-full max-w-2xl min-h-[520px] rounded-3xl glass-panel text-white p-8 shadow-2xl border border-white/20 flex flex-col justify-between">
         {/* Step Indicator */}
         <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-6">
           <div className="flex items-center gap-2">
-            <MascotMark className="h-6 w-6" styleId={0} color="#159eff" />
-            <span className="text-xs font-extrabold uppercase tracking-widest text-slate-300">
-              Abhishek OS
-            </span>
+            <ArloLogo className="h-9 w-9 object-contain" />
           </div>
           <div className="flex items-center gap-1.5">
             {[1, 2, 3, 4, 5, 6].map(i => (
@@ -2457,7 +2465,7 @@ export const OnboardingModal: React.FC = () => {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.8 }}
+                transition={{ duration: 0.28, ease: 'easeOut' }}
                 className="
       relative
       min-h-[500px]
@@ -2475,75 +2483,12 @@ export const OnboardingModal: React.FC = () => {
                 <div className="pointer-events-none absolute inset-0 overflow-hidden">
 
                   {/* central aura */}
-                  <motion.div
-                    animate={{
-                      scale: [1, 1.18, 1],
-                      opacity: [0.22, 0.38, 0.22],
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background:
+                        'radial-gradient(ellipse at 50% 42%, rgba(14, 165, 233, 0.09), transparent 44%), radial-gradient(ellipse at 90% 16%, rgba(168, 85, 247, 0.07), transparent 32%)',
                     }}
-                    transition={{
-                      duration: 7,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                    className="
-          absolute
-          left-1/2
-          top-1/2
-          h-[330px]
-          w-[330px]
-          -translate-x-1/2
-          -translate-y-1/2
-          rounded-full
-          bg-sky-500/[0.09]
-          blur-[100px]
-        "
-                  />
-
-                  {/* purple atmosphere */}
-                  <motion.div
-                    animate={{
-                      x: [0, 60, 0],
-                      y: [0, -30, 0],
-                      opacity: [0.08, 0.16, 0.08],
-                    }}
-                    transition={{
-                      duration: 10,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                    className="
-          absolute
-          -right-24
-          top-10
-          h-72
-          w-72
-          rounded-full
-          bg-purple-500/10
-          blur-[100px]
-        "
-                  />
-
-                  {/* cyan atmosphere */}
-                  <motion.div
-                    animate={{
-                      x: [0, -50, 0],
-                      y: [0, 40, 0],
-                    }}
-                    transition={{
-                      duration: 12,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                    className="
-          absolute
-          -left-24
-          bottom-0
-          h-64
-          w-64
-          rounded-full
-          bg-cyan-500/[0.07]
-          blur-[100px]
-        "
                   />
 
                   {/* fine grid */}
@@ -2592,48 +2537,8 @@ export const OnboardingModal: React.FC = () => {
 
                   {/* system mark */}
                   <div className="flex items-center gap-2.5">
-
-                    <div
-                      className="
-            relative
-            flex
-            h-7
-            w-7
-            items-center
-            justify-center
-            rounded-[9px]
-            border
-            border-white/[0.09]
-            bg-white/[0.035]
-            backdrop-blur-xl
-          "
-                    >
-                      <div
-                        className="
-              h-2
-              w-2
-              rounded-[3px]
-              bg-gradient-to-br
-              from-sky-300
-              to-indigo-400
-              shadow-[0_0_12px_rgba(56,189,248,.7)]
-            "
-                      />
-                    </div>
-
+                    <ArloLogo className="h-8 w-8 object-contain" />
                     <div>
-                      <div
-                        className="
-              text-[8px]
-              font-black
-              uppercase
-              tracking-[0.22em]
-              text-white
-            "
-                      >
-                        ABHISHEK OS
-                      </div>
-
                       <div
                         className="
               mt-0.5
@@ -2663,15 +2568,7 @@ export const OnboardingModal: React.FC = () => {
           py-1.5
         "
                   >
-                    <motion.span
-                      animate={{
-                        opacity: [0.45, 1, 0.45],
-                        scale: [1, 1.25, 1],
-                      }}
-                      transition={{
-                        duration: 2,
-                        repeat: Infinity,
-                      }}
+                    <span
                       className="
             h-1.5
             w-1.5
@@ -2714,24 +2611,20 @@ export const OnboardingModal: React.FC = () => {
       "
                 >
 
-                  {/* Brand mascot: the default preset follows the pointer and reacts to hover. */}
+                  {/* Brand mark */}
                   <motion.div
                     initial={{ opacity: 0, scale: 0.86, y: 12 }}
-                    animate={{ opacity: 1, scale: 1, y: [0, -4, 0] }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
                     transition={{
-                      opacity: { duration: 0.55, delay: 0.2 },
-                      scale: { duration: 0.55, delay: 0.2, ease: [0.16, 1, 0.3, 1] },
-                      y: { duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 0.75 },
+                      duration: 0.38,
+                      delay: 0.06,
+                      ease: [0.16, 1, 0.3, 1],
                     }}
-                    whileHover={{ scale: 1.07, rotate: 2, y: -5 }}
+                    whileHover={{ scale: 1.025 }}
                     className="relative mb-7"
                   >
-                    <div className="pointer-events-none absolute inset-3 rounded-[30%] bg-sky-400/20 blur-2xl" />
-                    <MascotMark
-                      className="relative z-10 h-32 w-32 drop-shadow-[0_18px_32px_rgba(21,158,255,0.24)]"
-                      styleId={0}
-                      color="#159eff"
-                    />
+                    <div className="pointer-events-none absolute inset-3 rounded-full bg-sky-400/20 blur-2xl" />
+                    <ArloLogo className="relative z-10 h-32 w-32 object-contain drop-shadow-[0_18px_32px_rgba(21,158,255,0.24)]" />
                   </motion.div>
 
                   {/* ===================================================
@@ -2765,31 +2658,13 @@ export const OnboardingModal: React.FC = () => {
                       Welcome
                     </div>
 
-                    <h1
-                      className="
-            text-[38px]
-            font-black
-            leading-none
-            tracking-[-0.06em]
-            text-white
-            sm:text-[46px]
-          "
-                    >
-                      ABHISHEK
-                      <span
-                        className="
-              ml-2
-              bg-gradient-to-r
-              from-sky-300
-              via-indigo-300
-              to-fuchsia-300
-              bg-clip-text
-              text-transparent
-            "
-                      >
-                        OS
-                      </span>
-                    </h1>
+                    <ArloLogo
+                      variant="wordmark"
+                      className="mx-auto w-[min(74vw,300px)] object-contain"
+                    />
+                    <p className="mt-3 text-[10px] font-semibold tracking-[0.26em] text-slate-300">
+                      Your world. Smarter.
+                    </p>
 
                     <p
                       className="
@@ -2928,22 +2803,6 @@ export const OnboardingModal: React.FC = () => {
                   >
 
                     {/* animated border */}
-                    <motion.div
-                      animate={{
-                        rotate: 360,
-                      }}
-                      transition={{
-                        duration: 5,
-                        repeat: Infinity,
-                        ease: "linear",
-                      }}
-                      className="
-            absolute
-            -inset-20
-            bg-[conic-gradient(from_0deg,transparent_0deg,transparent_250deg,rgba(56,189,248,.8)_290deg,rgba(168,85,247,.7)_320deg,transparent_350deg)]
-          "
-                    />
-
                     <div
                       className="
             relative
@@ -2953,12 +2812,12 @@ export const OnboardingModal: React.FC = () => {
             justify-center
             gap-3
             rounded-[15px]
-            border
-            border-white/[0.08]
+            border border-sky-300/20
             bg-[#090e18]
             px-5
             py-3
-            backdrop-blur-xl
+            transition-colors duration-200
+            group-hover:border-sky-300/45
           "
                     >
                       <span
@@ -2973,15 +2832,7 @@ export const OnboardingModal: React.FC = () => {
                         Enter your desktop
                       </span>
 
-                      <motion.span
-                        animate={{
-                          x: [0, 4, 0],
-                        }}
-                        transition={{
-                          duration: 1.5,
-                          repeat: Infinity,
-                          ease: "easeInOut",
-                        }}
+                      <span
                         className="
               flex
               h-5
@@ -2989,12 +2840,14 @@ export const OnboardingModal: React.FC = () => {
               items-center
               justify-center
               rounded-full
-              bg-sky-400/[0.10]
+              bg-sky-400/15
               text-sky-300
+              transition-transform duration-200
+              group-hover:translate-x-0.5
             "
                       >
-                        →
-                      </motion.span>
+                        <ArrowRight className="h-3 w-3" />
+                      </span>
 
                       {/* hover shine */}
                       <div
@@ -3069,36 +2922,13 @@ export const OnboardingModal: React.FC = () => {
       "
                 />
 
-                <motion.div
-                  animate={{
-                    x: ["-120%", "120%"],
-                  }}
-                  transition={{
-                    duration: 5,
-                    repeat: Infinity,
-                    ease: "linear",
-                  }}
-                  className="
-        pointer-events-none
-        absolute
-        bottom-0
-        left-1/2
-        h-px
-        w-28
-        -translate-x-1/2
-        bg-gradient-to-r
-        from-transparent
-        via-sky-300
-        to-transparent
-      "
-                />
               </motion.div>
             )}
             ```
 
             /* ========================================================= SCREEN 2 — LANGUAGE / REGION ========================================================= */
 
-            {step === 2 && (<motion.div key="step-2" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1], }} className=" rounded-2xl relative min-h-[500px] overflow-hidden" > <AmbientBackground /> <div className="relative z-10 px-4 py-5 sm:px-7 sm:py-7"> {/* Header */} <div className="mb-6 flex items-start gap-4"> <motion.div initial={{ scale: 0.7, rotate: -10 }} animate={{ scale: 1, rotate: 0 }} transition={{ duration: 0.5 }} className=" flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-sky-400/20 bg-gradient-to-br from-sky-400/15 to-indigo-500/10 shadow-[0_10px_35px_rgba(56,189,248,0.10)] " > <Globe2 className="h-6 w-6 text-sky-300" /> </motion.div> <div> <div className="mb-1 flex items-center gap-2"> <span className="text-[9px] font-black uppercase tracking-[0.2em] text-sky-400"> Step 02 </span> <span className="h-1 w-1 rounded-full bg-slate-600" /> <span className="text-[9px] font-bold text-slate-500"> Localization </span> </div> <h2 className="text-2xl font-black tracking-tight text-white sm:text-3xl"> Let&apos;s make it feel <span className="ml-2 bg-gradient-to-r from-sky-300 to-indigo-300 bg-clip-text text-transparent"> yours. </span> </h2> <p className="mt-1 text-xs leading-5 text-slate-500"> Choose the language and regional formatting you want Abhishek OS to use. </p> </div> </div> <div className="grid grid-cols-1 gap-4 md:grid-cols-2"> {/* LANGUAGE */} <GlassPanel className="p-4"> <div className="mb-4 flex items-center justify-between"> <div> <div className="flex items-center gap-2"> <Languages className="h-4 w-4 text-sky-400" /> <span className="text-xs font-black text-white"> Language </span> </div> <p className="mt-1 text-[9px] text-slate-500"> Interface language </p> </div> <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[8px] font-bold text-slate-500"> {langSettings.language} </span> </div> <div className="space-y-2"> {[{ name: 'English', native: 'English', symbol: 'EN', }, { name: 'Hindi', native: 'हिन्दी', symbol: 'हि', }, { name: 'Marathi', native: 'मराठी', symbol: 'म', },].map((lang, index) => { const selected = langSettings.language === lang.name; return (<motion.button key={lang.name} type="button" onClick={() => { setLangSettings(s => ({ ...s, language: lang.name, })); sound.playClick(); }} whileHover={{ x: 4, scale: 1.01, }} whileTap={{ scale: 0.98, }} className={` group relative flex w-full items-center gap-3 overflow-hidden rounded-2xl border p-3 text-left transition-all duration-300 ${selected ? 'border-sky-400/40 bg-sky-400/[0.10] shadow-[0_10px_35px_rgba(56,189,248,0.10)]' : 'border-white/[0.07] bg-white/[0.025] hover:border-white/[0.14] hover:bg-white/[0.05]'} `} > {selected && (<motion.div layoutId="language-selected" className="absolute inset-y-0 left-0 w-1 rounded-full bg-gradient-to-b from-sky-300 to-indigo-500" />)} <div className={` flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-[10px] font-black ${selected ? 'border-sky-400/30 bg-sky-400/10 text-sky-300' : 'border-white/[0.08] bg-white/[0.04] text-slate-500'} `} > {lang.symbol} </div> <div className="min-w-0 flex-1"> <div className="text-xs font-bold text-white"> {lang.name} </div> <div className="mt-0.5 text-[9px] text-slate-500"> {lang.native} </div> </div> {selected && (<motion.div initial={{ scale: 0, }} animate={{ scale: 1, }} className=" flex h-6 w-6 items-center justify-center rounded-full bg-sky-400 text-slate-950 shadow-[0_0_20px_rgba(56,189,248,0.4)] " > <Check className="h-3.5 w-3.5" strokeWidth={3} /> </motion.div>)} {!selected && (<ArrowRight className="h-3.5 w-3.5 text-slate-700 transition-transform group-hover:translate-x-1 group-hover:text-slate-400" />)} </motion.button>); })} </div> </GlassPanel> {/* REGION */} <GlassPanel className="p-4"> <div className="mb-4 flex items-center justify-between"> <div> <div className="flex items-center gap-2"> <MapPin className="h-4 w-4 text-indigo-400" /> <span className="text-xs font-black text-white"> Region </span> </div> <p className="mt-1 text-[9px] text-slate-500"> Dates, numbers and regional formats </p> </div> <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[8px] font-bold text-slate-500"> {langSettings.region} </span> </div> <div className="max-h-[270px] space-y-2 overflow-y-auto pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10"> {[{ name: 'India', code: 'IN', flag: '🇮🇳', }, { name: 'United States', code: 'US', flag: '🇺🇸', }, { name: 'United Kingdom', code: 'UK', flag: '🇬🇧', }, { name: 'Canada', code: 'CA', flag: '🇨🇦', }, { name: 'Australia', code: 'AU', flag: '🇦🇺', }, { name: 'Other', code: '••', flag: '🌎', },].map(region => { const selected = langSettings.region === region.name; return (<motion.button key={region.name} type="button" onClick={() => { setLangSettings(s => ({ ...s, region: region.name, })); sound.playClick(); }} whileHover={{ x: 4, }} whileTap={{ scale: 0.98, }} className={` flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all ${selected ? 'border-indigo-400/40 bg-indigo-400/[0.10]' : 'border-white/[0.07] bg-white/[0.025] hover:border-white/[0.14] hover:bg-white/[0.05]'} `} > <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.05] text-lg"> {region.flag} </div> <div className="min-w-0 flex-1"> <div className="text-xs font-bold text-white"> {region.name} </div> <div className="mt-0.5 text-[8px] font-bold uppercase tracking-widest text-slate-600"> {region.code} </div> </div> {selected && (<div className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-400 text-slate-950 shadow-[0_0_20px_rgba(129,140,248,0.35)]"> <Check className="h-3.5 w-3.5" strokeWidth={3} /> </div>)} </motion.button>); })} </div> </GlassPanel> </div> {/* Preview strip */}  </div> </motion.div>)} /*
+            {step === 2 && (<motion.div key="step-2" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1], }} className=" rounded-2xl relative min-h-[500px] overflow-hidden" > <AmbientBackground /> <div className="relative z-10 px-4 py-5 sm:px-7 sm:py-7"> {/* Header */} <div className="mb-6 flex items-start gap-4"> <motion.div initial={{ scale: 0.7, rotate: -10 }} animate={{ scale: 1, rotate: 0 }} transition={{ duration: 0.5 }} className=" flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-sky-400/20 bg-gradient-to-br from-sky-400/15 to-indigo-500/10 shadow-[0_10px_35px_rgba(56,189,248,0.10)] " > <Globe2 className="h-6 w-6 text-sky-300" /> </motion.div> <div> <div className="mb-1 flex items-center gap-2"> <span className="text-[9px] font-black uppercase tracking-[0.2em] text-sky-400"> Step 02 </span> <span className="h-1 w-1 rounded-full bg-slate-600" /> <span className="text-[9px] font-bold text-slate-500"> Localization </span> </div> <h2 className="text-2xl font-black tracking-tight text-white sm:text-3xl"> Let&apos;s make it feel <span className="ml-2 bg-gradient-to-r from-sky-300 to-indigo-300 bg-clip-text text-transparent"> yours. </span> </h2> <p className="mt-1 text-xs leading-5 text-slate-500"> Choose the language and regional formatting you want ARLO OS to use. </p> </div> </div> <div className="grid grid-cols-1 gap-4 md:grid-cols-2"> {/* LANGUAGE */} <GlassPanel className="p-4"> <div className="mb-4 flex items-center justify-between"> <div> <div className="flex items-center gap-2"> <Languages className="h-4 w-4 text-sky-400" /> <span className="text-xs font-black text-white"> Language </span> </div> <p className="mt-1 text-[9px] text-slate-500"> Interface language </p> </div> <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[8px] font-bold text-slate-500"> {langSettings.language} </span> </div> <div className="space-y-2"> {[{ name: 'English', native: 'English', symbol: 'EN', }, { name: 'Hindi', native: 'हिन्दी', symbol: 'हि', }, { name: 'Marathi', native: 'मराठी', symbol: 'म', },].map((lang, index) => { const selected = langSettings.language === lang.name; return (<motion.button key={lang.name} type="button" onClick={() => { setLangSettings(s => ({ ...s, language: lang.name, })); sound.playClick(); }} whileHover={{ x: 4, scale: 1.01, }} whileTap={{ scale: 0.98, }} className={` group relative flex w-full items-center gap-3 overflow-hidden rounded-2xl border p-3 text-left transition-all duration-300 ${selected ? 'border-sky-400/40 bg-sky-400/[0.10] shadow-[0_10px_35px_rgba(56,189,248,0.10)]' : 'border-white/[0.07] bg-white/[0.025] hover:border-white/[0.14] hover:bg-white/[0.05]'} `} > {selected && (<motion.div layoutId="language-selected" className="absolute inset-y-0 left-0 w-1 rounded-full bg-gradient-to-b from-sky-300 to-indigo-500" />)} <div className={` flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-[10px] font-black ${selected ? 'border-sky-400/30 bg-sky-400/10 text-sky-300' : 'border-white/[0.08] bg-white/[0.04] text-slate-500'} `} > {lang.symbol} </div> <div className="min-w-0 flex-1"> <div className="text-xs font-bold text-white"> {lang.name} </div> <div className="mt-0.5 text-[9px] text-slate-500"> {lang.native} </div> </div> {selected && (<motion.div initial={{ scale: 0, }} animate={{ scale: 1, }} className=" flex h-6 w-6 items-center justify-center rounded-full bg-sky-400 text-slate-950 shadow-[0_0_20px_rgba(56,189,248,0.4)] " > <Check className="h-3.5 w-3.5" strokeWidth={3} /> </motion.div>)} {!selected && (<ArrowRight className="h-3.5 w-3.5 text-slate-700 transition-transform group-hover:translate-x-1 group-hover:text-slate-400" />)} </motion.button>); })} </div> </GlassPanel> {/* REGION */} <GlassPanel className="p-4"> <div className="mb-4 flex items-center justify-between"> <div> <div className="flex items-center gap-2"> <MapPin className="h-4 w-4 text-indigo-400" /> <span className="text-xs font-black text-white"> Region </span> </div> <p className="mt-1 text-[9px] text-slate-500"> Dates, numbers and regional formats </p> </div> <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[8px] font-bold text-slate-500"> {langSettings.region} </span> </div> <div className="max-h-[270px] space-y-2 overflow-y-auto pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10"> {[{ name: 'India', code: 'IN', flag: '🇮🇳', }, { name: 'United States', code: 'US', flag: '🇺🇸', }, { name: 'United Kingdom', code: 'UK', flag: '🇬🇧', }, { name: 'Canada', code: 'CA', flag: '🇨🇦', }, { name: 'Australia', code: 'AU', flag: '🇦🇺', }, { name: 'Other', code: '••', flag: '🌎', },].map(region => { const selected = langSettings.region === region.name; return (<motion.button key={region.name} type="button" onClick={() => { setLangSettings(s => ({ ...s, region: region.name, })); sound.playClick(); }} whileHover={{ x: 4, }} whileTap={{ scale: 0.98, }} className={` flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all ${selected ? 'border-indigo-400/40 bg-indigo-400/[0.10]' : 'border-white/[0.07] bg-white/[0.025] hover:border-white/[0.14] hover:bg-white/[0.05]'} `} > <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.05] text-lg"> {region.flag} </div> <div className="min-w-0 flex-1"> <div className="text-xs font-bold text-white"> {region.name} </div> <div className="mt-0.5 text-[8px] font-bold uppercase tracking-widest text-slate-600"> {region.code} </div> </div> {selected && (<div className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-400 text-slate-950 shadow-[0_0_20px_rgba(129,140,248,0.35)]"> <Check className="h-3.5 w-3.5" strokeWidth={3} /> </div>)} </motion.button>); })} </div> </GlassPanel> </div> {/* Preview strip */}  </div> </motion.div>)} /*
 
 
             {/* =========================================================
@@ -3146,19 +2976,10 @@ export const OnboardingModal: React.FC = () => {
                       >
                         <UserRound className="h-[18px] w-[18px] text-purple-300" />
 
-                        <motion.div
-                          animate={{
-                            scale: [1, 1.35, 1],
-                            opacity: [0.25, 0.55, 0.25],
-                          }}
-                          transition={{
-                            duration: 2.5,
-                            repeat: Infinity,
-                            ease: "easeInOut",
-                          }}
+                        <div
                           className="
                 pointer-events-none absolute inset-0
-                rounded-xl bg-purple-400/10 blur-xl
+                rounded-xl bg-purple-400/[0.06]
               "
                         />
                       </div>
@@ -3198,7 +3019,7 @@ export const OnboardingModal: React.FC = () => {
                         </h2>
 
                         <p className="mt-1.5 max-w-xl text-[10px] leading-4 text-slate-500">
-                          This identity will personalize your Abhishek OS experience.
+                          This identity will personalize your ARLO OS experience.
                         </p>
                       </div>
                     </div>
@@ -3305,26 +3126,6 @@ export const OnboardingModal: React.FC = () => {
 
                           <div className="relative shrink-0">
 
-                            {/* rotating ring */}
-                            <motion.div
-                              animate={{
-                                rotate: 360,
-                              }}
-                              transition={{
-                                duration: 16,
-                                repeat: Infinity,
-                                ease: "linear",
-                              }}
-                              className="
-                    absolute -inset-2
-                    rounded-[24px]
-                    border
-                    border-sky-400/10
-                    border-t-sky-400/50
-                    border-r-purple-400/30
-                  "
-                            />
-
                             {/* glow */}
                             <div
                               className="
@@ -3415,7 +3216,7 @@ export const OnboardingModal: React.FC = () => {
                             </div>
 
                             <div className="mt-1 truncate text-[8px] text-slate-600">
-                              {profile.fullName || 'Your Abhishek OS profile'}
+                              {profile.fullName || 'Your ARLO OS profile'}
                             </div>
 
                             <div className="mt-2 flex items-center gap-1.5">
@@ -3692,7 +3493,7 @@ export const OnboardingModal: React.FC = () => {
                             </div>
 
                             <p className="mt-1 text-[8px] text-slate-600">
-                              Tell Abhishek OS how to identify you.
+                              Tell ARLO OS how to identify you.
                             </p>
                           </div>
 
@@ -3923,8 +3724,8 @@ export const OnboardingModal: React.FC = () => {
                 className="py-2 relative"
               >
                 {/* Ambient 3D background glow */}
-                <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-72 h-40 bg-sky-500/10 blur-[80px] rounded-full pointer-events-none" />
-                <div className="absolute top-32 -right-20 w-40 h-40 bg-purple-500/10 blur-[70px] rounded-full pointer-events-none" />
+                <div className="pointer-events-none absolute -top-16 left-1/2 h-40 w-72 -translate-x-1/2 rounded-full bg-sky-500/[0.06]" />
+                <div className="pointer-events-none absolute right-0 top-32 h-40 w-40 rounded-full bg-purple-500/[0.04]" />
 
                 {/* Header */}
                 <div className="relative flex items-start justify-between gap-4 mb-5">
@@ -3935,16 +3736,7 @@ export const OnboardingModal: React.FC = () => {
                       transition={{ delay: 0.08 }}
                     >
                       <div className="flex items-center gap-2 mb-2">
-                        <motion.div
-                          animate={{
-                            rotate: [0, -8, 8, 0],
-                            y: [0, -2, 0],
-                          }}
-                          transition={{
-                            duration: 3,
-                            repeat: Infinity,
-                            ease: 'easeInOut',
-                          }}
+                        <div
                           className="
                 w-9 h-9
                 rounded-2xl
@@ -3958,7 +3750,7 @@ export const OnboardingModal: React.FC = () => {
               "
                         >
                           <Sparkles className="w-4 h-4 text-white" />
-                        </motion.div>
+                        </div>
 
                         <span className="text-[9px] uppercase tracking-[0.2em] font-black text-sky-400">
                           Identity
@@ -3970,7 +3762,7 @@ export const OnboardingModal: React.FC = () => {
                       </h2>
 
                       <p className="text-xs text-slate-400 mt-1 max-w-md">
-                        Tell Abhishek OS what inspires you.
+                        Tell ARLO OS what inspires you.
                         <span className="text-slate-500"> Select everything that feels like you.</span>
                       </p>
                     </motion.div>
@@ -4080,7 +3872,7 @@ export const OnboardingModal: React.FC = () => {
         scrollbar-track-transparent
       "
                 >
-                  {ROLES_LIST.map((role, index) => {
+                  {ROLES_LIST.map(role => {
                     const isSelected = profile.roles.includes(role);
 
                     return (
@@ -4099,14 +3891,11 @@ export const OnboardingModal: React.FC = () => {
                           scale: isSelected ? 1.02 : 1,
                         }}
                         transition={{
-                          delay: Math.min(index * 0.025, 0.35),
-                          duration: 0.28,
+                          delay: 0,
+                          duration: 0.18,
                           ease: 'easeOut',
                         }}
-                        whileHover={{
-                          y: -6,
-                          scale: 1.035,
-                        }}
+                        whileHover={{ y: -2, scale: 1.01 }}
                         whileTap={{
                           scale: 0.94,
                         }}
@@ -4166,23 +3955,7 @@ export const OnboardingModal: React.FC = () => {
                           />
 
                           {/* Decorative 3D orb */}
-                          <motion.div
-                            animate={
-                              isSelected
-                                ? {
-                                  scale: [1, 1.12, 1],
-                                  opacity: [0.15, 0.28, 0.15],
-                                }
-                                : {
-                                  scale: [1, 1.04, 1],
-                                  opacity: [0.07, 0.12, 0.07],
-                                }
-                            }
-                            transition={{
-                              duration: isSelected ? 2.4 : 4,
-                              repeat: Infinity,
-                              ease: 'easeInOut',
-                            }}
+                          <div
                             className={`
                   absolute
                   -right-7
@@ -4190,11 +3963,10 @@ export const OnboardingModal: React.FC = () => {
                   w-20
                   h-20
                   rounded-full
-                  blur-2xl
                   pointer-events-none
                   ${isSelected
-                                ? 'bg-sky-400'
-                                : 'bg-indigo-400'
+                                ? 'bg-sky-400/[0.08]'
+                                : 'bg-indigo-400/[0.05]'
                               }
                 `}
                           />
@@ -4203,22 +3975,7 @@ export const OnboardingModal: React.FC = () => {
                           <div className="relative h-full flex flex-col justify-between p-3">
                             <div className="flex items-start justify-between gap-2">
                               {/* Emoji / 3D icon */}
-                              <motion.div
-                                animate={
-                                  isSelected
-                                    ? {
-                                      y: [0, -3, 0],
-                                      rotate: [0, -3, 3, 0],
-                                    }
-                                    : {
-                                      y: [0, -1, 0],
-                                    }
-                                }
-                                transition={{
-                                  duration: isSelected ? 2 : 3,
-                                  repeat: Infinity,
-                                  ease: 'easeInOut',
-                                }}
+                              <div
                                 className={`
                       w-10
                       h-10
@@ -4244,7 +4001,7 @@ export const OnboardingModal: React.FC = () => {
                     `}
                               >
                                 {getRoleEmoji(role)}
-                              </motion.div>
+                              </div>
 
                               {/* Selection indicator */}
                               <motion.div
@@ -4349,30 +4106,14 @@ export const OnboardingModal: React.FC = () => {
                 transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                 className="relative py-1 sm:py-2"
               >
-                {/* Ambient 3D lighting */}
-                <motion.div
-                  aria-hidden
-                  animate={{ x: [0, 18, -10, 0], y: [0, -12, 10, 0], scale: [1, 1.08, 0.96, 1] }}
-                  transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
-                  className="pointer-events-none absolute -top-20 -right-24 h-48 w-48 rounded-full bg-sky-500/20 blur-[70px]"
-                />
-                <motion.div
-                  aria-hidden
-                  animate={{ x: [0, -18, 8, 0], y: [0, 12, -8, 0], scale: [1, 0.94, 1.08, 1] }}
-                  transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
-                  className="pointer-events-none absolute -bottom-24 -left-20 h-52 w-52 rounded-full bg-indigo-600/15 blur-[75px]"
-                />
-
                 <div className="relative mb-4 flex items-end justify-between gap-4">
                   <div>
                     <div className="mb-2 flex items-center gap-2">
-                      <motion.div
-                        animate={{ rotate: [0, 8, -8, 0], y: [0, -2, 0] }}
-                        transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
+                      <div
                         className="flex h-9 w-9 items-center justify-center rounded-2xl border border-sky-300/20 bg-gradient-to-br from-sky-400/20 to-indigo-500/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_10px_30px_rgba(14,165,233,0.16)]"
                       >
                         <Sliders className="h-4 w-4 text-sky-300" />
-                      </motion.div>
+                      </div>
                       <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-sky-300">
                         Personal Studio
                       </span>
@@ -4447,14 +4188,14 @@ export const OnboardingModal: React.FC = () => {
                       </div>
                     </div>
                     <div className="relative flex flex-wrap items-center gap-3">
-                      {ACCENT_COLORS.map((acc, i) => {
+                      {ACCENT_COLORS.map(acc => {
                         const selected = personalization.accent === acc.id;
                         return (
                           <motion.button
                             key={acc.id}
                             type="button"
                             aria-label={`Select ${acc.label} accent`}
-                            whileHover={{ y: -4, scale: 1.12, rotate: i % 2 ? 2 : -2 }}
+                            whileHover={{ y: -2, scale: 1.06 }}
                             whileTap={{ scale: 0.9 }}
                             onClick={() => {
                               setPersonalization(p => ({ ...p, accent: acc.id }));
@@ -4559,7 +4300,7 @@ export const OnboardingModal: React.FC = () => {
 
                 <div className="mt-3 flex items-center justify-center gap-2 text-[9px] text-slate-500">
                   <span className="h-1 w-1 rounded-full bg-sky-400" />
-                  Changes are applied when you enter Abhishek OS
+                  Changes are applied when you enter ARLO OS
                   <span className="h-1 w-1 rounded-full bg-indigo-400" />
                 </div>
               </motion.div>
@@ -4575,36 +4316,16 @@ export const OnboardingModal: React.FC = () => {
                 transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                 className="relative py-1 text-center sm:py-3"
               >
-                <div className="pointer-events-none absolute inset-0 overflow-hidden">
-                  <motion.div
-                    animate={{ scale: [1, 1.18, 1], opacity: [0.18, 0.34, 0.18], rotate: [0, 90, 180] }}
-                    transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
-                    className="absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-500/20 blur-[80px]"
-                  />
-                  <motion.div
-                    animate={{ x: [-40, 35, -40], y: [20, -25, 20] }}
-                    transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-                    className="absolute left-1/2 top-8 h-24 w-24 rounded-full bg-indigo-500/15 blur-[50px]"
-                  />
-                </div>
-
                 <div className="relative mx-auto max-w-xl">
                   <motion.div
-                    initial={{ scale: 0.5, rotate: -12, opacity: 0 }}
-                    animate={{ scale: 1, rotate: 0, opacity: 1 }}
-                    transition={{ type: 'spring', stiffness: 180, damping: 12, delay: 0.08 }}
-                    className="relative mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-[26px] border border-emerald-300/30 bg-gradient-to-br from-emerald-400/25 via-sky-400/15 to-indigo-500/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_20px_60px_rgba(16,185,129,0.18)]"
+                    initial={{ scale: 0.92, y: 8, opacity: 0 }}
+                    animate={{ scale: 1, y: 0, opacity: 1 }}
+                    transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+                    className="relative mx-auto mb-5 flex h-28 w-28 items-center justify-center"
                   >
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 12, repeat: Infinity, ease: 'linear' }}
-                      className="absolute inset-1 rounded-[22px] border border-dashed border-white/15"
-                    />
-                    <Sparkles className="relative h-9 w-9 text-emerald-300 drop-shadow-[0_0_18px_rgba(52,211,153,0.55)]" />
-                    <motion.span
-                      animate={{ scale: [1, 1.35, 1], opacity: [0.7, 0, 0.7] }}
-                      transition={{ duration: 2.2, repeat: Infinity }}
-                      className="absolute inset-0 rounded-[26px] border border-emerald-300/30"
+                    <MascotMark
+                      styleId={0}
+                      className="relative h-24 w-24"
                     />
                   </motion.div>
 
@@ -4614,12 +4335,16 @@ export const OnboardingModal: React.FC = () => {
                     transition={{ delay: 0.18, duration: 0.35 }}
                   >
                     <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-emerald-300/15 bg-emerald-400/10 px-3 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-emerald-300">
-                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
                       System Ready
                     </div>
-                    <h2 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
-                      Welcome to Abhishek OS.
-                    </h2>
+                    <ArloLogo
+                      variant="wordmark"
+                      className="mx-auto w-[min(64vw,280px)] object-contain"
+                    />
+                    <p className="mt-2 text-[9px] font-semibold tracking-[0.24em] text-slate-300">
+                      Your world. Smarter.
+                    </p>
                     <p className="mx-auto mt-2 max-w-md text-[11px] leading-5 text-slate-400 sm:text-xs">
                       Your personalized workstation is initialized. Here are a few gestures to get you moving.
                     </p>
@@ -4652,9 +4377,9 @@ export const OnboardingModal: React.FC = () => {
                           key={tip.title}
                           initial={{ opacity: 0, y: 18 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.26 + index * 0.08, duration: 0.35 }}
-                          whileHover={{ y: -5, scale: 1.015 }}
-                          className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_16px_40px_rgba(0,0,0,0.18)] backdrop-blur-xl"
+                          transition={{ delay: 0.18 + index * 0.05, duration: 0.22, ease: 'easeOut' }}
+                          whileHover={{ y: -2 }}
+                          className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_16px_40px_rgba(0,0,0,0.18)]"
                         >
                           <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.07] via-transparent to-transparent" />
                           <div className={`relative mb-3 flex h-9 w-9 items-center justify-center rounded-2xl border ${tip.tone === 'sky' ? 'border-sky-300/15 bg-sky-400/10 text-sky-300' : tip.tone === 'purple' ? 'border-purple-300/15 bg-purple-400/10 text-purple-300' : 'border-pink-300/15 bg-pink-400/10 text-pink-300'}`}>
@@ -4705,7 +4430,7 @@ export const OnboardingModal: React.FC = () => {
             disabled={step === 3 && (!profile.fullName.trim() || !profile.displayName.trim() || Boolean(validateEmail(profile.email)))}
             className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-sky-500/25 flex items-center gap-2 transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span>{step === 6 ? 'Enter Abhishek OS →' : 'Continue →'}</span>
+            <span>{step === 6 ? 'Enter ARLO OS →' : 'Continue →'}</span>
           </button>
         </div>
       </div>

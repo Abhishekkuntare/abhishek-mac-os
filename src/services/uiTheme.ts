@@ -11,7 +11,7 @@ export interface UITheme {
   onAccent: string;
 }
 
-// Themes are opt-in. The original Abhishek OS desktop remains unchanged until the user explicitly selects a theme.
+// Themes are opt-in. The original ARLO OS desktop remains unchanged until the user explicitly selects a theme.
 const LEGACY_UI_THEME_STORAGE_KEY = 'abhishek-os-ui-theme';
 const UI_THEME_STORAGE_KEY = 'abhishek-os-selected-ui-theme-v2';
 

@@ -216,11 +216,11 @@ export const TerminalApp: React.FC = () => {
   const [history, setHistory] = useState<TerminalLine[]>([
     createLine(
       'system',
-      'ABHISHEK OS TERMINAL // Neural Shell initialized'
+      'ARLO OS TERMINAL // Neural Shell initialized'
     ),
     createLine(
       'output',
-      'Abhishek OS [Version 1.0.0 Pro (x86_64-apple-darwin26)]'
+      'ARLO OS [Version 1.0.0 Pro (x86_64-apple-darwin26)]'
     ),
     createLine(
       'output',
@@ -537,7 +537,7 @@ export const TerminalApp: React.FC = () => {
         ...prev,
         createLine(
           'input',
-          `${user.username}@abhishek-os:${currentDir.replace(
+          `${user.username}@arlo-os:${currentDir.replace(
             '/Users/abhishek',
             '~'
           )}$`
@@ -575,7 +575,7 @@ export const TerminalApp: React.FC = () => {
     const newEntries: TerminalLine[] = [
       createLine(
         'input',
-        `${user.username}@abhishek-os:${promptPath}$ ${cmd}`
+        `${user.username}@arlo-os:${promptPath}$ ${cmd}`
       ),
     ];
 
@@ -594,7 +594,7 @@ export const TerminalApp: React.FC = () => {
             'ascii',
             `
 ╭──────────────────────────────────────────────────────╮
-│                 ABHISHEK OS SHELL                    │
+│                 ARLO OS SHELL                    │
 ├──────────────────────────────────────────────────────┤
 │ help          Command reference                      │
 │ neofetch      System information                     │
@@ -611,7 +611,7 @@ export const TerminalApp: React.FC = () => {
 │ theme <mode>  Set dark/light theme                   │
 │ matrix        Toggle Matrix mode                     │
 │ clear         Clear terminal                         │
-│ reboot        Restart Abhishek OS                    │
+│ reboot        Restart ARLO OS                    │
 │                                                      │
 │ Keyboard:                                             │
 │ Ctrl/Cmd + K  Focus terminal                         │
@@ -637,7 +637,7 @@ export const TerminalApp: React.FC = () => {
        ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝
 
   ┌─────────────────────────────────────────────┐
-  │ OS        Abhishek OS 1.0.0 Pro             │
+  │ OS        ARLO OS 1.0.0 Pro             │
   │ Kernel    Darwin 26.0.0 Pro                 │
   │ Shell     zsh 5.9                           │
   │ Host      Neural Studio Pro                 │
@@ -1044,7 +1044,7 @@ export const TerminalApp: React.FC = () => {
           ...newEntries,
           createLine(
             'system',
-            'Restarting Abhishek OS...'
+            'Restarting ARLO OS...'
           ),
         ]);
 
@@ -1763,7 +1763,7 @@ export const TerminalApp: React.FC = () => {
                     } font-bold`}
                   >
                     {user.username}
-                    @abhishek-os:
+                    @arlo-os:
                     {promptPath}$
                   </span>
 

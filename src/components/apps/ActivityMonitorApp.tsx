@@ -18,7 +18,7 @@ export const ActivityMonitorApp: React.FC = () => {
 
   const processes = [
     { name: 'WindowServer (Quartz Compositor)', pid: 182, cpu: '6.2%', mem: '420 MB', threads: 32 },
-    { name: 'Abhishek OS Kernel', pid: 1, cpu: '2.4%', mem: '840 MB', threads: 64 },
+    { name: 'ARLO OS Kernel', pid: 1, cpu: '2.4%', mem: '840 MB', threads: 64 },
     { name: 'SoundEngine (AudioContext)', pid: 219, cpu: '1.1%', mem: '140 MB', threads: 8 },
     { name: 'VirtualFileSystem (IndexedDB)', pid: 245, cpu: '0.8%', mem: '95 MB', threads: 12 },
     { name: 'Code Studio Daemon', pid: 480, cpu: '3.1%', mem: '580 MB', threads: 24 },

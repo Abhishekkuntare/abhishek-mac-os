@@ -89,7 +89,7 @@ const AVATARS = [
 const INITIAL_EVENTS: CalendarEvent[] = [
   {
     id: '1',
-    title: 'Abhishek OS 1.0 Release Party',
+    title: 'ARLO OS 1.0 Release Party',
     time: '10:00 AM - 11:30 AM',
     startTime: '10:00',
     endTime: '11:30',
@@ -99,7 +99,7 @@ const INITIAL_EVENTS: CalendarEvent[] = [
     color: '#3b82f6',
     location: 'Studio Pro Space',
     description:
-      'Celebrate the first major release of Abhishek OS with the product and design team.',
+      'Celebrate the first major release of ARLO OS with the product and design team.',
     image: EVENT_IMAGES.release,
     category: 'Launch',
     priority: 'High',

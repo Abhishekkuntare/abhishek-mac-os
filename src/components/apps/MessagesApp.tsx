@@ -468,7 +468,7 @@ export const MessagesApp: React.FC = () => {
               </div>
 
               <p className="text-[10px] text-slate-500 mt-1 ml-9">
-                Abhishek OS
+                ARLO OS
               </p>
             </div>
 
@@ -1435,7 +1435,7 @@ export const MessagesApp: React.FC = () => {
                   <Zap className="w-3.5 h-3.5 text-sky-400" />
 
                   <span className="text-[9px] font-bold text-sky-300">
-                    Abhishek OS
+                    ARLO OS
                   </span>
                 </div>
 

@@ -1,5 +1,45 @@
 @import "tailwindcss";
 
+[data-desktop-icon-shape="square"],
+[data-desktop-icon-shape="square"] img {
+  border-radius: 12% !important;
+  -webkit-clip-path: inset(0 round 12%) !important;
+  clip-path: inset(0 round 12%) !important;
+}
+
+[data-desktop-icon-shape="rounded"],
+[data-desktop-icon-shape="rounded"] img {
+  border-radius: 30% !important;
+  -webkit-clip-path: inset(0 round 30%) !important;
+  clip-path: inset(0 round 30%) !important;
+}
+
+[data-desktop-icon-shape="circle"],
+[data-desktop-icon-shape="circle"] img {
+  border-radius: 50% !important;
+  -webkit-clip-path: circle(46% at 50% 50%) !important;
+  clip-path: circle(46% at 50% 50%) !important;
+  -webkit-mask-image: radial-gradient(circle, #000 91%, transparent 93%) !important;
+  mask-image: radial-gradient(circle, #000 91%, transparent 93%) !important;
+}
+
+[data-desktop-icon-shape="circle"]:not(img) {
+  background-color: rgb(255 255 255 / 10%) !important;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 28%);
+}
+
+[data-desktop-icon-shape="diamond"],
+[data-desktop-icon-shape="diamond"] img {
+  -webkit-clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%) !important;
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%) !important;
+}
+
+[data-desktop-icon-shape="hexagon"],
+[data-desktop-icon-shape="hexagon"] img {
+  -webkit-clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0% 50%) !important;
+  clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0% 50%) !important;
+}
+
 [data-low-power="true"] *,
 [data-low-power="true"] *::before,
 [data-low-power="true"] *::after {
@@ -120,6 +160,11 @@
   49% { transform: scaleY(0.08); }
 }
 
+@keyframes mascot-blink-on-hover {
+  0%, 100% { transform: scaleY(1); }
+  45%, 60% { transform: scaleY(0.08); }
+}
+
 .mascot-blink {
   transform-box: fill-box;
   transform-origin: center;
@@ -202,6 +247,10 @@
 
 .mascot-is-hovered .mascot-mouth-happy {
   transform: scale(1.04);
+}
+
+.mascot-is-hovered .mascot-blink {
+  animation: mascot-blink-on-hover 280ms ease-in-out 1;
 }
 
 .mascot-is-surprised .mascot-mouth,
@@ -354,6 +403,12 @@ html {
 :focus-visible {
   outline: 2px solid var(--os-accent-color, #3b82f6);
   outline-offset: 2px;
+}
+
+.desktop-modal-input:focus-visible {
+  outline: none;
+  outline-offset: 0;
+  box-shadow: none;
 }
 
 .terminal-command-input:focus-visible {

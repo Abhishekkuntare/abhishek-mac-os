@@ -46,7 +46,7 @@ const SAMPLE_EMAILS: Email[] = [
     id: 'e1',
     sender: 'Velosa Studio Partner',
     email: 'partners@velosa.studio',
-    subject: 'Abhishek OS 1.0 Milestone Review & Launch',
+    subject: 'ARLO OS 1.0 Milestone Review & Launch',
     preview:
       'Hi Abhishek, the new glassmorphic UI and windowing architecture look breathtaking...',
     body: `Hi Abhishek,
@@ -68,10 +68,10 @@ Velosa Studio Team`,
     email: 'cloud-apps@google.com',
     subject: 'Deployment Authorization Successful',
     preview:
-      'Your application container for Abhishek OS has been allocated dedicated runtime resources...',
+      'Your application container for ARLO OS has been allocated dedicated runtime resources...',
     body: `Hello Abhishek,
 
-Your application container for Abhishek OS has been allocated dedicated runtime resources on Google Cloud Run containers.
+Your application container for ARLO OS has been allocated dedicated runtime resources on Google Cloud Run containers.
 
 Everything is running with optimal latency and high availability.
 
@@ -86,7 +86,7 @@ AI Studio Platform Operations`,
     id: 'e3',
     sender: 'GitHub Notifications',
     email: 'notifications@github.com',
-    subject: '[AbhishekOS/core] 12 pull requests merged to main branch',
+    subject: '[ARLO-OS/core] 12 pull requests merged to main branch',
     preview:
       'All automated continuous integration checks passed with 100% build green status...',
     body: `All automated continuous integration checks passed with 100% build green status.
@@ -113,7 +113,7 @@ All checks completed successfully.`,
 
 Explore new interaction patterns, materials and animation principles for creating beautiful desktop experiences.
 
-Your Abhishek OS project continues to push interesting ideas around spatial interfaces.
+Your ARLO OS project continues to push interesting ideas around spatial interfaces.
 
 Apple Developer Team`,
     time: 'Sep 16',
@@ -476,7 +476,7 @@ export const MailApp: React.FC = () => {
                     Mail
                   </div>
                   <div className="text-[9px] text-slate-500">
-                    Abhishek OS
+                    ARLO OS
                   </div>
                 </div>
               </motion.div>

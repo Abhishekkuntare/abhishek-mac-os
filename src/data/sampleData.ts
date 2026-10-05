@@ -49,13 +49,13 @@ export const INITIAL_FILES: VirtualFile[] = [
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Abhishek OS Engine</title>
+  <title>ARLO OS Engine</title>
   <style>
     body { background: #0b0f19; color: #38bdf8; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; }
   </style>
 </head>
 <body>
-  <h1>Welcome to Abhishek OS</h1>
+  <h1>Welcome to ARLO OS</h1>
 </body>
 </html>`,
     createdAt: '2026-09-18T18:22:00Z',
@@ -103,7 +103,7 @@ export const INITIAL_FILES: VirtualFile[] = [
   //   size: 3400000,
   //   type: 'document',
   //   extension: 'pdf',
-  //   content: 'Abhishek OS Official Brand Guidelines & Design Tokens',
+  //   content: 'ARLO OS Official Brand Guidelines & Design Tokens',
   //   createdAt: '2026-09-17T12:00:00Z',
   //   updatedAt: '2026-09-17T12:00:00Z',
   // },
@@ -135,7 +135,7 @@ export const INITIAL_FILES: VirtualFile[] = [
   // Downloads
   {
     id: 'dl-node',
-    name: 'abhishek-os-desktop-setup.exe',
+    name: 'arlo-os-desktop-setup.exe',
     path: '/Users/abhishek/Downloads',
     size: 94500000,
     type: 'app',
@@ -253,7 +253,7 @@ export const INITIAL_CONVERSATIONS: MessageConversation[] = [
       {
         id: 'm10',
         sender: 'them',
-        text: 'Did everyone review the Abhishek OS Figma tokens?',
+        text: 'Did everyone review the ARLO OS Figma tokens?',
         time: 'Yesterday 4:15 PM',
       },
       {
@@ -304,7 +304,7 @@ export const TV_ITEMS: TVShowItem[] = [
     id: 'tv-1',
     title: 'Silicon Horizon',
     subtitle: 'The Architects of Next-Gen Computing',
-    badge: 'Abhishek OS Original',
+    badge: 'ARLO OS Original',
     backdropUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=1200&auto=format&fit=crop',
     category: 'trending',
     rating: '9.4',

@@ -354,7 +354,7 @@ export const GameCenterApp: React.FC = () => {
                   </motion.button>
                 ))}
               </div>
-              <p className="mt-6 text-center text-[10px] text-slate-500">Original mini-games made for Abhishek OS · no downloads or accounts needed</p>
+              <p className="mt-6 text-center text-[10px] text-slate-500">Original mini-games made for ARLO OS · no downloads or accounts needed</p>
             </motion.div>
           ) : (
             <motion.div key={activeGame} initial={{ opacity: 0, scale: 0.985 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.985 }} className="mx-auto max-w-5xl">
@@ -481,7 +481,7 @@ export const GameCenterApp: React.FC = () => {
         </AnimatePresence>
       </div>
       <footer className="relative z-10 flex items-center justify-between border-t border-white/[0.07] px-5 py-2 text-[9px] text-slate-500">
-        <span>ABHISHEK OS · ARCADE</span><span className="flex items-center gap-1"><Circle className="h-1.5 w-1.5 fill-emerald-400 text-emerald-400" /> Local play · progress stays in this window</span>
+        <span>ARLO OS · ARCADE</span><span className="flex items-center gap-1"><Circle className="h-1.5 w-1.5 fill-emerald-400 text-emerald-400" /> Local play · progress stays in this window</span>
       </footer>
     </div>
   );

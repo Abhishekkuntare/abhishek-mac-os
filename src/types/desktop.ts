@@ -6,6 +6,7 @@ export type DockPosition = 'top' | 'bottom' | 'left' | 'right';
 export type DockSize = 'small' | 'medium' | 'large';
 export type CursorStyle = 'system' | 'arrow' | 'crosshair';
 export type BatteryIconStyle = 'classic' | 'rounded' | 'square' | 'circle';
+export type GhostShortcut = 'ctrl-shift-space' | 'ctrl-alt-space' | 'ctrl-shift-g';
 
 export interface UserProfile {
   fullName: string;
@@ -159,6 +160,10 @@ export interface SystemSettings {
   };
   developerMode: boolean;
   performanceMode: 'balanced' | 'quality' | 'batterySaver';
+  ghostShortcut: GhostShortcut;
+  ghostWakeEnabled: boolean;
+  ghostVoiceResponses: boolean;
+  ghostVoice: 'brad' | 'lily';
 }
 
 export interface AudioTrack {

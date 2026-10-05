@@ -329,7 +329,7 @@ export const QuickLookModal: React.FC = () => {
     await vfs.importBlob(await readActiveImage(), activeFile.name, destination, 'image');
     addNotification({
       appId: 'finder',
-      title: 'Saved in Abhishek OS',
+      title: 'Saved in ARLO OS',
       message: `${activeFile.name} was saved in ${destination.split('/').pop()}.`,
       type: 'system',
     });
@@ -654,7 +654,7 @@ export const QuickLookModal: React.FC = () => {
             ))}
           </div>
           <div className="space-y-0.5 py-1">
-            {imageMenuItem('Save to Abhishek OS…', <Save className="h-4 w-4" />, () => {
+            {imageMenuItem('Save to ARLO OS…', <Save className="h-4 w-4" />, () => {
               setSaveDestination('choose');
             })}
             {imageMenuItem('Open in Photos app', <Image className="h-4 w-4" />, () => {
@@ -704,8 +704,8 @@ export const QuickLookModal: React.FC = () => {
             className="w-full max-w-sm rounded-3xl border border-white/15 bg-slate-950 p-5 text-white shadow-2xl"
             onClick={event => event.stopPropagation()}
           >
-            <h2 id="quick-look-save-title" className="text-base font-bold">Save in Abhishek OS</h2>
-            <p className="mt-1 text-xs text-slate-400">Choose an app folder. This saves a copy inside Abhishek OS.</p>
+            <h2 id="quick-look-save-title" className="text-base font-bold">Save in ARLO OS</h2>
+            <p className="mt-1 text-xs text-slate-400">Choose an app folder. This saves a copy inside ARLO OS.</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               {[
                 ['/Users/abhishek/Desktop', 'Desktop'],

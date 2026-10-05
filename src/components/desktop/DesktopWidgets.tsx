@@ -1895,7 +1895,7 @@ export const DesktopWidgets: React.FC = () => {
 
               <div className="text-[10px] text-white/40 truncate">
                 {currentTrack?.artist ||
-                  'Abhishek OS Music'}
+                  'ARLO OS Music'}
               </div>
             </div>
 

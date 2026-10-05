@@ -411,7 +411,7 @@ export const CalculatorApp: React.FC = () => {
               </div>
 
               <div className="text-[9px] tracking-wider text-white/30">
-                Abhishek OS
+                ARLO OS
               </div>
             </div>
           </div>

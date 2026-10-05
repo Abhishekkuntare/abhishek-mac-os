@@ -53,7 +53,7 @@ type VideoItem = {
 const SAMPLE_VIDEOS: VideoItem[] = [
   {
     id: 'v1',
-    title: 'Abhishek OS — Cinematic System Showcase',
+    title: 'ARLO OS — Cinematic System Showcase',
     duration: '00:30',
     category: 'Technology',
     thumbnail:

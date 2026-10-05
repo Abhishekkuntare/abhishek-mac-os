@@ -328,7 +328,7 @@ export const PowerDialog: React.FC = () => {
                 text-white/35
               "
             >
-              Choose an action for your Abhishek OS session.
+              Choose an action for your ARLO OS session.
             </p>
           </div>
 
@@ -371,7 +371,7 @@ export const PowerDialog: React.FC = () => {
             <PowerAction
               icon={<Power className="h-5 w-5" />}
               title="Shut Down"
-              description="Power off Abhishek OS"
+              description="Power off ARLO OS"
               iconClass="text-red-300"
               glowClass="bg-red-500/10"
               danger
@@ -427,7 +427,7 @@ export const PowerDialog: React.FC = () => {
                 text-white/[0.14]
               "
             >
-              Abhishek OS • Power Management
+              ARLO OS • Power Management
             </span>
           </div>
         </motion.div>

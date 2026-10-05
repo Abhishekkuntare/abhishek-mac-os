@@ -10,7 +10,7 @@ import codeStudioIcon from '../../assets/app-icons/codestudio.png';
 import documentsIcon from '../../assets/app-icons/documents.png';
 import finderIcon from '../../assets/app-icons/finder.png';
 import folderIcon from '../../assets/app-icons/folder.png';
-import gamesIcon from '../../assets/app-icons/games.png';
+import gamesIcon from '../../assets/app-icons/gamecenter.jpg';
 import ghostAiIcon from '../../assets/app-icons/ghostai.png';
 import mobileIcon from '../../assets/app-icons/iphonemirriong.png';
 import nextpadIcon from '../../assets/app-icons/nextpad.png';
@@ -58,6 +58,7 @@ interface AppIconProps {
   appId?: string;
   assetId?: string;
   className?: string;
+  style?: React.CSSProperties;
   fallback?: React.ReactNode;
 }
 
@@ -65,9 +66,11 @@ export const AppIcon: React.FC<AppIconProps> = ({
   appId,
   assetId,
   className,
+  style,
   fallback = null,
 }) => {
-  const source = getAppIconAsset(assetId ?? appId);
+  const resolvedAssetId = assetId ?? appId;
+  const source = getAppIconAsset(resolvedAssetId);
 
   if (!source) return <>{fallback}</>;
 
@@ -78,7 +81,8 @@ export const AppIcon: React.FC<AppIconProps> = ({
       aria-hidden="true"
       draggable={false}
       decoding="async"
-      className={className}
+      className={`${className ?? ''} ${resolvedAssetId === 'gamecenter' ? 'scale-[0.8]' : ''}`.trim()}
+      style={style}
     />
   );
 };

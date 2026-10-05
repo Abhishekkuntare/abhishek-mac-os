@@ -23,11 +23,14 @@ import { LockScreen } from './components/system/LockScreen';
 import { SleepOverlay } from './components/system/SleepOverlay';
 import { PowerDialog } from './components/system/PowerDialog';
 import { AboutModal } from './components/system/AboutModal';
+import { ActivityHistoryModal } from './components/system/ActivityHistoryModal';
+import { MascotCompanion } from './components/system/MascotCompanion';
 import { QuickLookModal } from './components/system/QuickLookModal';
 import { ShutdownScreen } from './components/system/ShutdownScreen';
 
 import { OnboardingModal } from './components/onboarding/OnboardingModal';
 import { LocalAccessPrompt } from './components/system/LocalAccessPrompt';
+import { GhostAssistantOverlay } from './components/system/GhostAssistantOverlay';
 
 function OSWorkspace() {
   const {
@@ -127,7 +130,13 @@ function OSWorkspace() {
 
         <AboutModal />
 
+        <ActivityHistoryModal />
+
+        <MascotCompanion />
+
         <QuickLookModal />
+
+        <GhostAssistantOverlay />
 
         {/* First-time Onboarding Setup Wizard */}
         {!hasCompletedSetup && <OnboardingModal />}

@@ -1,5 +1,5 @@
 /**
- * Authentic Web Audio synthesizer for Abhishek OS
+ * Authentic Web Audio synthesizer for ARLO OS
  * Synthesizes pure sound effects client-side without external asset dependencies
  */
 
@@ -28,7 +28,7 @@ class SoundService {
   }
 
   /**
-   * Signature Abhishek OS Startup Chime
+   * Signature ARLO OS Startup Chime
    * Warm major chord progression with harmonic shimmer
    */
   public playStartup() {

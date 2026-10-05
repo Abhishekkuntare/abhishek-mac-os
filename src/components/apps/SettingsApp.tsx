@@ -225,7 +225,7 @@ import {
 //   },
 //   {
 //     id: 'about',
-//     label: 'About Abhishek OS',
+//     label: 'About ARLO OS',
 //     icon: Info,
 //     description: 'System information',
 //   },
@@ -979,7 +979,7 @@ import {
 //             </div>
 
 //             <div className="text-[10px] text-slate-500 mt-0.5">
-//               Abhishek OS
+//               ARLO OS
 //             </div>
 //           </div>
 
@@ -1190,7 +1190,7 @@ import {
 //         <div className="pt-4 mt-3 border-t border-white/10">
 //           <div className="flex items-center justify-center gap-1.5 text-[9px] text-slate-600">
 //             <Sparkles className="w-3 h-3" />
-//             Abhishek OS 1.0.0 Pro
+//             ARLO OS 1.0.0 Pro
 //           </div>
 //         </div>
 //       </aside>
@@ -1262,7 +1262,7 @@ import {
 //               >
 //                 <PageHeader
 //                   title="User Profile"
-//                   description="Manage your Abhishek OS identity, profile picture and personal information."
+//                   description="Manage your ARLO OS identity, profile picture and personal information."
 //                   icon={UserRound}
 //                 />
 
@@ -1389,7 +1389,7 @@ import {
 
 //                       <p className="text-xs text-slate-300 mt-4 max-w-xl leading-relaxed">
 //                         {user.bio ||
-//                           'Create your personal identity inside Abhishek OS.'}
+//                           'Create your personal identity inside ARLO OS.'}
 //                       </p>
 
 //                       <div className="flex flex-wrap gap-2 mt-5 justify-center lg:justify-start">
@@ -1615,7 +1615,7 @@ import {
 //               >
 //                 <PageHeader
 //                   title="Appearance"
-//                   description="Customize the visual identity of Abhishek OS."
+//                   description="Customize the visual identity of ARLO OS."
 //                   icon={Palette}
 //                 />
 
@@ -2778,7 +2778,7 @@ import {
 //                 className="space-y-6 max-w-4xl"
 //               >
 //                 <PageHeader
-//                   title="About Abhishek OS"
+//                   title="About ARLO OS"
 //                   description="System information, hardware profile and creator information."
 //                   icon={Info}
 //                 />
@@ -2822,7 +2822,7 @@ import {
 //                       </div>
 
 //                       <h3 className="text-3xl font-black">
-//                         Abhishek OS
+//                         ARLO OS
 //                       </h3>
 
 //                       <div className="text-sm text-slate-400 mt-1">
@@ -2978,6 +2978,8 @@ import {
   Clock3,
   Pin,
   PinOff,
+  Bot,
+  Mic,
 } from 'lucide-react';
 
 import { motion, AnimatePresence } from 'motion/react';
@@ -2996,12 +2998,20 @@ import {
   BatteryIconStyle,
   CursorStyle,
   DockPosition,
+  GhostShortcut,
   ThemeMode,
   Wallpaper,
 } from '../../types/desktop';
 import { sound } from '../../services/soundService';
 import { AppIcon } from '../system/AppIcon';
 import { BatteryStatusIcon } from '../system/BatteryStatusIcon';
+import { configureGhostUtterance } from '../../services/ghostVoice';
+import {
+  loadMascotCompanionConfig,
+  MASCOT_ACTIONS,
+  updateMascotCompanionConfig,
+  type MascotCompanionConfig,
+} from '../system/mascotCompanionModel';
 
 /* ============================================================
    TYPES
@@ -3018,6 +3028,7 @@ type SettingsTab =
   | 'wifi'
   | 'bluetooth'
   | 'focus'
+  | 'ghost'
   | 'battery'
   | 'about';
 
@@ -3320,6 +3331,12 @@ const NAV_ITEMS: {
     description: 'Focus and alerts',
   },
   {
+    id: 'ghost',
+    label: 'Ghost AI',
+    icon: Bot,
+    description: 'Assistant shortcut and voice privacy',
+  },
+  {
     id: 'battery',
     label: 'Battery',
     icon: Battery,
@@ -3327,7 +3344,7 @@ const NAV_ITEMS: {
   },
   {
     id: 'about',
-    label: 'About Abhishek OS',
+    label: 'About ARLO OS',
     icon: Info,
     description: 'System information',
   },
@@ -3554,12 +3571,15 @@ const SettingRow: React.FC<{
 const SectionCard: React.FC<{
   children: React.ReactNode;
   className?: string;
+  id?: string;
 }> = ({
   children,
   className = '',
+  id,
 }) => {
   return (
     <motion.div
+      id={id}
       whileHover={cardHover}
       className={`
         relative overflow-hidden
@@ -3665,6 +3685,33 @@ export const SettingsApp: React.FC = () => {
   const [activeTab, setActiveTab] =
     useState<SettingsTab>('profile');
 
+  useEffect(() => {
+    const openMascotSettings = () => {
+      try {
+        sessionStorage.removeItem('arlo_focus_mascot_settings_v1');
+      } catch (error) {
+        console.warn('[Settings] Could not clear the mascot settings destination:', error);
+      }
+      setActiveTab('appearance');
+      setShowMobileNav(false);
+      window.setTimeout(() => {
+        document.getElementById('arlo-mascot-settings')?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      }, 180);
+    };
+    window.addEventListener('arlo:open-mascot-settings', openMascotSettings);
+    try {
+      if (sessionStorage.getItem('arlo_focus_mascot_settings_v1') === 'true') {
+        openMascotSettings();
+      }
+    } catch (error) {
+      console.warn('[Settings] Could not read the mascot settings destination:', error);
+    }
+    return () => window.removeEventListener('arlo:open-mascot-settings', openMascotSettings);
+  }, []);
+
   const [selectedThemeId, setSelectedThemeId] =
     useState<string | null>(() => getStoredUITheme()?.id ?? null);
 
@@ -3672,6 +3719,11 @@ export const SettingsApp: React.FC = () => {
     useState('');
 
   const [mascotPage, setMascotPage] = useState(0);
+  const [companionConfig, setCompanionConfig] = useState<MascotCompanionConfig>(loadMascotCompanionConfig);
+  const updateCompanion = (patch: Partial<MascotCompanionConfig>) => {
+    updateMascotCompanionConfig(patch);
+    setCompanionConfig(current => ({ ...current, ...patch }));
+  };
   const selectedMascotStyle = Number.isInteger(settings.mascotStyle)
     ? Math.max(0, Math.min(MASCOT_STYLE_COUNT - 1, settings.mascotStyle))
     : 0;
@@ -3716,6 +3768,57 @@ export const SettingsApp: React.FC = () => {
   const bluetoothEnabled = settings.bluetoothEnabled;
   const [radioError, setRadioError] = useState('');
   const [radioBusy, setRadioBusy] = useState(false);
+  const [ghostShortcutError, setGhostShortcutError] = useState('');
+  const [ghostVoicePreviewError, setGhostVoicePreviewError] = useState('');
+
+  const updateGhostShortcut = async (shortcut: GhostShortcut) => {
+    setGhostShortcutError('');
+    if (window.electronAPI?.ghostAISetGlobalShortcut) {
+      try {
+        const registered = await window.electronAPI.ghostAISetGlobalShortcut(shortcut);
+        if (!registered) {
+          setGhostShortcutError('That shortcut is already registered by another application. Your current shortcut is unchanged.');
+          return;
+        }
+      } catch (error) {
+        console.error('[Ghost AI] Could not update the global shortcut:', error);
+        setGhostShortcutError(error instanceof Error ? error.message : 'Could not register that shortcut.');
+        return;
+      }
+    }
+    updateSettings({ ghostShortcut: shortcut });
+    sound.playClick();
+  };
+  const toggleGhostWakePhrase = () => {
+    const enabled = !settings.ghostWakeEnabled;
+    try {
+      localStorage.setItem('abhishek_os_ghost_wake_enabled_v1', String(enabled));
+    } catch (error) {
+      console.error('[Ghost AI] Could not save the wake phrase preference:', error);
+      setGhostShortcutError('Could not save the wake phrase setting on this device.');
+      return;
+    }
+    updateSettings({ ghostWakeEnabled: enabled });
+  };
+  const previewGhostVoice = () => {
+    setGhostVoicePreviewError('');
+    if (!('speechSynthesis' in window)) {
+      setGhostVoicePreviewError('Speech preview is not available on this device.');
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(
+      settings.ghostVoice === 'lily'
+        ? 'Hello, I’m Lily. I’m here and ready to help.'
+        : 'Hello, I’m Brad. I’m here and ready to help.',
+    );
+    configureGhostUtterance(utterance, settings.ghostVoice);
+    utterance.onerror = event => {
+      console.error('[Ghost AI] Voice preview failed:', event.error);
+      setGhostVoicePreviewError('Could not preview this voice on the current device.');
+    };
+    window.speechSynthesis.speak(utterance);
+  };
 
   const focusEnabled = settings.doNotDisturb;
 
@@ -3814,7 +3917,7 @@ export const SettingsApp: React.FC = () => {
   // Preview only. This does NOT modify the desktop.
   const originalThemePreview: UITheme = {
     id: 'original-abhishek-os',
-    name: 'Original Abhishek OS',
+    name: 'Original ARLO OS',
     background: '#070b12',
     panel: '#111827',
     text: '#ffffff',
@@ -4210,7 +4313,7 @@ export const SettingsApp: React.FC = () => {
             </div>
 
             <div className="text-[10px] text-slate-500 mt-0.5">
-              Abhishek OS
+              ARLO OS
             </div>
           </div>
 
@@ -4421,7 +4524,7 @@ export const SettingsApp: React.FC = () => {
         <div className="pt-4 mt-3 border-t border-white/10">
           <div className="flex items-center justify-center gap-1.5 text-[9px] text-slate-600">
             <Sparkles className="w-3 h-3" />
-            Abhishek OS 1.0.0 Pro
+            ARLO OS 1.0.0 Pro
           </div>
         </div>
       </aside>
@@ -4493,7 +4596,7 @@ export const SettingsApp: React.FC = () => {
               >
                 <PageHeader
                   title="User Profile"
-                  description="Manage your Abhishek OS identity, profile picture and personal information."
+                  description="Manage your ARLO OS identity, profile picture and personal information."
                   icon={UserRound}
                 />
 
@@ -4620,7 +4723,7 @@ export const SettingsApp: React.FC = () => {
 
                       <p className="text-xs text-slate-300 mt-4 max-w-xl leading-relaxed">
                         {user.bio ||
-                          'Create your personal identity inside Abhishek OS.'}
+                          'Create your personal identity inside ARLO OS.'}
                       </p>
 
                       <div className="flex flex-wrap gap-2 mt-5 justify-center lg:justify-start">
@@ -4846,7 +4949,7 @@ export const SettingsApp: React.FC = () => {
               >
                 <PageHeader
                   title="Appearance"
-                  description="Customize the visual identity of Abhishek OS."
+                  description="Customize the visual identity of ARLO OS."
                   icon={Palette}
                 />
 
@@ -5000,15 +5103,15 @@ export const SettingsApp: React.FC = () => {
                   </div>
                 </SectionCard>
 
-                <SectionCard className="space-y-5 p-5 sm:p-6">
+                <SectionCard id="arlo-mascot-settings" className="space-y-5 p-5 sm:p-6">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="flex items-center gap-2 text-sm font-bold">
                         <Sparkles className="h-4 w-4 text-sky-400" />
-                        Abhishek OS mascot
+                        ARLO OS mascot
                       </div>
                       <p className="mt-1 max-w-xl text-[10px] leading-relaxed text-slate-500">
-                        Choose from 11 character designs—including the original blue mascot first—with 10 expressions for each. Your selection is saved and shared across Abhishek OS.
+                        Choose from 23 original character designs—including the original blue mascot—with 10 expressions per design. The companion uses the selected design on your desktop.
                       </p>
                     </div>
                     <div className="flex items-center gap-3 self-start rounded-2xl border border-white/10 bg-white/[0.04] p-2.5 sm:self-auto">
@@ -5016,6 +5119,8 @@ export const SettingsApp: React.FC = () => {
                         className="h-14 w-14"
                         styleId={selectedMascotStyle}
                         color={settings.mascotColor}
+                        hairStyle={companionConfig.hair}
+                        accessory={companionConfig.accessory}
                       />
                       <div>
                         <div className="text-[10px] font-bold text-white">
@@ -5115,7 +5220,15 @@ export const SettingsApp: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+                  <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={mascotPage}
+                    initial={{ opacity: 0, x: 12, filter: 'blur(3px)' }}
+                    animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                    exit={{ opacity: 0, x: -8, filter: 'blur(2px)' }}
+                    transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                    className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5"
+                  >
                     {Array.from({ length: MASCOT_VARIATIONS.length }, (_, index) => mascotPage * MASCOT_VARIATIONS.length + index).map(styleId => {
                       const familyIndex = Math.floor(styleId / MASCOT_VARIATIONS.length);
                       const variantIndex = styleId % MASCOT_VARIATIONS.length;
@@ -5131,18 +5244,20 @@ export const SettingsApp: React.FC = () => {
                           aria-pressed={selected}
                           whileHover={{ y: -2, scale: 1.025 }}
                           whileTap={{ scale: 0.97 }}
+                          transition={{ type: 'spring', stiffness: 420, damping: 26 }}
                           onClick={() => {
                             updateSettings({ mascotStyle: styleId });
                             sound.playClick();
                           }}
-                          className={`flex min-w-0 items-center gap-2 rounded-xl border p-2 text-left transition-colors ${
+                          className={`group relative flex min-w-0 items-center gap-2 overflow-hidden rounded-xl border p-2 text-left transition-[border-color,background-color,box-shadow] duration-200 ${
                             selected
-                              ? 'border-sky-400/70 bg-sky-500/10 shadow-[0_0_18px_rgba(56,189,248,0.08)]'
-                              : 'border-white/[0.08] bg-white/[0.025] hover:border-white/20 hover:bg-white/[0.05]'
+                              ? 'border-sky-400/70 bg-gradient-to-br from-sky-500/[0.16] to-indigo-500/[0.06] shadow-[0_0_22px_rgba(56,189,248,0.12)]'
+                              : 'border-white/[0.08] bg-white/[0.025] hover:border-sky-300/35 hover:bg-white/[0.055] hover:shadow-[0_8px_24px_rgba(2,8,23,0.22)]'
                           }`}
                         >
+                          {selected && <motion.span layoutId="mascot-selected-glow" className="pointer-events-none absolute inset-y-2 left-0 w-0.5 rounded-full bg-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.75)]" />}
                           <MascotMark
-                            className="h-9 w-9 shrink-0"
+                            className="h-10 w-10 shrink-0 transition-transform duration-200 group-hover:scale-110"
                             interactive={false}
                             styleId={styleId}
                             color={settings.mascotColor}
@@ -5159,6 +5274,76 @@ export const SettingsApp: React.FC = () => {
                         </motion.button>
                       );
                     })}
+                  </motion.div>
+                  </AnimatePresence>
+                </SectionCard>
+
+                <SectionCard className="space-y-4 p-5 sm:p-6">
+                  <div>
+                    <div className="flex items-center gap-2 text-sm font-bold">
+                      <Sparkles className="h-4 w-4 text-violet-300" />
+                      Companion actions & styling
+                    </div>
+                    <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                      Pick from 100 animated moments, then customize the desktop companion’s hair, outfit, and accessory. Pause or resume its animation from the companion’s right-click menu.
+                    </p>
+                  </div>
+                  <label className="block text-[10px] font-semibold text-slate-300">
+                    Desktop action
+                    <select
+                      value={companionConfig.actionId}
+                      onChange={event => updateCompanion({ actionId: event.target.value, paused: false })}
+                      className="mt-1.5 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-xs text-white outline-none focus:border-sky-400/50"
+                    >
+                      {Array.from(new Set(MASCOT_ACTIONS.map(action => action.category))).map(category => (
+                        <optgroup key={category} label={category}>
+                          {MASCOT_ACTIONS.filter(action => action.category === category).map(action => (
+                            <option key={action.id} value={action.id}>{action.label}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <label className="text-[10px] font-semibold text-slate-300">
+                      Hair
+                      <select
+                        value={companionConfig.hair}
+                        onChange={event => updateCompanion({ hair: event.target.value as MascotCompanionConfig['hair'] })}
+                        className="mt-1.5 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:border-sky-400/50"
+                      >
+                        <option value="soft">Soft</option>
+                        <option value="spiky">Spiky</option>
+                        <option value="curly">Curly</option>
+                        <option value="none">No hair</option>
+                      </select>
+                    </label>
+                    <label className="text-[10px] font-semibold text-slate-300">
+                      Outfit
+                      <select
+                        value={companionConfig.outfit}
+                        onChange={event => updateCompanion({ outfit: event.target.value as MascotCompanionConfig['outfit'] })}
+                        className="mt-1.5 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:border-sky-400/50"
+                      >
+                        <option value="classic">Classic</option>
+                        <option value="hoodie">Hoodie</option>
+                        <option value="sport">Sportswear</option>
+                        <option value="formal">Formal</option>
+                      </select>
+                    </label>
+                    <label className="text-[10px] font-semibold text-slate-300">
+                      Accessory
+                      <select
+                        value={companionConfig.accessory}
+                        onChange={event => updateCompanion({ accessory: event.target.value as MascotCompanionConfig['accessory'] })}
+                        className="mt-1.5 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white outline-none focus:border-sky-400/50"
+                      >
+                        <option value="none">None</option>
+                        <option value="glasses">Glasses</option>
+                        <option value="headphones">Headphones</option>
+                        <option value="crown">Crown</option>
+                      </select>
+                    </label>
                   </div>
                 </SectionCard>
 
@@ -5334,7 +5519,7 @@ export const SettingsApp: React.FC = () => {
               >
                 <PageHeader
                   title="Themes"
-                  description="Choose an immersive visual language for the entire Abhishek OS experience. Every selection updates the desktop UI globally and is remembered."
+                  description="Choose an immersive visual language for the entire ARLO OS experience. Every selection updates the desktop UI globally and is remembered."
                   icon={Sparkles}
                 />
 
@@ -5406,7 +5591,7 @@ export const SettingsApp: React.FC = () => {
                               className="mt-1 text-[10px]"
                               style={{ color: activeUITheme.muted }}
                             >
-                              Select a theme to apply it across the desktop. Your original Abhishek OS design stays unchanged until you choose one.
+                              Select a theme to apply it across the desktop. Your original ARLO OS design stays unchanged until you choose one.
                             </p>
                           </div>
                         </div>
@@ -5986,7 +6171,7 @@ export const SettingsApp: React.FC = () => {
                     className="control-slider w-full mt-3"
                     style={{ '--value': `${settings.brightness}%` } as React.CSSProperties}
                   />
-                  <p className="mt-2 text-[10px] text-slate-500">Brightness affects the whole Abhishek OS screen.</p>
+                  <p className="mt-2 text-[10px] text-slate-500">Brightness affects the whole ARLO OS screen.</p>
                 </SectionCard>
 
                 <SectionCard className="p-2">
@@ -6480,6 +6665,123 @@ export const SettingsApp: React.FC = () => {
                 FOCUS
             ================================================= */}
 
+            {activeTab === 'ghost' && (
+              <motion.div
+                key="ghost"
+                variants={pageVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="max-w-3xl space-y-6"
+              >
+                <PageHeader
+                  title="Ghost AI"
+                  description="Configure global access and choose how Ghost can use voice."
+                  icon={Bot}
+                />
+
+                <SectionCard className="space-y-6 p-6">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-white">Global assistant shortcut</h3>
+                      <p className="mt-1 max-w-lg text-[11px] leading-5 text-slate-400">
+                        Open or dismiss Ghost from anywhere, including when ARLO OS is in the background.
+                      </p>
+                    </div>
+                    <select
+                      value={settings.ghostShortcut}
+                      onChange={event => void updateGhostShortcut(event.target.value as GhostShortcut)}
+                      className="min-h-10 rounded-lg border border-white/10 bg-slate-900 px-3 text-xs text-slate-200 outline-none focus:border-sky-300/30"
+                      aria-label="Ghost AI global keyboard shortcut"
+                    >
+                      <option value="ctrl-shift-space">Ctrl + Shift + Space</option>
+                      <option value="ctrl-alt-space">Ctrl + Alt + Space</option>
+                      <option value="ctrl-shift-g">Ctrl + Shift + G</option>
+                    </select>
+                  </div>
+                  {ghostShortcutError && <p role="alert" className="text-[11px] text-rose-300">{ghostShortcutError}</p>}
+
+                  <div className="border-t border-white/[0.07]" />
+
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <Mic className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Always listen for “Hey Ghost”</h3>
+                        <p className="mt-1 max-w-lg text-[11px] leading-5 text-slate-400">
+                          Ghost uses a bundled offline English speech model while ARLO OS is running, then waits for your command. Audio is processed on this device and is not sent to a speech provider. The microphone is paused while the OS is locked, sleeping, or shut down.
+                        </p>
+                      </div>
+                    </div>
+                    <Toggle
+                      enabled={settings.ghostWakeEnabled}
+                      onChange={toggleGhostWakePhrase}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4 border-t border-white/[0.07] pt-5">
+                    <div className="flex items-start gap-3">
+                      <Volume2 className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Speak Ghost’s replies</h3>
+                        <p className="mt-1 max-w-lg text-[11px] leading-5 text-slate-400">
+                          Uses the speech voices available on this device. Replies are not sent to a voice service.
+                        </p>
+                      </div>
+                    </div>
+                    <Toggle
+                      enabled={settings.ghostVoiceResponses}
+                      onChange={() => updateSettings({ ghostVoiceResponses: !settings.ghostVoiceResponses })}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/[0.07] pt-5">
+                    <div className="flex items-start gap-3">
+                      <Volume2 className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Ghost’s voice</h3>
+                        <p className="mt-1 max-w-lg text-[11px] leading-5 text-slate-400">
+                          Choose a calm voice profile. Lily is selected by default; Ghost uses the closest matching English voice installed on this device.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2" role="group" aria-label="Choose Ghost's voice">
+                      {([
+                        { id: 'lily', name: 'Lily', style: 'Female · calm' },
+                        { id: 'brad', name: 'Brad', style: 'Male · calm' },
+                      ] as const).map(voice => (
+                        <button
+                          key={voice.id}
+                          type="button"
+                          aria-pressed={settings.ghostVoice === voice.id}
+                          onClick={() => updateSettings({ ghostVoice: voice.id })}
+                          className={`rounded-xl border px-3.5 py-2 text-left transition-colors ${
+                            settings.ghostVoice === voice.id
+                              ? 'border-sky-200/30 bg-sky-300/10 text-sky-100'
+                              : 'border-white/[0.08] bg-white/[0.025] text-slate-400 hover:border-white/15 hover:text-slate-200'
+                          }`}
+                        >
+                          <span className="block text-[11px] font-semibold">{voice.name}</span>
+                          <span className="mt-0.5 block text-[9px] opacity-65">{voice.style}</span>
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={previewGhostVoice}
+                        className="rounded-xl border border-white/[0.08] bg-white/[0.025] px-3 py-2 text-[10px] font-medium text-slate-300 transition hover:border-sky-200/20 hover:text-white"
+                      >
+                        Preview
+                      </button>
+                    </div>
+                  </div>
+                  {ghostVoicePreviewError && <p role="alert" className="text-right text-[10px] text-rose-300">{ghostVoicePreviewError}</p>}
+                </SectionCard>
+
+                <SectionCard className="border border-sky-300/10 p-4 text-[11px] leading-5 text-slate-400">
+                  “Hey Ghost” wake listening is active by default. Use the switch above to turn the microphone off at any time. Voice recognition and spoken replies are processed on this device.
+                </SectionCard>
+              </motion.div>
+            )}
+
             {activeTab === 'focus' && (
               <motion.div
                 key="focus"
@@ -6728,7 +7030,7 @@ export const SettingsApp: React.FC = () => {
                 className="space-y-6 max-w-4xl"
               >
                 <PageHeader
-                  title="About Abhishek OS"
+                  title="About ARLO OS"
                   description="System information, hardware profile and creator information."
                   icon={Info}
                 />
@@ -6759,7 +7061,7 @@ export const SettingsApp: React.FC = () => {
                       </div>
 
                       <h3 className="text-3xl font-black">
-                        Abhishek OS
+                        ARLO OS
                       </h3>
 
                       <div className="text-sm text-slate-400 mt-1">

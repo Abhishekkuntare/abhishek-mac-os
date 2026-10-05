@@ -21,6 +21,14 @@ import {
   X,
 } from 'lucide-react';
 import { AppIcon } from '../system/AppIcon';
+import { useOS } from '../../context/OSContext';
+import { executeGhostCommand } from '../../services/ghostCommands';
+import { runGhostChat } from '../../services/ghostChatClient';
+import { GhostChatError } from '../../types/ghostAgent';
+import type { GhostToolHost } from '../../types/ghostAgent';
+import { APP_REGISTRY } from '../../data/defaultApps';
+import { vfs } from '../../services/virtualFileSystem';
+import { createGhostDesktopItem, getGhostLocalTime } from '../../services/ghostDesktopActions';
 
 interface ChatMessage {
   id: string;
@@ -30,7 +38,7 @@ interface ChatMessage {
 }
 
 const CHAT_STORAGE_KEY = 'abhishek_os_ghost_ai_chat_v1';
-const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro'];
+const MODELS = ['gemini-3.8-flash'];
 const STARTER_PROMPTS = [
   'Help me plan a focused workday',
   'Explain a tricky idea in simple terms',
@@ -62,6 +70,7 @@ const displayTime = (timestamp: number) =>
   new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
 export const GhostAIApp: React.FC = () => {
+  const { openApp, showDesktop, updateSettings, windows, closeWindow, user, settings } = useOS();
   const [messages, setMessages] = useState<ChatMessage[]>(readChat);
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
   const [model, setModel] = useState(MODELS[0]);
@@ -69,6 +78,7 @@ export const GhostAIApp: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [errorDetails, setErrorDetails] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isKeySettingsOpen, setIsKeySettingsOpen] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
@@ -76,6 +86,15 @@ export const GhostAIApp: React.FC = () => {
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const endOfChatRef = useRef<HTMLDivElement>(null);
+  const activeRequestIdRef = useRef<string | null>(null);
+
+  useEffect(() => () => {
+    if (activeRequestIdRef.current) {
+      void window.electronAPI?.ghostAICancelChat(activeRequestIdRef.current).catch(error => {
+        console.error('[Ghost AI] Could not cancel the pending request:', error);
+      });
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -118,6 +137,7 @@ export const GhostAIApp: React.FC = () => {
     if (isThinking) return;
     setMessages([]);
     setErrorMessage('');
+    setErrorDetails('');
     setPrompt('');
     textareaRef.current?.focus();
   };
@@ -126,11 +146,12 @@ export const GhostAIApp: React.FC = () => {
     const apiKey = apiKeyInput.trim();
     if (!apiKey || isSavingApiKey) return;
     if (!window.electronAPI?.ghostAISetApiKey) {
-      setErrorMessage('Secure Gemini key storage is only available in the installed Abhishek OS app.');
+      setErrorMessage('Secure Gemini key storage is only available in the installed ARLO OS app.');
       return;
     }
     setIsSavingApiKey(true);
     setErrorMessage('');
+    setErrorDetails('');
     try {
       await window.electronAPI.ghostAISetApiKey(apiKey);
       setApiKeyInput('');
@@ -147,11 +168,12 @@ export const GhostAIApp: React.FC = () => {
 
   const removeApiKey = async () => {
     if (!window.electronAPI?.ghostAIRemoveApiKey) {
-      setErrorMessage('Secure Gemini key storage is only available in the installed Abhishek OS app.');
+      setErrorMessage('Secure Gemini key storage is only available in the installed ARLO OS app.');
       return;
     }
     setIsSavingApiKey(true);
     setErrorMessage('');
+    setErrorDetails('');
     try {
       await window.electronAPI.ghostAIRemoveApiKey();
       const stillConfigured = await window.electronAPI.ghostAIIsConfigured();
@@ -168,11 +190,6 @@ export const GhostAIApp: React.FC = () => {
   const submitPrompt = async (value = prompt) => {
     const content = value.trim();
     if (!content || isThinking) return;
-    if (!isConfigured) {
-      setErrorMessage('Gemini is not configured. Open Ghost AI settings and add your Gemini API key.');
-      return;
-    }
-
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -183,19 +200,112 @@ export const GhostAIApp: React.FC = () => {
     setMessages(nextMessages);
     setPrompt('');
     setErrorMessage('');
+    setErrorDetails('');
     setIsThinking(true);
+    const requestId = crypto.randomUUID();
+    activeRequestIdRef.current = requestId;
 
     try {
-      if (!window.electronAPI?.ghostAIChat) {
-        throw new Error('Ghost AI chat is only available in the Abhishek OS desktop app.');
+      const commandReply = await executeGhostCommand(content, {
+        openApp: appId => {
+          if (!Object.hasOwn(APP_REGISTRY, appId) || !APP_REGISTRY[appId].installed || appId === 'trash') return false;
+          openApp(appId);
+          return true;
+        },
+        closeApp: appId => {
+          const target = [...windows].reverse().find(win =>
+            (appId ? win.appId === appId : win.isFocused) && !win.isMinimized,
+          );
+          if (!target) return false;
+          closeWindow(target.id);
+          return true;
+        },
+        showDesktop,
+        createDesktopItem: (type, name) => {
+          const safeName = name.trim();
+          if (!safeName || safeName.length > 100 || /[\\/]/.test(safeName)) {
+            throw new Error('Desktop names must be 1–100 characters and cannot contain slashes.');
+          }
+          if (vfs.getFiles('/Users/abhishek/Desktop').some(file =>
+            file.name.toLocaleLowerCase() === safeName.toLocaleLowerCase(),
+          )) {
+            throw new Error(`A desktop item named "${safeName}" already exists.`);
+          }
+          if (type === 'folder') {
+            vfs.createFolder(safeName, '/Users/abhishek/Desktop');
+          } else {
+            const extension = safeName.includes('.') ? safeName.split('.').pop()!.toLowerCase() : 'txt';
+            const code = ['py', 'js', 'ts', 'tsx', 'jsx', 'html', 'css', 'json', 'java', 'c', 'cpp'].includes(extension);
+            vfs.createFile(safeName.includes('.') ? safeName : `${safeName}.txt`, '/Users/abhishek/Desktop', code ? 'code' : 'document', '', extension);
+          }
+          return `Created ${type} "${safeName}" on the desktop.`;
+        },
+        renameDesktopItem: (name, newName) => {
+          const target = vfs.getFiles('/Users/abhishek/Desktop')
+            .find(file => file.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+          if (!target) return null;
+          if (!newName.trim() || newName.length > 100 || /[\\/]/.test(newName)) {
+            throw new Error('Desktop names must be 1–100 characters and cannot contain slashes.');
+          }
+          if (!vfs.rename(target.id, newName)) throw new Error(`Could not rename "${name}".`);
+          return `Renamed "${name}" to "${newName}".`;
+        },
+        deleteDesktopItem: name => {
+          const target = vfs.getFiles('/Users/abhishek/Desktop')
+            .find(file => file.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+          if (!target) return null;
+          if (!vfs.moveToTrash(target.id)) throw new Error(`Could not move "${name}" to Trash.`);
+          return `Moved "${name}" to Trash.`;
+        },
+        updateSettings,
+        getBatteryStatus: () => ({
+          available: settings.batteryAvailable,
+          level: settings.batteryLevel,
+          charging: settings.batteryCharging,
+          plugged: settings.batteryPlugged,
+        }),
+      });
+      if (commandReply) {
+        setMessages(current => [
+          ...current,
+          {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: commandReply.reply,
+            createdAt: Date.now(),
+          },
+        ]);
+        return;
       }
-      const answer = await window.electronAPI.ghostAIChat({
-        model,
-        messages: nextMessages.map(message => ({
+      const toolHost: GhostToolHost = {
+        openApp: appId => {
+          if (!Object.hasOwn(APP_REGISTRY, appId) || !APP_REGISTRY[appId].installed || appId === 'trash') return false;
+          openApp(appId);
+          return true;
+        },
+        closeApp: appId => {
+          const target = [...windows].reverse().find(win =>
+            (appId ? win.appId === appId : win.isFocused) && !win.isMinimized,
+          );
+          if (!target) return false;
+          closeWindow(target.id);
+          return true;
+        },
+        createDesktopItem: createGhostDesktopItem,
+        showDesktop,
+        getLocalTime: getGhostLocalTime,
+        getBatteryStatus: () => ({
+          available: settings.batteryAvailable,
+          level: settings.batteryLevel,
+          charging: settings.batteryCharging,
+          plugged: settings.batteryPlugged,
+        }),
+        setFocusMode: enabled => updateSettings({ doNotDisturb: enabled }),
+      };
+      const answer = await runGhostChat(nextMessages.map(message => ({
           role: message.role,
           content: message.content,
-        })),
-      });
+        })), user.displayName, toolHost, requestId);
 
       setMessages(current => [
         ...current,
@@ -207,13 +317,17 @@ export const GhostAIApp: React.FC = () => {
         },
       ]);
     } catch (error) {
-      console.error('[Ghost AI] The Gemini request failed:', error);
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : 'Ghost could not reach the AI service. Check your connection and try again.',
-      );
+      if (error instanceof GhostChatError) {
+        console.error('[Ghost AI] The Gemini request failed:', error.code);
+        setErrorMessage(error.message);
+        setErrorDetails(error.details ?? '');
+      } else {
+        console.error('[Ghost AI] The request failed:', error);
+        setErrorMessage(error instanceof Error ? error.message : 'Ghost could not complete that request.');
+        setErrorDetails('');
+      }
     } finally {
+      if (activeRequestIdRef.current === requestId) activeRequestIdRef.current = null;
       setIsThinking(false);
     }
   };
@@ -283,6 +397,26 @@ export const GhostAIApp: React.FC = () => {
               >
                 <MessageSquarePlus size={14} /> New conversation <Plus size={13} className="ml-auto" />
               </button>
+              {import.meta.env.DEV && (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => void submitPrompt('Hello Ghost')}
+                    disabled={isThinking}
+                    className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-sky-200/10 bg-sky-300/[0.04] px-2 text-[9px] text-sky-100/80 transition hover:bg-sky-300/[0.09] disabled:opacity-50"
+                    title="Send Hello Ghost to Gemini and verify a response"
+                  >
+                    Test Gemini
+                  </button>
+                  <button
+                    onClick={() => void submitPrompt('Can you open music for me?')}
+                    disabled={isThinking}
+                    className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-sky-200/10 bg-sky-300/[0.04] px-2 text-[9px] text-sky-100/80 transition hover:bg-sky-300/[0.09] disabled:opacity-50"
+                    title="Test the Gemini open_app tool request for Music"
+                  >
+                    Test open Music
+                  </button>
+                </div>
+              )}
             </div>
             <div className="mt-6 flex items-center gap-2 px-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
               <Clock3 size={12} /> Recent
@@ -449,7 +583,15 @@ export const GhostAIApp: React.FC = () => {
                     className="mb-2 flex items-start gap-2 rounded-lg border border-rose-300/15 bg-rose-300/[0.06] px-3 py-2 text-[10px] leading-4 text-rose-200/90"
                   >
                     <CircleHelp size={13} className="mt-0.5 shrink-0" />
-                    <span>{errorMessage}</span>
+                    <div className="min-w-0 flex-1">
+                      <p>{errorMessage}</p>
+                      {errorDetails && (
+                        <details className="mt-1 text-[9px] text-rose-100/60">
+                          <summary className="cursor-pointer select-none">Technical details</summary>
+                          <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-words font-mono">{errorDetails}</pre>
+                        </details>
+                      )}
+                    </div>
                     <button onClick={() => setErrorMessage('')} className="ml-auto rounded p-0.5 hover:bg-white/10" aria-label="Dismiss error"><X size={12} /></button>
                   </motion.div>
                 )}

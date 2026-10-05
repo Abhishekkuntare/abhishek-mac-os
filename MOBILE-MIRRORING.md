@@ -10,7 +10,7 @@ This first version is view-only. The phone browser and operating system decide w
 2. Choose **New → Blueprint**, connect the repository, and let Render read [`render.yaml`](./render.yaml).
 3. Create the `abhishek-os-mobile-mirror` web service. Render's public service URL supplies HTTPS and is used to build pairing links.
 4. Wait for the first deployment to finish, then open `https://<your-service>.onrender.com/healthz`. A healthy service returns `{"status":"ok"}`.
-5. In Abhishek OS, open **iPhone Mirroring → Pair & Settings**, paste the Render URL, and create a QR code. On the phone, scan it, tap **Start screen sharing**, and grant the browser's screen-capture permission.
+5. In ARLO OS, open **iPhone Mirroring → Pair & Settings**, paste the Render URL, and create a QR code. On the phone, scan it, tap **Start screen sharing**, and grant the browser's screen-capture permission.
 
 The blueprint uses Render's free plan and disables automatic deployments. Free services can sleep when idle, so the first connection after inactivity may take a while. A paid always-on instance avoids that delay. This repository can prepare the service, but deploying it requires access to the user's Render account.
 

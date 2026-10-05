@@ -90,7 +90,16 @@ import { sound } from '../../services/soundService';
 import { VirtualFile } from '../../types/desktop';
 import { APP_REGISTRY } from '../../data/defaultApps';
 import { AppFeaturesModal } from '../system/AppFeaturesModal';
+import { pushUndoAction, redo, undo } from '../../services/undoManager';
 import { AppIcon } from '../system/AppIcon';
+import {
+  DESKTOP_ICON_SHAPE_EVENT,
+  DESKTOP_ICON_SHAPE_KEY,
+  getDesktopIconShapeStyle,
+  isDesktopIconShape,
+  type DesktopIconShape,
+} from '../../utils/desktopIconShape';
+import { captureWindowPreviews } from '../../utils/windowPreview';
 
 
 
@@ -109,11 +118,18 @@ interface ContextMenuState {
 
 
 interface Position {
-
   x: number;
-
   y: number;
+}
 
+interface DesktopClipboard {
+  files: string[];
+  apps: string[];
+}
+
+interface DesktopAppCopy {
+  id: string;
+  appId: string;
 }
 
 
@@ -151,12 +167,28 @@ type DesktopItem =
       file: VirtualFile;
 
     };
-
-
-
 const DESKTOP_POS_KEY = 'abhishek_os_desktop_icon_positions_v2';
 const DESKTOP_DOCK_SHORTCUTS_KEY = 'abhishek_os_desktop_dock_shortcuts_v1';
+const DESKTOP_APP_COPIES_KEY = 'abhishek_os_desktop_app_copies_v1';
+const DESKTOP_SHORTCUTS_STATE_KEY = 'abhishek_os_desktop_shortcuts_v1';
+const DOCK_FILE_SHORTCUTS_KEY = 'abhishek_os_dock_file_shortcuts_v1';
 const DOCK_APP_DRAG_TYPE = 'application/x-abhishek-os-dock-app';
+
+const isPointInsideDock = (x: number, y: number): boolean => {
+  const dock = document.querySelector<HTMLElement>('[data-dock-drop-zone="true"]');
+  if (!dock) return false;
+
+  const bounds = dock.getBoundingClientRect();
+  return x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom;
+};
+
+const DESKTOP_ICON_SHAPES: Array<{ id: DesktopIconShape; label: string }> = [
+  { id: 'square', label: 'Square' },
+  { id: 'rounded', label: 'Rounded' },
+  { id: 'circle', label: 'Circle' },
+  { id: 'diamond', label: 'Diamond' },
+  { id: 'hexagon', label: 'Hexagon' },
+];
 
 interface ContextMenuItemProps {
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
@@ -240,6 +272,9 @@ export const Desktop: React.FC = () => {
     toggleDockPin,
 
     dockAppIds,
+    setShowAppSwitcher,
+    setShowMissionControl,
+    windows,
 
   } = useOS();
 
@@ -255,6 +290,23 @@ export const Desktop: React.FC = () => {
 
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
 
+  useEffect(() => {
+    if (!contextMenu.visible) return;
+
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      if (
+        contextMenuRef.current &&
+        !contextMenuRef.current.contains(event.target as Node)
+      ) {
+        setContextMenu(prev => ({ ...prev, visible: false }));
+      }
+    };
+
+    window.addEventListener('pointerdown', handleOutsidePointerDown, true);
+    return () =>
+      window.removeEventListener('pointerdown', handleOutsidePointerDown, true);
+  }, [contextMenu.visible]);
+
   const [contextMenuSize, setContextMenuSize] = useState({
     width: 320,
     height: 500,
@@ -262,21 +314,105 @@ export const Desktop: React.FC = () => {
 
   // Desktop View / Sort controls used by the main right-click menu.
   const [desktopIconSize, setDesktopIconSize] = useState<'large' | 'medium' | 'small'>('medium');
+  const [desktopIconShape, setDesktopIconShape] = useState<DesktopIconShape>(() => {
+    try {
+      const saved = localStorage.getItem(DESKTOP_ICON_SHAPE_KEY);
+      return isDesktopIconShape(saved) ? saved : 'rounded';
+    } catch (error) {
+      console.warn('Could not load desktop icon shape.', error);
+      return 'rounded';
+    }
+  });
   const [showDesktopIcons, setShowDesktopIcons] = useState(true);
   const [desktopSortBy, setDesktopSortBy] = useState<'name' | 'type' | 'date'>('name');
   const [desktopSortDirection, setDesktopSortDirection] = useState<'asc' | 'desc'>('asc');
   const [openDesktopSubmenu, setOpenDesktopSubmenu] = useState<'view' | 'sort' | null>(null);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(DESKTOP_ICON_SHAPE_KEY, desktopIconShape);
+      window.dispatchEvent(new CustomEvent(DESKTOP_ICON_SHAPE_EVENT, {
+        detail: desktopIconShape,
+      }));
+    } catch (error) {
+      console.warn('Could not save desktop icon shape.', error);
+    }
+  }, [desktopIconShape]);
+
   const [selectedIconIds, setSelectedIconIds] = useState<string[]>([]);
+  const desktopClipboardRef = useRef<DesktopClipboard | null>(null);
+  const setDesktopClipboard = (clipboard: DesktopClipboard) => {
+    desktopClipboardRef.current = clipboard;
+  };
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDockAppDragOver, setIsDockAppDragOver] = useState(false);
+  const [desktopAppCopies, setDesktopAppCopies] = useState<DesktopAppCopy[]>(() => {
+    try {
+      const stored = localStorage.getItem(DESKTOP_APP_COPIES_KEY);
+      const parsed: unknown = stored ? JSON.parse(stored) : [];
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is DesktopAppCopy =>
+            Boolean(
+              item &&
+              typeof item === 'object' &&
+              'id' in item &&
+              typeof item.id === 'string' &&
+              'appId' in item &&
+              typeof item.appId === 'string' &&
+              APP_REGISTRY[item.appId],
+            ),
+          )
+        : [];
+    } catch (error) {
+      console.warn('Could not load copied desktop app shortcuts.', error);
+      return [];
+    }
+  });
   const [desktopDockShortcuts, setDesktopDockShortcuts] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(DESKTOP_DOCK_SHORTCUTS_KEY);
       return saved ? [...new Set(JSON.parse(saved) as string[])] : [];
     } catch (error) {
       console.warn('Could not load desktop app shortcuts.', error);
+      return [];
+    }
+  });
+  const [removedDesktopShortcutIds, setRemovedDesktopShortcutIds] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(DESKTOP_SHORTCUTS_STATE_KEY);
+      const parsed: unknown = stored ? JSON.parse(stored) : {};
+      return parsed && typeof parsed === 'object' && 'removed' in parsed && Array.isArray(parsed.removed)
+        ? parsed.removed.filter((id): id is string => typeof id === 'string')
+        : [];
+    } catch (error) {
+      console.warn('Could not load removed desktop shortcuts.', error);
+      return [];
+    }
+  });
+  const [desktopShortcutNames, setDesktopShortcutNames] = useState<Record<string, string>>(() => {
+    try {
+      const stored = localStorage.getItem(DESKTOP_SHORTCUTS_STATE_KEY);
+      const parsed: unknown = stored ? JSON.parse(stored) : {};
+      if (!parsed || typeof parsed !== 'object' || !('names' in parsed) || !parsed.names || typeof parsed.names !== 'object') {
+        return {};
+      }
+      return Object.fromEntries(
+        Object.entries(parsed.names).filter(
+          (entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string',
+        ),
+      );
+    } catch (error) {
+      console.warn('Could not load renamed desktop shortcuts.', error);
+      return {};
+    }
+  });
+  const [dockFileShortcutIds, setDockFileShortcutIds] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(DOCK_FILE_SHORTCUTS_KEY);
+      return stored ? [...new Set(JSON.parse(stored) as string[])] : [];
+    } catch (error) {
+      console.warn('Could not read Dock file shortcuts.', error);
       return [];
     }
   });
@@ -290,6 +426,8 @@ export const Desktop: React.FC = () => {
   const [showNewFileModal, setShowNewFileModal] = useState(false);
 
   const [newFileName, setNewFileName] = useState('');
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [addNewItemToDock, setAddNewItemToDock] = useState(false);
 
   const [newFileType, setNewFileType] = useState<'document' | 'code'>('document');
 
@@ -392,6 +530,20 @@ export const Desktop: React.FC = () => {
 
   };
 
+  const savePositionsWithUndo = (
+    label: string,
+    nextPositions: Record<string, Position>,
+    previousPositions = customPositions,
+  ) => {
+    if (JSON.stringify(previousPositions) === JSON.stringify(nextPositions)) return;
+    savePositions(nextPositions);
+    pushUndoAction({
+      label,
+      undo: () => savePositions(previousPositions),
+      redo: () => savePositions(nextPositions),
+    });
+  };
+
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -402,6 +554,39 @@ export const Desktop: React.FC = () => {
       console.warn('Could not save desktop app shortcuts.', error);
     }
   }, [desktopDockShortcuts]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DESKTOP_APP_COPIES_KEY, JSON.stringify(desktopAppCopies));
+    } catch (error) {
+      console.warn('Could not save copied desktop app shortcuts.', error);
+    }
+  }, [desktopAppCopies]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        DESKTOP_SHORTCUTS_STATE_KEY,
+        JSON.stringify({
+          removed: removedDesktopShortcutIds,
+          names: desktopShortcutNames,
+        }),
+      );
+    } catch (error) {
+      console.warn('Could not save desktop shortcut changes.', error);
+    }
+  }, [removedDesktopShortcutIds, desktopShortcutNames]);
+
+  useEffect(() => {
+    const handleDockFileShortcutsChanged = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail;
+      if (Array.isArray(detail) && detail.every(id => typeof id === 'string')) {
+        setDockFileShortcutIds([...new Set(detail)]);
+      }
+    };
+    window.addEventListener('dock:file-shortcuts-changed', handleDockFileShortcutsChanged);
+    return () => window.removeEventListener('dock:file-shortcuts-changed', handleDockFileShortcutsChanged);
+  }, []);
 
 
 
@@ -509,6 +694,10 @@ export const Desktop: React.FC = () => {
     ensureNewItemsHavePositions(nextFiles);
     setDesktopFiles(nextFiles);
   };
+
+  useEffect(() => vfs.subscribe(() => {
+    setDesktopFiles(vfs.getFiles('/Users/abhishek/Desktop'));
+  }), []);
 
 
 
@@ -703,9 +892,10 @@ export const Desktop: React.FC = () => {
       .filter(appId => Boolean(APP_REGISTRY[appId]) && !existingShortcutAppIds.has(appId))
       .map(appId => {
         const app = APP_REGISTRY[appId];
+        const id = `dock-app-${appId}`;
         return {
-          id: `dock-app-${appId}`,
-          name: app.name,
+          id,
+          name: desktopShortcutNames[id] ?? app.name,
           isSystem: true as const,
           type: 'app',
           appId,
@@ -717,7 +907,7 @@ export const Desktop: React.FC = () => {
     const items: DesktopItem[] = [
       ...systemShortcuts.map(s => ({
         id: s.id,
-        name: s.label,
+        name: desktopShortcutNames[s.id] ?? s.label,
         isSystem: true as const,
         type: s.type,
         appId: s.appId,
@@ -726,6 +916,19 @@ export const Desktop: React.FC = () => {
         gradient: s.gradient,
       })),
       ...dockShortcuts,
+      ...desktopAppCopies.map(copy => {
+        const app = APP_REGISTRY[copy.appId];
+        return {
+          id: copy.id,
+          name: desktopShortcutNames[copy.id] ?? app.name,
+          isSystem: true as const,
+          type: 'app',
+          appId: copy.appId,
+          iconAssetId: copy.appId,
+          icon: Folder,
+          gradient: 'from-sky-500 to-indigo-500',
+        };
+      }),
       ...desktopFiles.map(f => ({
         id: f.id,
         name: f.name,
@@ -733,7 +936,7 @@ export const Desktop: React.FC = () => {
         type: f.type,
         file: f,
       })),
-    ];
+    ].filter(item => !removedDesktopShortcutIds.includes(item.id));
 
     const direction = desktopSortDirection === 'asc' ? 1 : -1;
 
@@ -758,7 +961,7 @@ export const Desktop: React.FC = () => {
 
       return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) * direction;
     });
-  }, [systemShortcuts, desktopDockShortcuts, desktopFiles, desktopSortBy, desktopSortDirection]);
+  }, [systemShortcuts, desktopDockShortcuts, desktopAppCopies, desktopFiles, desktopSortBy, desktopSortDirection, desktopShortcutNames, removedDesktopShortcutIds]);
 
   // Apply sorting immediately: update both the rendered order and the saved grid
   // positions in the same event so icons move without requiring a refresh.
@@ -823,7 +1026,7 @@ export const Desktop: React.FC = () => {
 
     setDesktopSortBy(nextSortBy);
     setDesktopSortDirection(nextDirection);
-    savePositions(nextPositions);
+    savePositionsWithUndo('Reorder desktop icons', nextPositions);
     setSelectedIconIds([]);
     setOpenDesktopSubmenu(null);
     sound.playClick();
@@ -908,7 +1111,6 @@ export const Desktop: React.FC = () => {
 
 
   const handlePointerMove = (e: React.PointerEvent) => {
-
     if (!dragTrackerRef.current) return;
 
     const tracker = dragTrackerRef.current;
@@ -930,9 +1132,12 @@ export const Desktop: React.FC = () => {
 
 
     if (tracker.hasMoved) {
+      const isOverDock = isPointInsideDock(e.clientX, e.clientY);
+      window.dispatchEvent(new CustomEvent('desktop:item-drag-state', {
+        detail: { overDock: isOverDock },
+      }));
 
       const maxX = Math.max(16, window.innerWidth - 108);
-
       const maxY = Math.max(40, window.innerHeight - 128);
 
       const clampedX = Math.max(16, Math.min(maxX, tracker.startPos.x + dx));
@@ -956,9 +1161,7 @@ export const Desktop: React.FC = () => {
 
 
   const handlePointerUp = (e: React.PointerEvent) => {
-
     if (!dragTrackerRef.current) return;
-
     const tracker = dragTrackerRef.current;
 
     try {
@@ -967,18 +1170,42 @@ export const Desktop: React.FC = () => {
 
     } catch {}
 
-
-
     if (tracker.hasMoved) {
+      const item = allDesktopItems.find(candidate => candidate.id === tracker.itemId);
+      const droppedOnDock = isPointInsideDock(e.clientX, e.clientY);
+      if (droppedOnDock && item) {
+        window.dispatchEvent(new CustomEvent('desktop:item-drop-to-dock', {
+          detail: item.isSystem
+            ? { appId: item.appId }
+            : { fileId: item.id },
+        }));
+      }
+      window.dispatchEvent(new CustomEvent('desktop:item-drag-state', {
+        detail: { overDock: false },
+      }));
 
-      setCustomPositions(prev => {
-
-        savePositions(prev);
-
-        return prev;
-
-      });
-
+      if (droppedOnDock) {
+        setCustomPositions(previous => {
+          const next = { ...previous, [tracker.itemId]: tracker.startPos };
+          savePositions(next);
+          return next;
+        });
+      } else {
+        const finalPosition = customPositions[tracker.itemId] ?? tracker.startPos;
+        const previousPositions = {
+          ...customPositions,
+          [tracker.itemId]: tracker.startPos,
+        };
+        savePositionsWithUndo(
+          `Move "${item?.name ?? 'desktop item'}"`,
+          { ...customPositions, [tracker.itemId]: finalPosition },
+          previousPositions,
+        );
+      }
+    } else {
+      window.dispatchEvent(new CustomEvent('desktop:item-drag-state', {
+        detail: { overDock: false },
+      }));
     }
 
     setDraggingItemId(null);
@@ -1047,7 +1274,7 @@ export const Desktop: React.FC = () => {
 
 
 
-    savePositions(newPositions);
+    savePositionsWithUndo('Auto-arrange desktop icons', newPositions);
 
     sound.playClick();
 
@@ -1089,16 +1316,22 @@ export const Desktop: React.FC = () => {
   };
 
   const toggleFavoriteItem = (itemId: string) => {
+    const previous = favoriteItemIds;
     const next = favoriteItemIds.includes(itemId)
       ? favoriteItemIds.filter(id => id !== itemId)
       : [...favoriteItemIds, itemId];
 
     saveFavoriteItemIds(next);
+    pushUndoAction({
+      label: `${next.includes(itemId) ? 'Favorite' : 'Unfavorite'} desktop item`,
+      undo: () => saveFavoriteItemIds(previous),
+      redo: () => saveFavoriteItemIds(next),
+    });
     sound.playClick();
   };
 
-  const openRenameModal = (fileId: string, currentName: string) => {
-    const extension = currentName.includes('.')
+  const openRenameModal = (fileId: string, currentName: string, isShortcut = false) => {
+    const extension = !isShortcut && currentName.includes('.')
       ? `.${currentName.split('.').pop()}`
       : '';
 
@@ -1132,22 +1365,25 @@ export const Desktop: React.FC = () => {
       ? `${trimmed}${renameModal.extension}`
       : trimmed;
 
-    const api = vfs as any;
-    const renameMethod = api.renameFile || api.rename || api.updateFileName;
-
-    if (typeof renameMethod !== 'function') {
-      addNotification({
-        appId: 'finder',
-        title: 'Rename unavailable',
-        message: 'The current Virtual File System does not expose a rename operation yet.',
-        type: 'system',
-      });
-      return;
-    }
-
     try {
-      renameMethod.call(api, renameModal.fileId, nextName);
-      refreshFiles();
+      const targetItem = allDesktopItems.find(item => item.id === renameModal.fileId);
+      if (targetItem?.isSystem) {
+        const previousNames = desktopShortcutNames;
+        const nextNames = { ...desktopShortcutNames, [renameModal.fileId!]: nextName };
+        setDesktopShortcutNames(previous => ({
+          ...previous,
+          [renameModal.fileId!]: nextName,
+        }));
+        pushUndoAction({
+          label: `Rename "${targetItem.name}"`,
+          undo: () => setDesktopShortcutNames(previousNames),
+          redo: () => setDesktopShortcutNames(nextNames),
+        });
+      } else {
+        const renamed = vfs.rename(renameModal.fileId, nextName);
+        if (!renamed) throw new Error(`Could not rename "${renameModal.currentName}".`);
+        refreshFiles();
+      }
       setSelectedIconIds([renameModal.fileId]);
       setRenameModal({ open: false, fileId: null, currentName: '', value: '', extension: '' });
       sound.playClick();
@@ -1157,14 +1393,86 @@ export const Desktop: React.FC = () => {
         message: `Renamed to "${nextName}".`,
         type: 'system',
       });
-    } catch {
+    } catch (error) {
       addNotification({
         appId: 'finder',
         title: 'Rename failed',
-        message: `Could not rename "${renameModal.currentName}".`,
+        message: error instanceof Error ? error.message : `Could not rename "${renameModal.currentName}".`,
         type: 'system',
       });
     }
+  };
+
+  const removeDesktopShortcut = (item: DesktopItem) => {
+    if (!item.isSystem) return;
+
+    const copiedApp = desktopAppCopies.find(copy => copy.id === item.id);
+    const shortcutName = desktopShortcutNames[item.id];
+    const dockAppId = item.id.startsWith('dock-app-')
+      ? item.id.slice('dock-app-'.length)
+      : null;
+
+    if (item.id.startsWith('copied-app-')) {
+      setDesktopAppCopies(previous => previous.filter(copy => copy.id !== item.id));
+    } else if (item.id.startsWith('dock-app-')) {
+      setDesktopDockShortcuts(previous => previous.filter(id => id !== dockAppId));
+    } else {
+      setRemovedDesktopShortcutIds(previous =>
+        previous.includes(item.id) ? previous : [...previous, item.id],
+      );
+    }
+    setDesktopShortcutNames(previous => {
+      const next = { ...previous };
+      delete next[item.id];
+      return next;
+    });
+    pushUndoAction({
+      label: `Remove "${item.name}" shortcut`,
+      undo: () => {
+        if (copiedApp) {
+          setDesktopAppCopies(previous =>
+            previous.some(copy => copy.id === copiedApp.id) ? previous : [...previous, copiedApp],
+          );
+        }
+        if (dockAppId) {
+          setDesktopDockShortcuts(previous =>
+            previous.includes(dockAppId) ? previous : [...previous, dockAppId],
+          );
+        }
+        if (!copiedApp && !dockAppId) {
+          setRemovedDesktopShortcutIds(previous => previous.filter(id => id !== item.id));
+        }
+        if (shortcutName !== undefined) {
+          setDesktopShortcutNames(previous => ({ ...previous, [item.id]: shortcutName }));
+        }
+      },
+      redo: () => {
+        if (copiedApp) {
+          setDesktopAppCopies(previous => previous.filter(copy => copy.id !== copiedApp.id));
+        }
+        if (dockAppId) {
+          setDesktopDockShortcuts(previous => previous.filter(id => id !== dockAppId));
+        }
+        if (!copiedApp && !dockAppId) {
+          setRemovedDesktopShortcutIds(previous =>
+            previous.includes(item.id) ? previous : [...previous, item.id],
+          );
+        }
+        setDesktopShortcutNames(previous => {
+          const next = { ...previous };
+          delete next[item.id];
+          return next;
+        });
+      },
+    });
+    setSelectedIconIds(previous => previous.filter(id => id !== item.id));
+    sound.playTrash();
+    addNotification({
+      appId: item.appId,
+      title: 'Shortcut removed',
+      message: `${item.name} was removed from the Desktop. The app is still installed.`,
+      type: 'system',
+    });
   };
 
 
@@ -1552,62 +1860,54 @@ export const Desktop: React.FC = () => {
       };
     });
 
-    savePositions(next);
+    savePositionsWithUndo('Align desktop icons to grid', next);
     sound.playClick();
   };
 
-  const handleCreateFolder = () => {
-
-    const created = vfs.createFolder('New Folder', '/Users/abhishek/Desktop');
-
-    const nextFiles = vfs.getFiles('/Users/abhishek/Desktop');
-    ensureNewItemsHavePositions(nextFiles);
-    setDesktopFiles(nextFiles);
-
-    setSelectedIconIds([created.id]);
-
+  const openCreateItemModal = (createFolder = false) => {
+    setIsCreatingFolder(createFolder);
+    setNewFileName(createFolder ? 'New Folder' : '');
+    setAddNewItemToDock(false);
+    setShowNewFileModal(true);
     setContextMenu(prev => ({ ...prev, visible: false }));
-
-    sound.playClick();
-
   };
 
-
-
-  const handleCreateNewFile = () => {
-
-    const rawName = newFileName.trim() || 'Untitled';
-
-    const finalName = rawName.includes('.') ? rawName : `${rawName}.${newFileExtension}`;
-
-    const ext = finalName.split('.').pop() || newFileExtension;
-
-    const created = vfs.createFile(finalName, '/Users/abhishek/Desktop', newFileType, '', ext);
+  const handleCreateNewItem = () => {
+    const enteredName = newFileName.trim() || (isCreatingFolder ? 'New Folder' : 'Untitled');
+    const finalName = isCreatingFolder
+      ? enteredName
+      : enteredName.includes('.') ? enteredName : `${enteredName}.${newFileExtension}`;
+    const created = isCreatingFolder
+      ? vfs.createFolder(finalName, '/Users/abhishek/Desktop')
+      : vfs.createFile(
+          finalName,
+          '/Users/abhishek/Desktop',
+          newFileType,
+          '',
+          finalName.split('.').pop() || newFileExtension,
+        );
 
     const nextFiles = vfs.getFiles('/Users/abhishek/Desktop');
     ensureNewItemsHavePositions(nextFiles);
     setDesktopFiles(nextFiles);
-
     setSelectedIconIds([created.id]);
+
+    if (addNewItemToDock) {
+      window.dispatchEvent(new CustomEvent('desktop:item-drop-to-dock', {
+        detail: { fileId: created.id },
+      }));
+    }
 
     setShowNewFileModal(false);
-
     setNewFileName('');
-
+    setAddNewItemToDock(false);
     sound.playClick();
-
     addNotification({
-
       appId: 'finder',
-
       title: 'Desktop',
-
-      message: `Created "${finalName}" on Desktop`,
-
+      message: `Created "${finalName}" on Desktop${addNewItemToDock ? ' and added it to the Dock' : ''}.`,
       type: 'system',
-
     });
-
   };
 
 
@@ -1654,12 +1954,22 @@ export const Desktop: React.FC = () => {
     if (dockAppId && dockApp?.installed) {
       const existingShortcut = systemShortcuts.find(shortcut => shortcut.appId === dockAppId);
       const desktopItemId = existingShortcut?.id ?? `dock-app-${dockAppId}`;
+      const wasHidden = Boolean(
+        existingShortcut && removedDesktopShortcutIds.includes(existingShortcut.id),
+      );
+      const alreadyOnDesktop = desktopDockShortcuts.includes(dockAppId);
+      if (wasHidden && existingShortcut) {
+        setRemovedDesktopShortcutIds(previous =>
+          previous.filter(id => id !== existingShortcut.id),
+        );
+      }
       if (!existingShortcut) {
         setDesktopDockShortcuts(previous =>
           previous.includes(dockAppId) ? previous : [...previous, dockAppId],
         );
       }
 
+      const previousPositions = customPositions;
       const root = desktopContainerRef.current;
       const bounds = root?.getBoundingClientRect();
       if (bounds) {
@@ -1670,7 +1980,45 @@ export const Desktop: React.FC = () => {
             y: Math.max(40, Math.min(bounds.height - 128, e.clientY - bounds.top - 48)),
           },
         };
-        savePositions(nextPositions);
+        savePositionsWithUndo(`Position "${dockApp.name}" shortcut`, nextPositions);
+      }
+
+      if (wasHidden || (!existingShortcut && !alreadyOnDesktop)) {
+        pushUndoAction({
+          label: `Add "${dockApp.name}" shortcut to Desktop`,
+          undo: () => {
+            if (existingShortcut && wasHidden) {
+              setRemovedDesktopShortcutIds(previous =>
+                previous.includes(existingShortcut.id)
+                  ? previous
+                  : [...previous, existingShortcut.id],
+              );
+            } else if (!existingShortcut) {
+              setDesktopDockShortcuts(previous => previous.filter(id => id !== dockAppId));
+            }
+            savePositions(previousPositions);
+          },
+          redo: () => {
+            if (existingShortcut && wasHidden) {
+              setRemovedDesktopShortcutIds(previous =>
+                previous.filter(id => id !== existingShortcut.id),
+              );
+            } else if (!existingShortcut) {
+              setDesktopDockShortcuts(previous =>
+                previous.includes(dockAppId) ? previous : [...previous, dockAppId],
+              );
+            }
+            if (bounds) {
+              savePositions({
+                ...previousPositions,
+                [desktopItemId]: {
+                  x: Math.max(16, Math.min(bounds.width - 108, e.clientX - bounds.left - 48)),
+                  y: Math.max(40, Math.min(bounds.height - 128, e.clientY - bounds.top - 48)),
+                },
+              });
+            }
+          },
+        });
       }
 
       setSelectedIconIds([desktopItemId]);
@@ -1917,7 +2265,30 @@ export const Desktop: React.FC = () => {
 
     const handleKeyDown = (e: KeyboardEvent) => {
 
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+      const target = e.target as HTMLElement | null;
+      const isEditing = Boolean(
+        target?.isContentEditable ||
+        (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)),
+      );
+      const isMod = e.ctrlKey || e.metaKey;
+
+      if (!isEditing && isMod && (e.code === 'KeyZ' || e.code === 'KeyY')) {
+        const action = e.code === 'KeyY' || e.shiftKey ? redo : undo;
+        const label = action();
+        if (label) {
+          e.preventDefault();
+          sound.playClick();
+          addNotification({
+            appId: 'finder',
+            title: e.code === 'KeyY' || e.shiftKey ? 'Redone' : 'Undone',
+            message: `${label}.`,
+            type: 'system',
+          });
+        }
+        return;
+      }
+
+      if (isEditing) {
 
         return;
 
@@ -1936,10 +2307,6 @@ export const Desktop: React.FC = () => {
         sound.playClick();
         return;
       }
-
-
-
-      const isMod = e.ctrlKey || e.metaKey;
 
 
 
@@ -1963,13 +2330,25 @@ export const Desktop: React.FC = () => {
 
       if (isMod && e.code === 'KeyC') {
 
-        const fileIdsToCopy = selectedIconIds.filter(id => !id.startsWith('icon-'));
+        const selectedItems = selectedIconIds
+          .map(id => allDesktopItems.find(item => item.id === id))
+          .filter((item): item is DesktopItem => Boolean(item));
+        const fileIdsToCopy = selectedItems
+          .filter((item): item is Extract<DesktopItem, { isSystem: false }> => !item.isSystem)
+          .map(item => item.id);
+        const appItemsToCopy = selectedItems.filter(
+          (item): item is Extract<DesktopItem, { isSystem: true }> => item.isSystem && item.type === 'app',
+        );
 
-        if (fileIdsToCopy.length > 0) {
+        if (fileIdsToCopy.length > 0 || appItemsToCopy.length > 0) {
 
           e.preventDefault();
 
-          vfs.copyFiles(fileIdsToCopy);
+          if (fileIdsToCopy.length > 0) vfs.copyFiles(fileIdsToCopy);
+          setDesktopClipboard({
+            files: fileIdsToCopy,
+            apps: appItemsToCopy.map(item => item.appId),
+          });
 
           sound.playClick();
 
@@ -1979,7 +2358,7 @@ export const Desktop: React.FC = () => {
 
             title: 'Desktop',
 
-            message: `Copied ${fileIdsToCopy.length} item(s) to clipboard`,
+            message: `Copied ${fileIdsToCopy.length + appItemsToCopy.length} item(s) to clipboard`,
 
             type: 'system',
 
@@ -1997,17 +2376,42 @@ export const Desktop: React.FC = () => {
 
       if (isMod && e.code === 'KeyV') {
 
+        const clipboard = desktopClipboardRef.current;
+        const hasAppClipboard = Boolean(clipboard?.apps.length);
+        const hasFileClipboard = Boolean(clipboard?.files.length);
+        if (!clipboard && !vfs.getClipboard()?.ids.length) return;
         e.preventDefault();
 
-        const pasted = vfs.paste('/Users/abhishek/Desktop');
+        const pasted = hasFileClipboard || !clipboard
+          ? vfs.paste('/Users/abhishek/Desktop')
+          : [];
+        const copiedApps = (clipboard?.apps ?? [])
+          .filter(appId => Boolean(APP_REGISTRY[appId]))
+          .map(appId => ({
+            id: `copied-app-${appId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            appId,
+          }));
+        if (copiedApps.length > 0) {
+          const previousCopies = desktopAppCopies;
+          const nextCopies = [...previousCopies, ...copiedApps];
+          setDesktopAppCopies(nextCopies);
+          pushUndoAction({
+            label: `Paste ${copiedApps.length} app shortcut(s)`,
+            undo: () => setDesktopAppCopies(previousCopies),
+            redo: () => setDesktopAppCopies(nextCopies),
+          });
+        }
 
-        if (pasted.length > 0) {
+        if (pasted.length > 0 || copiedApps.length > 0) {
 
           sound.playClick();
 
           refreshFiles();
 
-          setSelectedIconIds(pasted.map(f => f.id));
+          setSelectedIconIds([
+            ...pasted.map(file => file.id),
+            ...copiedApps.map(copy => copy.id),
+          ]);
 
           addNotification({
 
@@ -2015,7 +2419,7 @@ export const Desktop: React.FC = () => {
 
             title: 'Desktop',
 
-            message: `Pasted ${pasted.length} item(s) onto Desktop`,
+            message: `Pasted ${pasted.length + copiedApps.length} item(s) onto Desktop`,
 
             type: 'system',
 
@@ -2031,17 +2435,13 @@ export const Desktop: React.FC = () => {
 
       // Rename selected desktop item: F2
       if (e.code === 'F2') {
-        const selectedFileId = selectedIconIds.find(id => {
-          const item = allDesktopItems.find(current => current.id === id);
-          return item && !item.isSystem;
-        });
-
-        if (selectedFileId) {
+        const selectedId = selectedIconIds.find(id =>
+          allDesktopItems.some(current => current.id === id),
+        );
+        const selectedItem = allDesktopItems.find(item => item.id === selectedId);
+        if (selectedItem) {
           e.preventDefault();
-          const item = allDesktopItems.find(current => current.id === selectedFileId);
-          if (item && !item.isSystem) {
-            openRenameModal(item.id, item.name);
-          }
+          openRenameModal(selectedItem.id, selectedItem.name, selectedItem.isSystem);
         }
         return;
       }
@@ -2066,21 +2466,24 @@ export const Desktop: React.FC = () => {
 
       if (e.code === 'Delete' || (isMod && e.code === 'Backspace')) {
 
-        const fileIdsToDelete = selectedIconIds.filter(id => {
-          const item = allDesktopItems.find(current => current.id === id);
-          return !!item && !item.isSystem && item.file.type !== 'app';
-        });
-
-        if (fileIdsToDelete.length > 0) {
+        const selectedItems = selectedIconIds
+          .map(id => allDesktopItems.find(item => item.id === id))
+          .filter((item): item is DesktopItem => Boolean(item));
+        if (selectedItems.length > 0) {
 
           e.preventDefault();
 
-          fileIdsToDelete.forEach(id => vfs.moveToTrash(id));
-
-          sound.playTrash();
-
-          refreshFiles();
-
+          selectedItems.forEach(item => {
+            if (item.isSystem) {
+              removeDesktopShortcut(item);
+            } else {
+              vfs.moveToTrash(item.id);
+            }
+          });
+          if (selectedItems.some(item => !item.isSystem)) {
+            sound.playTrash();
+            refreshFiles();
+          }
           setSelectedIconIds([]);
 
         }
@@ -2123,7 +2526,7 @@ export const Desktop: React.FC = () => {
 
         e.preventDefault();
 
-        handleCreateFolder();
+        openCreateItemModal(true);
 
         return;
 
@@ -2258,7 +2661,7 @@ export const Desktop: React.FC = () => {
 
               {isDockAppDragOver
                 ? 'Create a shortcut exactly where you drop it.'
-                : 'All files, images, videos, audio, and code will be mounted directly into Abhishek OS Desktop.'}
+                : 'All files, images, videos, audio, and code will be mounted directly into ARLO OS Desktop.'}
 
             </p>
 
@@ -2449,13 +2852,16 @@ export const Desktop: React.FC = () => {
 
                 <div
 
-                  className={`${desktopIconSize === 'large' ? 'w-16 h-16' : desktopIconSize === 'small' ? 'w-11 h-11' : 'w-14 h-14'} ${item.iconAssetId ? '' : `rounded-2xl bg-gradient-to-tr ${item.gradient} shadow-lg text-white`} flex items-center justify-center group-hover:scale-105 transition-transform pointer-events-none`}
+                  data-desktop-icon-shape={desktopIconShape}
+                  className={`${desktopIconSize === 'large' ? 'w-16 h-16' : desktopIconSize === 'small' ? 'w-11 h-11' : 'w-14 h-14'} ${item.iconAssetId ? '' : `bg-gradient-to-tr ${item.gradient} shadow-lg text-white`} flex items-center justify-center overflow-hidden group-hover:scale-105 transition-transform pointer-events-none`}
+                  style={getDesktopIconShapeStyle(desktopIconShape)}
 
                 >
 
                   <AppIcon
                     assetId={item.iconAssetId}
                     className="h-full w-full object-contain"
+                    style={getDesktopIconShapeStyle(desktopIconShape)}
                     fallback={React.createElement(item.icon, { className: desktopIconSize === 'large' ? 'w-8 h-8' : desktopIconSize === 'small' ? 'w-5 h-5' : 'w-7 h-7' })}
                   />
 
@@ -2463,27 +2869,31 @@ export const Desktop: React.FC = () => {
 
               ) : (
 
-                <div className={`${desktopIconSize === 'large' ? 'w-16 h-16' : desktopIconSize === 'small' ? 'w-11 h-11' : 'w-14 h-14'} ${item.type === 'folder' || item.file.extension?.toLowerCase() === 'pdf' ? '' : 'rounded-2xl bg-white/20 backdrop-blur-md border border-white/20 shadow-lg'} flex items-center justify-center text-white group-hover:scale-105 transition-transform pointer-events-none`}>
+                <div
+                  data-desktop-icon-shape={desktopIconShape}
+                  className={`${desktopIconSize === 'large' ? 'w-14 h-14' : desktopIconSize === 'small' ? 'w-10 h-10' : 'h-12 w-12'} rounded-2xl ${item.type === 'folder' || item.file.extension?.toLowerCase() === 'pdf' ? '' : 'bg-white/40 backdrop-blur-md border border-white/35 shadow-lg'} flex items-center justify-center overflow-hidden text-white group-hover:scale-105 transition-transform pointer-events-none`}
+                  style={getDesktopIconShapeStyle(desktopIconShape)}
+                >
 
                   {item.type === 'folder' ? (
 
-                    <AppIcon assetId="folder" className="h-full w-full object-contain" />
+                    <AppIcon assetId="folder" className="h-full w-full object-contain" style={getDesktopIconShapeStyle(desktopIconShape)} />
 
                   ) : item.file.extension?.toLowerCase() === 'pdf' ? (
 
-                    <AppIcon assetId="pdf" className="h-full w-full object-contain" />
+                    <AppIcon assetId="pdf" className="h-full w-full object-contain" style={getDesktopIconShapeStyle(desktopIconShape)} />
 
                   ) : item.type === 'image' ? (
 
-                    <Image className={`${desktopIconSize === 'large' ? 'w-8 h-8' : desktopIconSize === 'small' ? 'w-5 h-5' : 'w-7 h-7'} text-amber-400` } />
+                    <Image className={`${desktopIconSize === 'large' ? 'w-7 h-7' : desktopIconSize === 'small' ? 'w-4 h-4' : 'w-5 h-5'} text-amber-500` } />
 
                   ) : item.type === 'code' ? (
 
-                    <Code2 className={`${desktopIconSize === 'large' ? 'w-8 h-8' : desktopIconSize === 'small' ? 'w-5 h-5' : 'w-7 h-7'} text-indigo-300` } />
+                    <Code2 className={`${desktopIconSize === 'large' ? 'w-7 h-7' : desktopIconSize === 'small' ? 'w-4 h-4' : 'w-5 h-5'} text-indigo-500` } />
 
                   ) : (
 
-                    <FileText className={`${desktopIconSize === 'large' ? 'w-8 h-8' : desktopIconSize === 'small' ? 'w-5 h-5' : 'w-7 h-7'} text-slate-200` } />
+                    <FileText className={`${desktopIconSize === 'large' ? 'w-7 h-7' : desktopIconSize === 'small' ? 'w-4 h-4' : 'w-5 h-5'} text-slate-600` } />
 
                   )}
 
@@ -2718,6 +3128,28 @@ export const Desktop: React.FC = () => {
                       }}
                     />
 
+                    <ContextMenuItem
+                      icon={Pencil}
+                      label="Rename"
+                      shortcut="F2"
+                      accent="text-sky-300"
+                      onClick={() => {
+                        openRenameModal(targetItem.id, targetItem.name, true);
+                        closeMenu();
+                      }}
+                    />
+
+                    <ContextMenuItem
+                      icon={Trash2}
+                      label="Remove from Desktop"
+                      shortcut="Delete"
+                      danger
+                      onClick={() => {
+                        removeDesktopShortcut(targetItem);
+                        closeMenu();
+                      }}
+                    />
+
                     {appId && (
                       <ContextMenuItem
                         icon={dockAppIds.includes(appId) ? PinOff : Pin}
@@ -2843,6 +3275,22 @@ export const Desktop: React.FC = () => {
                     />
 
                     <ContextMenuItem
+                      icon={dockFileShortcutIds.includes(targetItem.id) ? PinOff : Pin}
+                      label={dockFileShortcutIds.includes(targetItem.id) ? 'Remove from Dock' : 'Add to Dock'}
+                      accent="text-amber-300"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent(
+                          dockFileShortcutIds.includes(targetItem.id)
+                            ? 'desktop:item-remove-from-dock'
+                            : 'desktop:item-drop-to-dock',
+                          { detail: { fileId: targetItem.id } },
+                        ));
+                        sound.playClick();
+                        closeMenu();
+                      }}
+                    />
+
+                    <ContextMenuItem
                       icon={Pencil}
                       label="Rename"
                       shortcut="F2"
@@ -2948,6 +3396,51 @@ export const Desktop: React.FC = () => {
                             onClick={() => { setDesktopIconSize('small'); setOpenDesktopSubmenu(null); sound.playClick(); }}
                           />
 
+                          <div className="mx-2 mt-2 border-t border-white/[0.12] pt-2">
+                            <div className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">
+                              Icon shape
+                            </div>
+                            <div className="grid grid-cols-5 gap-1">
+                              {DESKTOP_ICON_SHAPES.map(shape => {
+                                const isSelected = desktopIconShape === shape.id;
+                                return (
+                                  <button
+                                    key={shape.id}
+                                    type="button"
+                                    title={shape.label}
+                                    aria-label={`${shape.label} desktop icons`}
+                                    aria-pressed={isSelected}
+                                    onClick={() => {
+                                      setDesktopIconShape(shape.id);
+                                      sound.playClick();
+                                    }}
+                                    className={`group/shape relative flex min-w-0 flex-col items-center gap-1 rounded-lg px-1 py-2 transition-colors ${
+                                      isSelected
+                                        ? 'bg-sky-400/15 text-sky-100 ring-1 ring-sky-300/35'
+                                        : 'text-white/55 hover:bg-white/[0.08] hover:text-white/90'
+                                    }`}
+                                  >
+                                    <span
+                                      aria-hidden="true"
+                                      className={`h-7 w-7 border bg-gradient-to-br from-sky-300/70 via-indigo-400/55 to-fuchsia-400/65 shadow-[0_3px_10px_rgba(0,0,0,0.22)] transition-transform group-hover/shape:scale-105 ${
+                                        shape.id === 'square' ? 'border-white/55' : 'border-white/40'
+                                      }`}
+                                      style={getDesktopIconShapeStyle(shape.id)}
+                                    />
+                                    {isSelected && (
+                                      <span className="absolute right-1.5 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-slate-950/80 bg-sky-300 text-slate-950 shadow-[0_2px_6px_rgba(0,0,0,0.45)]">
+                                        <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                                      </span>
+                                    )}
+                                    <span className="max-w-full truncate text-[9px] font-medium">
+                                      {shape.label}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
                           <ContextMenuSeparator />
 
                           <ContextMenuItem
@@ -3048,9 +3541,7 @@ export const Desktop: React.FC = () => {
                     label="New File..."
                     accent="text-sky-300"
                     onClick={() => {
-                      setNewFileName('');
-                      setShowNewFileModal(true);
-                      closeMenu();
+                      openCreateItemModal(false);
                     }}
                   />
 
@@ -3059,8 +3550,7 @@ export const Desktop: React.FC = () => {
                     label="New Folder"
                     accent="text-amber-300"
                     onClick={() => {
-                      handleCreateFolder();
-                      closeMenu();
+                      openCreateItemModal(true);
                     }}
                   />
 
@@ -3103,6 +3593,48 @@ export const Desktop: React.FC = () => {
                     onClick={() => {
                       closeMenu();
                       fileInputRef.current?.click();
+                    }}
+                  />
+
+                  <ContextMenuSeparator />
+
+                  <ContextMenuItem
+                    icon={Files}
+                    label="App Switcher"
+                    shortcut="Ctrl+Tab"
+                    accent="text-violet-300"
+                    onClick={async () => {
+                      closeMenu();
+                      await new Promise<void>(resolve => {
+                        window.setTimeout(
+                          () => requestAnimationFrame(() => resolve()),
+                          180,
+                        );
+                      });
+                      await captureWindowPreviews(windows);
+                      setShowMissionControl(false);
+                      setShowAppSwitcher(true);
+                      sound.playClick();
+                    }}
+                  />
+
+                  <ContextMenuItem
+                    icon={Monitor}
+                    label="Mission Control"
+                    shortcut="Ctrl+Win"
+                    accent="text-cyan-300"
+                    onClick={async () => {
+                      closeMenu();
+                      await new Promise<void>(resolve => {
+                        window.setTimeout(
+                          () => requestAnimationFrame(() => resolve()),
+                          180,
+                        );
+                      });
+                      await captureWindowPreviews(windows);
+                      setShowAppSwitcher(false);
+                      setShowMissionControl(true);
+                      sound.playClick();
                     }}
                   />
 
@@ -3167,7 +3699,7 @@ export const Desktop: React.FC = () => {
 
                 <div className="mt-5">
                   <label className="text-[10px] font-semibold uppercase tracking-[0.08em] text-white/40">New name</label>
-                  <div className="mt-2 flex items-center rounded-[13px] border border-white/[0.12] bg-white/[0.055] focus-within:border-sky-300/60 focus-within:bg-white/[0.075] transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+                  <div className="mt-2 flex items-center rounded-[13px] border border-white/[0.12] bg-white/[0.055] focus-within:border-white/25 focus-within:bg-white/[0.075] transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                     <input
                       ref={renameInputRef}
                       autoFocus
@@ -3183,7 +3715,7 @@ export const Desktop: React.FC = () => {
                           setRenameModal(prev => ({ ...prev, open: false }));
                         }
                       }}
-                      className="min-w-0 flex-1 bg-transparent px-3.5 py-3 text-[13px] text-white outline-none placeholder:text-white/25"
+                      className="desktop-modal-input min-w-0 flex-1 bg-transparent px-3.5 py-3 text-[13px] text-white outline-none placeholder:text-white/25"
                       placeholder="Enter a new name"
                     />
                     {renameModal.extension && (
@@ -3243,9 +3775,11 @@ export const Desktop: React.FC = () => {
 
               <h3 className="text-base font-bold flex items-center gap-2">
 
-                <FileText className="w-5 h-5 text-sky-400" />
+                {isCreatingFolder
+                  ? <Folder className="w-5 h-5 text-sky-400" />
+                  : <FileText className="w-5 h-5 text-sky-400" />}
 
-                <span>Create New File on Desktop</span>
+                <span>{isCreatingFolder ? 'Create New Folder on Desktop' : 'Create New File on Desktop'}</span>
 
               </h3>
 
@@ -3267,7 +3801,9 @@ export const Desktop: React.FC = () => {
 
             <div>
 
-              <label className="text-xs font-semibold text-slate-300 block mb-1.5">File Name</label>
+              <label className="text-xs font-semibold text-slate-300 block mb-1.5">
+                {isCreatingFolder ? 'Folder Name' : 'File Name'}
+              </label>
 
               <input
 
@@ -3283,19 +3819,17 @@ export const Desktop: React.FC = () => {
 
                 onKeyDown={e => {
 
-                  if (e.key === 'Enter') handleCreateNewFile();
+                  if (e.key === 'Enter') handleCreateNewItem();
 
                 }}
 
-                className="w-full px-3.5 py-2 rounded-xl bg-white/10 border border-white/15 text-white text-xs outline-none focus:border-sky-400"
-
+                className="desktop-modal-input w-full px-3.5 py-2 rounded-xl bg-white/10 border border-white/15 text-white text-xs outline-none focus:border-white/30"
               />
-
             </div>
 
 
 
-            <div>
+            {!isCreatingFolder && <div>
 
               <label className="text-xs font-semibold text-slate-300 block mb-2">File Template / Type</label>
 
@@ -3377,9 +3911,18 @@ export const Desktop: React.FC = () => {
 
               </div>
 
-            </div>
+            </div>}
 
-
+            <label className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-xs text-slate-200 transition-colors hover:bg-white/[0.07]">
+              <input
+                type="checkbox"
+                checked={addNewItemToDock}
+                onChange={event => setAddNewItemToDock(event.target.checked)}
+                className="desktop-modal-input h-4 w-4 rounded border-white/25 bg-slate-900 text-sky-400"
+              />
+              <span className="flex-1">Add to Dock</span>
+              <span className="text-[10px] text-slate-400">Pin a shortcut for quick access</span>
+            </label>
 
             <div className="flex justify-end gap-2 pt-2">
 
@@ -3401,13 +3944,13 @@ export const Desktop: React.FC = () => {
 
                 type="button"
 
-                onClick={handleCreateNewFile}
+                onClick={handleCreateNewItem}
 
                 className="px-5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-semibold text-xs transition-colors shadow-lg shadow-sky-500/20 cursor-pointer"
 
               >
 
-                Create File
+                {isCreatingFolder ? 'Create Folder' : 'Create File'}
 
               </button>
 

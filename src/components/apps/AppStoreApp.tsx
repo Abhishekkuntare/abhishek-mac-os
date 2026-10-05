@@ -43,13 +43,13 @@ const APP_DESCRIPTIONS: Record<string, string> = {
   reminders: 'Keep track of everything that matters.',
   terminal: 'A powerful command-line environment for developers.',
   codestudio: 'Build, test and experiment with code.',
-  settings: 'Customize your Abhishek OS experience.',
-  appstore: 'Discover applications designed for Abhishek OS.',
+  settings: 'Customize your ARLO OS experience.',
+  appstore: 'Discover applications designed for ARLO OS.',
 };
 
 const getAppDescription = (app: any) =>
   APP_DESCRIPTIONS[app.id] ||
-  `A beautifully designed ${app.category?.toLowerCase() || 'application'} for Abhishek OS.`;
+  `A beautifully designed ${app.category?.toLowerCase() || 'application'} for ARLO OS.`;
 
 const getAppCategory = (app: any): Category => {
   const category = String(app.category || '').toLowerCase();
@@ -278,7 +278,7 @@ const AppCard: React.FC<AppCardProps> = ({
         <div className="mt-5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
             <Download className="w-3 h-3" />
-            <span>Abhishek OS</span>
+            <span>ARLO OS</span>
           </div>
 
           <motion.button
@@ -479,7 +479,7 @@ export const AppStoreApp: React.FC = () => {
             </div>
 
             <p className="text-xs text-slate-500 mt-1 ml-10">
-              Discover apps for your Abhishek OS
+              Discover apps for your ARLO OS
             </p>
           </div>
 
@@ -722,7 +722,7 @@ export const AppStoreApp: React.FC = () => {
                 "
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                Curated for Abhishek OS
+                Curated for ARLO OS
               </motion.div>
 
               <h2

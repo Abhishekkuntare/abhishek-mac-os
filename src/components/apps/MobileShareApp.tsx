@@ -47,7 +47,7 @@ export const MobileShareApp: React.FC = () => {
 
   useEffect(() => {
     const previousTitle = document.title;
-    document.title = 'Phone screen sharing — Abhishek OS';
+    document.title = 'Phone screen sharing — ARLO OS';
     setSupported(typeof navigator.mediaDevices?.getDisplayMedia === 'function' && window.isSecureContext);
     return () => {
       stopSharing();
@@ -198,7 +198,7 @@ export const MobileShareApp: React.FC = () => {
         <div className="mb-8 flex items-center gap-3">
           <div className="rounded-2xl border border-sky-300/20 bg-sky-400/10 p-3 text-sky-200"><Smartphone className="h-6 w-6" /></div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-200/70">Abhishek OS</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-200/70">ARLO OS</p>
             <h1 className="mt-1 text-xl font-bold">Phone screen sharing</h1>
           </div>
         </div>

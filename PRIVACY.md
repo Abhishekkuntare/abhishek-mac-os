@@ -1,16 +1,16 @@
-# Abhishek OS Privacy Policy
+# ARLO OS Privacy Policy
 
 **Effective date:** September 23, 2026
 
-Abhishek OS is an open-source desktop application maintained by Abhishek Kuntare.
+ARLO OS is an open-source desktop application maintained by Abhishek Kuntare.
 
-This Privacy Policy explains how Abhishek OS handles information when you use the application.
+This Privacy Policy explains how ARLO OS handles information when you use the application.
 
 ---
 
 ## 1. Privacy by design
 
-Abhishek OS is designed primarily as a local desktop application.
+ARLO OS is designed primarily as a local desktop application.
 
 The project does not intentionally collect, sell or rent personal information for advertising, profiling or data-broker purposes.
 
@@ -20,7 +20,7 @@ The application does not intentionally create a centralized user profile for adv
 
 ## 2. Information stored locally
 
-Abhishek OS may store application preferences and configuration information locally on the user's computer.
+ARLO OS may store application preferences and configuration information locally on the user's computer.
 
 Examples may include:
 
@@ -32,11 +32,13 @@ Examples may include:
 * Local application data
 * Settings required for application functionality
 
-When you allow all-drive access for Finder, Abhishek OS stores that consent locally and can browse accessible mounted drives. It reads directory names, file types, sizes, and timestamps only as you open folders. Files remain in their original locations; this feature does not recursively copy or upload file contents. You can revoke all-drive access from Finder's sidebar. Windows does not provide a separate global file-picker permission for desktop apps, so the in-app consent is explicit and controls this access. Finder can also connect individually selected folders when all-drive access is off.
+When you allow all-drive access for Finder, ARLO OS stores that consent locally and can browse accessible mounted drives. It reads directory names, file types, sizes, and timestamps only as you open folders. Files remain in their original locations; this feature does not recursively copy or upload file contents. You can revoke all-drive access from Finder's sidebar. Windows does not provide a separate global file-picker permission for desktop apps, so the in-app consent is explicit and controls this access. Finder can also connect individually selected folders when all-drive access is off.
 
 On Windows, the application may query the current Wi-Fi network name and Bluetooth adapter status locally to show system connectivity. This information is not sent to an external service by this feature.
 
 This information is stored on the user's device unless a particular feature explicitly requires communication with an external service.
+
+The optional “Hey Ghost” wake listener uses a bundled multilingual Whisper speech model to process microphone audio locally while the feature is enabled. Audio is not sent to a speech-recognition provider or saved by the wake listener. The listener is paused while ARLO OS is locked or sleeping and can be turned off in Settings. General AI chat may send recognized text to Gemini when that integration is configured and used.
 
 ---
 
@@ -62,7 +64,7 @@ Phone screen sharing contacts the configured pairing service to create a short-l
 
 ## 4. Automatic updates
 
-Abhishek OS may periodically check the official release infrastructure for application updates.
+ARLO OS may periodically check the official release infrastructure for application updates.
 
 The update system may communicate with the project's official GitHub release infrastructure to determine whether a newer version is available and to download an update.
 
@@ -72,7 +74,7 @@ Update functionality exists to maintain application functionality, security and 
 
 ## 5. External services
 
-Abhishek OS may use third-party services or libraries.
+ARLO OS may use third-party services or libraries.
 
 These services may have their own privacy policies, terms and data-handling practices.
 
@@ -84,7 +86,7 @@ The project does not claim responsibility for the privacy practices of independe
 
 ## 6. AI and external APIs
 
-Some versions or features of Abhishek OS may provide integrations with AI or external APIs.
+Some versions or features of ARLO OS may provide integrations with AI or external APIs.
 
 When a user explicitly uses such functionality, information entered into that feature may be transmitted to the corresponding service according to that service's API and privacy policies.
 
@@ -94,7 +96,7 @@ Users should avoid submitting confidential, sensitive or personal information to
 
 ## 7. Personal information
 
-Abhishek OS does not intentionally require users to provide personal information merely to install and use the basic desktop application.
+ARLO OS does not intentionally require users to provide personal information merely to install and use the basic desktop application.
 
 If a future feature requires personal information, the project documentation should clearly explain what information is required and why it is needed.
 
@@ -102,7 +104,7 @@ If a future feature requires personal information, the project documentation sho
 
 ## 8. Children's privacy
 
-Abhishek OS is general-purpose desktop software.
+ARLO OS is general-purpose desktop software.
 
 The project does not intentionally collect personal information from children.
 
@@ -116,7 +118,7 @@ The project attempts to follow reasonable software-development and security prac
 
 However, no software or computer system can guarantee absolute security.
 
-Users should maintain current operating-system security updates and obtain Abhishek OS only from official project release channels.
+Users should maintain current operating-system security updates and obtain ARLO OS only from official project release channels.
 
 ---
 
@@ -144,6 +146,6 @@ The effective date at the beginning of this document indicates the current versi
 
 ## 12. Contact
 
-For privacy-related questions concerning Abhishek OS, contact the project maintainer through the official GitHub repository:
+For privacy-related questions concerning ARLO OS, contact the project maintainer through the official GitHub repository:
 
 https://github.com/Abhishekkuntare/abhishek-mac-os

@@ -1265,29 +1265,23 @@ export const ControlCenter: React.FC = () => {
       return;
     }
 
-    const handleOutside = (
-      event: MouseEvent
-    ) => {
-      const target =
-        event.target as HTMLElement;
-
+    const handleOutside = (event: PointerEvent) => {
       if (
         panelRef.current &&
-        !panelRef.current.contains(target) &&
-        !target.closest('.glass-menubar')
+        !panelRef.current.contains(event.target as Node)
       ) {
         setShowControlCenter(false);
       }
     };
 
     window.addEventListener(
-      'mousedown',
+      'pointerdown',
       handleOutside
     );
 
     return () => {
       window.removeEventListener(
-        'mousedown',
+        'pointerdown',
         handleOutside
       );
     };

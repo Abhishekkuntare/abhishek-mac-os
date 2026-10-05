@@ -1,4 +1,13 @@
 import { Wallpaper } from '../types/desktop';
+import snowMountains from '../assets/wallpapers/snow-mountains.jpg';
+import lakeBlueSky from '../assets/wallpapers/lake-clear-sky-blue-sky-windows-10x-microsoft-surface.jpg';
+import guitarIsland from '../assets/wallpapers/guitar-island.jpg';
+import kameHouseDragon from '../assets/wallpapers/kame-house-dragon.jpg';
+import narutoUzumaki from '../assets/wallpapers/naruto-uzumaki.jpg';
+import gtaSix from '../assets/wallpapers/gta-6-teaser.png';
+import vascoDaGama from '../assets/wallpapers/vasco-da-gama.jpg';
+import victoriaHarbour from '../assets/wallpapers/victoria-harbour.jpg';
+import sandDunes from '../assets/wallpapers/sand-dunes-desert-landscape-evening-windows-10x-microsoft.jpg';
 
 export const WALLPAPERS: Wallpaper[] = [
   // Abhishek Collection (Signature & matching reference images!)
@@ -32,6 +41,80 @@ export const WALLPAPERS: Wallpaper[] = [
     category: 'abhishek',
     url: 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?q=80&w=2560&auto=format&fit=crop',
     thumbnail: 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?q=80&w=400&auto=format&fit=crop',
+    themePreference: 'light',
+  },
+
+  // Added wallpapers
+  {
+    id: 'snow-mountains',
+    name: 'Snowy Mountains',
+    category: 'nature',
+    url: snowMountains,
+    thumbnail: snowMountains,
+    themePreference: 'dark',
+  },
+  {
+    id: 'lake-blue-sky',
+    name: 'Clear Blue Lake',
+    category: 'nature',
+    url: lakeBlueSky,
+    thumbnail: lakeBlueSky,
+    themePreference: 'light',
+  },
+  {
+    id: 'guitar-island',
+    name: 'Island Sunset',
+    category: 'nature',
+    url: guitarIsland,
+    thumbnail: guitarIsland,
+    themePreference: 'dark',
+  },
+  {
+    id: 'kame-house-dragon',
+    name: 'Kame House',
+    category: 'abstract',
+    url: kameHouseDragon,
+    thumbnail: kameHouseDragon,
+    themePreference: 'light',
+  },
+  {
+    id: 'naruto-uzumaki',
+    name: 'Naruto Uzumaki',
+    category: 'abstract',
+    url: narutoUzumaki,
+    thumbnail: narutoUzumaki,
+    themePreference: 'dark',
+  },
+  {
+    id: 'gta-six',
+    name: 'Vice City',
+    category: 'abstract',
+    url: gtaSix,
+    thumbnail: gtaSix,
+    themePreference: 'dark',
+  },
+  {
+    id: 'vasco-da-gama',
+    name: 'Vasco da Gama Bridge',
+    category: 'city',
+    url: vascoDaGama,
+    thumbnail: vascoDaGama,
+    themePreference: 'dark',
+  },
+  {
+    id: 'victoria-harbour',
+    name: 'Victoria Harbour',
+    category: 'city',
+    url: victoriaHarbour,
+    thumbnail: victoriaHarbour,
+    themePreference: 'dark',
+  },
+  {
+    id: 'sand-dunes',
+    name: 'Desert Dunes',
+    category: 'nature',
+    url: sandDunes,
+    thumbnail: sandDunes,
     themePreference: 'light',
   },
 

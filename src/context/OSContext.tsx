@@ -13,8 +13,14 @@ import { WALLPAPERS, DEFAULT_WALLPAPER } from '../data/wallpapers';
 import { APP_REGISTRY } from '../data/defaultApps';
 import { AUDIO_TRACKS } from '../data/sampleData';
 import { sound } from '../services/soundService';
+import {
+  captureWindowPreview,
+  captureWindowPreviews,
+  removeWindowPreview,
+} from '../utils/windowPreview';
 import { vfs } from '../services/virtualFileSystem';
 import { musicEngine } from '../services/musicEngine';
+import { activityLog, type ActivityEntry } from '../services/activityLog';
 
 const STORAGE_KEYS = {
   USER: 'abhishek_os_user_v1',
@@ -24,6 +30,7 @@ const STORAGE_KEYS = {
   SETUP_DONE: 'abhishek_os_setup_completed_v1',
   SPACES: 'abhishek_os_spaces_v1',
   DOCK_APPS: 'abhishek_os_dock_apps_v1',
+  GHOST_WAKE_ENABLED: 'abhishek_os_ghost_wake_enabled_v1',
 };
 
 const DEFAULT_USER: UserProfile = {
@@ -34,7 +41,7 @@ const DEFAULT_USER: UserProfile = {
   avatarUrl: '',
   avatarType: 'initials',
   roles: ['Developer', 'Designer', 'Creator'],
-  bio: 'Architecting Abhishek OS — a desktop experience built for you.',
+  bio: 'Architecting ARLO OS — a desktop experience built for you.',
   pin: '1234',
 };
 
@@ -85,6 +92,10 @@ const DEFAULT_SETTINGS: SystemSettings = {
   },
   developerMode: false,
   performanceMode: 'balanced',
+  ghostShortcut: 'ctrl-shift-space',
+  ghostWakeEnabled: true,
+  ghostVoiceResponses: true,
+  ghostVoice: 'lily',
 };
 
 const INITIAL_SPACES: DesktopSpace[] = [
@@ -97,7 +108,7 @@ const INITIAL_SPACES: DesktopSpace[] = [
 const INITIAL_NOTIFICATIONS: NotificationItem[] = [
   {
     id: 'notif-1',
-    title: 'Abhishek OS 1.0 Ready',
+    title: 'ARLO OS 1.0 Ready',
     message: 'Welcome to your tailored desktop environment. All native applications loaded.',
     appName: 'System',
     timestamp: 'Just now',
@@ -133,6 +144,13 @@ interface OSContextType {
   isSleeping: boolean;
   isShuttingDown: boolean;
   hasCompletedSetup: boolean;
+  activityEntries: ActivityEntry[];
+  activityError: string | null;
+  activityTrackingEnabled: boolean;
+  setActivityTrackingEnabled: (enabled: boolean) => void;
+  recordActivity: (event: Omit<ActivityEntry, 'id' | 'timestamp'>) => Promise<void>;
+  deleteActivity: (id: string) => Promise<void>;
+  clearActivity: () => Promise<void>;
   finishOnboarding: (user: Partial<UserProfile>, settings: Partial<SystemSettings>) => void;
   resetSetup: () => void;
   lockSystem: () => void;
@@ -160,6 +178,10 @@ interface OSContextType {
   setShowAppSwitcher: (open: boolean) => void;
   showCommandPalette: boolean;
   setShowCommandPalette: (open: boolean) => void;
+  showGhostAssistant: boolean;
+  setShowGhostAssistant: (open: boolean) => void;
+  showActivityHistory: boolean;
+  setShowActivityHistory: (open: boolean) => void;
   quickLookFile: VirtualFile | null;
   setQuickLookFile: (file: VirtualFile | null) => void;
 
@@ -182,14 +204,15 @@ interface OSContextType {
   activeSpaceId: string;
   setActiveSpaceId: (id: string) => void;
   addSpace: (name?: string) => void;
+  renameSpace: (id: string, name: string) => void;
   removeSpace: (id: string) => void;
 
   // Window Management
   windows: WindowState[];
   openApp: (appId: string, initialTitle?: string) => void;
   closeWindow: (id: string) => void;
-  minimizeWindow: (id: string) => void;
-  showDesktop: () => void;
+  minimizeWindow: (id: string) => Promise<void>;
+  showDesktop: () => Promise<void>;
   maximizeWindow: (id: string) => void;
   focusWindow: (id: string) => void;
   moveWindow: (id: string, x: number, y: number) => void;
@@ -239,6 +262,38 @@ interface OSContextType {
 
 const OSContext = createContext<OSContextType | undefined>(undefined);
 
+const TRACKED_SETTING_LABELS: Partial<Record<keyof SystemSettings, string>> = {
+  theme: 'Appearance',
+  accent: 'Accent color',
+  uiStyle: 'Interface density',
+  animationLevel: 'Animation level',
+  soundEffects: 'Sound effects',
+  glassEffects: 'Glass effects',
+  glassIntensity: 'Glass intensity',
+  liveWallpapers: 'Live wallpapers',
+  dockPosition: 'Dock position',
+  dockSize: 'Dock size',
+  dockAutoHide: 'Dock auto-hide',
+  dockMagnification: 'Dock magnification',
+  menuBarPosition: 'Menu bar position',
+  fontFamily: 'Font',
+  cursorStyle: 'Cursor style',
+  mascotStyle: 'Mascot',
+  mascotColor: 'Mascot color',
+  brightness: 'Brightness',
+  nightShift: 'Night Shift',
+  doNotDisturb: 'Do Not Disturb',
+  airDropEnabled: 'AirDrop',
+  lowPowerMode: 'Low Power Mode',
+  language: 'Language',
+  region: 'Region',
+  clock24h: 'Clock format',
+  desktopWidgets: 'Desktop widgets',
+  performanceMode: 'Performance mode',
+  ghostVoice: 'Ghost voice',
+  ghostVoiceResponses: 'Ghost voice responses',
+};
+
 export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Load stored states
   const [hasCompletedSetup, setHasCompletedSetup] = useState<boolean>(() => {
@@ -263,7 +318,156 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [showMissionControl, setShowMissionControl] = useState<boolean>(false);
   const [showAppSwitcher, setShowAppSwitcher] = useState<boolean>(false);
   const [showCommandPalette, setShowCommandPalette] = useState<boolean>(false);
+  const [showGhostAssistant, setShowGhostAssistant] = useState<boolean>(false);
+  const [showActivityHistory, setShowActivityHistory] = useState<boolean>(false);
   const [quickLookFile, setQuickLookFile] = useState<VirtualFile | null>(null);
+  const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([]);
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const [activityTrackingEnabled, setActivityTrackingEnabledState] = useState(() => {
+    try {
+      return localStorage.getItem('arlo_os_activity_tracking_enabled_v1') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  const fileActivityTimersRef = useRef<Map<string, number>>(new Map());
+
+  const setActivityTrackingEnabled = useCallback((enabled: boolean) => {
+    setActivityTrackingEnabledState(enabled);
+    try {
+      localStorage.setItem('arlo_os_activity_tracking_enabled_v1', String(enabled));
+    } catch (error) {
+      console.error('[Activity History] Could not save activity tracking preference:', error);
+      setActivityError('Activity tracking preference could not be saved.');
+    }
+  }, []);
+
+  const refreshActivityEntries = useCallback(async () => {
+    try {
+      setActivityEntries(await activityLog.list());
+      setActivityError(null);
+    } catch (error) {
+      console.error('[Activity History] Could not load local activity history:', error);
+      setActivityError('Activity history could not be loaded from this device.');
+    }
+  }, []);
+
+  const recordActivity = useCallback(async (
+    event: Omit<ActivityEntry, 'id' | 'timestamp'>,
+  ) => {
+    if (!activityTrackingEnabled) return;
+
+    const entry: ActivityEntry = {
+      ...event,
+      id: typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `activity-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      timestamp: new Date().toISOString(),
+    };
+    try {
+      await activityLog.add(entry);
+    } catch (error) {
+      console.error('[Activity History] Could not save an activity event:', error);
+      setActivityError('New activity could not be saved. Check this device’s available storage.');
+    }
+  }, [activityTrackingEnabled]);
+
+  const deleteActivity = useCallback(async (id: string) => {
+    try {
+      await activityLog.delete(id);
+      setActivityError(null);
+    } catch (error) {
+      console.error('[Activity History] Could not delete an activity event:', error);
+      setActivityError('That activity could not be deleted.');
+      throw error;
+    }
+  }, []);
+
+  const clearActivity = useCallback(async () => {
+    try {
+      await activityLog.clear();
+      setActivityError(null);
+    } catch (error) {
+      console.error('[Activity History] Could not clear activity history:', error);
+      setActivityError('Activity history could not be cleared.');
+      throw error;
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshActivityEntries();
+    return activityLog.subscribe(() => void refreshActivityEntries());
+  }, [refreshActivityEntries]);
+
+  useEffect(() => () => {
+    fileActivityTimersRef.current.forEach(timer => window.clearTimeout(timer));
+    fileActivityTimersRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    const toTrackedFiles = () => vfs.getActivitySnapshot().map(file => ({
+      id: file.id,
+      name: file.name,
+      path: file.path,
+      type: file.type,
+      isDeleted: file.isDeleted,
+      size: file.size,
+      content: file.content,
+      mediaBlobId: file.mediaBlobId,
+      hostPath: file.hostPath,
+    }));
+    let previous = new Map(toTrackedFiles().map(file => [file.id, file]));
+
+    return vfs.subscribe(() => {
+      const currentFiles = toTrackedFiles();
+      const current = new Map(currentFiles.map(file => [file.id, file]));
+
+      for (const file of currentFiles) {
+        const before = previous.get(file.id);
+        if (!before) {
+          const kind = file.type === 'folder' ? 'Created folder' : file.hostPath ? 'Added file shortcut' : 'Created or imported file';
+          void recordActivity({
+            category: 'file',
+            title: kind,
+            details: `${file.name} · ${file.path}`,
+          });
+          continue;
+        }
+        if (!before.isDeleted && file.isDeleted) {
+          void recordActivity({ category: 'file', title: 'Moved to Trash', details: file.name });
+        } else if (before.isDeleted && !file.isDeleted) {
+          void recordActivity({ category: 'file', title: 'Restored from Trash', details: file.name });
+        } else if (before.name !== file.name) {
+          void recordActivity({
+            category: 'file',
+            title: 'Renamed item',
+            details: `${before.name} → ${file.name}`,
+          });
+        } else if (before.path !== file.path) {
+          void recordActivity({
+            category: 'file',
+            title: 'Moved item',
+            details: `${file.name} · ${before.path} → ${file.path}`,
+          });
+        } else if (before.content !== file.content || before.size !== file.size) {
+          const existingTimer = fileActivityTimersRef.current.get(file.id);
+          if (existingTimer !== undefined) window.clearTimeout(existingTimer);
+          const timer = window.setTimeout(() => {
+            fileActivityTimersRef.current.delete(file.id);
+            void recordActivity({ category: 'file', title: 'Edited file', details: file.name });
+          }, 1200);
+          fileActivityTimersRef.current.set(file.id, timer);
+        }
+      }
+
+      previous.forEach(file => {
+        if (!current.has(file.id)) {
+          void recordActivity({ category: 'file', title: 'Permanently deleted item', details: file.name });
+        }
+      });
+      previous = current;
+    });
+  }, [recordActivity]);
 
   // User
   const [user, setUser] = useState<UserProfile>(() => {
@@ -283,6 +487,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         ? {
             ...DEFAULT_SETTINGS,
             ...JSON.parse(stored),
+            ghostWakeEnabled: localStorage.getItem(STORAGE_KEYS.GHOST_WAKE_ENABLED) !== 'false',
             desktopWidgets: {
               ...DEFAULT_SETTINGS.desktopWidgets,
               ...JSON.parse(stored).desktopWidgets,
@@ -294,7 +499,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
             bluetoothConnected: false,
             bluetoothDeviceName: '',
           }
-        : DEFAULT_SETTINGS;
+        : {
+            ...DEFAULT_SETTINGS,
+            ghostWakeEnabled: localStorage.getItem(STORAGE_KEYS.GHOST_WAKE_ENABLED) !== 'false',
+          };
     } catch {
       return DEFAULT_SETTINGS;
     }
@@ -408,14 +616,24 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       return INITIAL_SPACES;
     }
   });
-  const [activeSpaceId, setActiveSpaceId] = useState<string>('space-1');
+  const [activeSpaceId, setActiveSpaceIdState] = useState<string>('space-1');
 
   // Windows
   const [windows, setWindows] = useState<WindowState[]>([]);
   const [maxZIndex, setMaxZIndex] = useState<number>(100);
-  const appSwitcherOrderRef = useRef<string[]>([]);
-  const appSwitcherIndexRef = useRef(0);
-
+  const setActiveSpaceId = useCallback((spaceId: string) => {
+    if (spaceId !== activeSpaceId) {
+      const spaceName = spaces.find(space => space.id === spaceId)?.name || 'Desktop';
+      void recordActivity({ category: 'workspace', title: 'Switched desktop', details: spaceName });
+    }
+    setActiveSpaceIdState(spaceId);
+    setWindows(prev => {
+      const nextFocusedWindow = prev
+        .filter(win => win.desktopSpaceId === spaceId)
+        .sort((a, b) => b.zIndex - a.zIndex)[0];
+      return prev.map(win => ({ ...win, isFocused: win.id === nextFocusedWindow?.id }));
+    });
+  }, [activeSpaceId, recordActivity, spaces]);
   // Dock items
   const [dockAppIds, setDockAppIds] = useState<string[]>(() => {
     try {
@@ -460,6 +678,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     const handleFsChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
+    handleFsChange();
     document.addEventListener('fullscreenchange', handleFsChange);
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
@@ -473,17 +692,34 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       } catch { }
       return updated;
     });
-  }, []);
+    if (Object.keys(fields).some(field => field !== 'pin')) {
+      void recordActivity({ category: 'session', title: 'Profile details updated' });
+    }
+  }, [recordActivity]);
 
   const updateSettings = useCallback((fields: Partial<SystemSettings>) => {
+    const changedLabels = (Object.keys(fields) as Array<keyof SystemSettings>)
+      .filter(key => TRACKED_SETTING_LABELS[key] && JSON.stringify(settings[key]) !== JSON.stringify(fields[key]))
+      .map(key => TRACKED_SETTING_LABELS[key]);
     setSettings(prev => {
+      const hasChanges = (Object.keys(fields) as Array<keyof SystemSettings>)
+        .some(key => JSON.stringify(prev[key]) !== JSON.stringify(fields[key]));
+      if (!hasChanges) return prev;
+
       const updated = { ...prev, ...fields };
       try {
         localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
       } catch { }
       return updated;
     });
-  }, []);
+    if (changedLabels.length > 0) {
+      void recordActivity({
+        category: 'setting',
+        title: 'System settings changed',
+        details: changedLabels.join(', '),
+      });
+    }
+  }, [recordActivity, settings]);
 
   useEffect(() => {
     const syncConnectivity = async () => {
@@ -541,10 +777,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   const setWallpaper = useCallback((wp: Wallpaper) => {
     setCurrentWallpaper(wp);
+    void recordActivity({ category: 'setting', title: 'Wallpaper changed', details: wp.name });
     try {
       localStorage.setItem(STORAGE_KEYS.WALLPAPER, JSON.stringify(wp));
     } catch { }
-  }, []);
+  }, [recordActivity]);
 
   const uploadCustomWallpaper = useCallback((dataUrl: string, name: string) => {
     const customWp: Wallpaper = {
@@ -574,14 +811,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       localStorage.setItem(STORAGE_KEYS.SETUP_DONE, 'true');
     } catch { }
 
+    void recordActivity({ category: 'session', title: 'ARLO OS account setup completed' });
     // Boot chime!
     sound.playStartup();
 
-    // Default open Finder window for immediate delight!
-    setTimeout(() => {
-      openApp('finder');
-    }, 600);
-  }, [updateUser, updateSettings]);
+  }, [recordActivity, updateUser, updateSettings]);
 
   const resetSetup = useCallback(() => {
     localStorage.removeItem(STORAGE_KEYS.SETUP_DONE);
@@ -601,6 +835,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setShowMissionControl(false);
     setShowAppSwitcher(false);
     setShowCommandPalette(false);
+    setShowGhostAssistant(false);
     setQuickLookFile(null);
   }, []);
 
@@ -678,6 +913,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const existing = windows.find(w => w.appId === appId);
       if (existing) {
         if (existing.isMinimized) {
+          void recordActivity({ category: 'app', title: 'Reopened app', details: app.name });
+        }
+        if (existing.desktopSpaceId !== activeSpaceId) {
+          setActiveSpaceId(existing.desktopSpaceId);
+        }
+        if (existing.isMinimized) {
           setWindows(prev =>
             prev.map(w => (w.id === existing.id ? { ...w, isMinimized: false, isFocused: true } : { ...w, isFocused: false }))
           );
@@ -689,6 +930,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       // Trigger dock bounce effect
       triggerAppBounce(appId);
       sound.playWindowOpen();
+      void recordActivity({ category: 'app', title: 'Opened app', details: app.name });
 
       // Screen dimension heuristics for nice cascade
       const screenW = typeof window !== 'undefined' ? window.innerWidth : 1440;
@@ -723,23 +965,39 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       setWindows(prev => [...prev.map(w => ({ ...w, isFocused: false })), newWin]);
     },
-    [windows, maxZIndex, activeSpaceId, focusWindow, triggerAppBounce]
+    [windows, maxZIndex, activeSpaceId, focusWindow, setActiveSpaceId, triggerAppBounce, recordActivity]
   );
 
   const closeWindow = useCallback((id: string) => {
+    const closingWindow = windows.find(window => window.id === id);
+    if (closingWindow) {
+      const appName = APP_REGISTRY[closingWindow.appId]?.name || closingWindow.title;
+      void recordActivity({ category: 'app', title: 'Closed app', details: appName });
+    }
     sound.playWindowClose();
+    removeWindowPreview(id);
     setWindows(prev => prev.filter(w => w.id !== id));
-  }, []);
+  }, [recordActivity, windows]);
 
-  const minimizeWindow = useCallback((id: string) => {
+  const minimizeWindow = useCallback(async (id: string) => {
+    const appWindow = windows.find(win => win.id === id && !win.isMinimized);
+    if (appWindow) await captureWindowPreview(appWindow);
     sound.playClick();
     setWindows(prev => prev.map(w => (w.id === id ? { ...w, isMinimized: true, isFocused: false } : w)));
-  }, []);
+  }, [windows]);
 
-  const showDesktop = useCallback(() => {
+  const showDesktop = useCallback(async () => {
+    const visibleWindows = windows.filter(win =>
+      !win.isMinimized && (!win.desktopSpaceId || win.desktopSpaceId === activeSpaceId)
+    );
+    await captureWindowPreviews(visibleWindows);
     sound.playClick();
-    setWindows(prev => prev.map(w => ({ ...w, isMinimized: true, isFocused: false })));
-  }, []);
+    setWindows(prev => prev.map(w =>
+      !w.desktopSpaceId || w.desktopSpaceId === activeSpaceId
+        ? { ...w, isMinimized: true, isFocused: false }
+        : w
+    ));
+  }, [activeSpaceId, windows]);
 
   const maximizeWindow = useCallback((id: string) => {
     sound.playClick();
@@ -865,23 +1123,47 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   // Spaces
   const addSpace = useCallback((name?: string) => {
-    setSpaces(prev => {
-      const nextNum = prev.length + 1;
-      const newSpace: DesktopSpace = {
-        id: `space-${Date.now()}`,
-        name: name || `Desktop ${nextNum}`,
-      };
-      const updated = [...prev, newSpace];
-      try {
-        localStorage.setItem(STORAGE_KEYS.SPACES, JSON.stringify(updated));
-      } catch { }
-      return updated;
-    });
-  }, []);
+    let nextNum = 2;
+    while (spaces.some(space => space.name === `Desktop ${nextNum}`)) {
+      nextNum += 1;
+    }
+    const newSpace: DesktopSpace = {
+      id: `space-${Date.now()}`,
+      name: name || `Desktop ${nextNum}`,
+    };
+    const updated = [...spaces, newSpace];
+    try {
+      localStorage.setItem(STORAGE_KEYS.SPACES, JSON.stringify(updated));
+    } catch (error) {
+      console.error('Could not save desktop spaces.', error);
+    }
+    setSpaces(updated);
+    setActiveSpaceId(newSpace.id);
+  }, [setActiveSpaceId, spaces]);
+
+  const renameSpace = useCallback((id: string, name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+
+    const updated = spaces.map(space =>
+      space.id === id ? { ...space, name: trimmedName } : space
+    );
+    try {
+      localStorage.setItem(STORAGE_KEYS.SPACES, JSON.stringify(updated));
+    } catch (error) {
+      console.error('Could not save the desktop space name.', error);
+      return;
+    }
+    setSpaces(updated);
+    void recordActivity({ category: 'workspace', title: 'Renamed desktop', details: trimmedName });
+  }, [recordActivity, spaces]);
 
   const removeSpace = useCallback(
     (id: string) => {
       if (spaces.length <= 1) return;
+      const fallbackSpace = spaces.find(space => space.id !== id);
+      if (!fallbackSpace) return;
+      const removedSpace = spaces.find(space => space.id === id);
       setSpaces(prev => {
         const updated = prev.filter(s => s.id !== id);
         try {
@@ -891,17 +1173,22 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       });
       // Move any windows on that space to the first space
       setWindows(prev =>
-        prev.map(w => (w.desktopSpaceId === id ? { ...w, desktopSpaceId: spaces[0].id } : w))
+        prev.map(w => (w.desktopSpaceId === id ? { ...w, desktopSpaceId: fallbackSpace.id } : w))
       );
       if (activeSpaceId === id) {
-        setActiveSpaceId(spaces[0].id);
+        setActiveSpaceId(fallbackSpace.id);
+      }
+      if (removedSpace) {
+        void recordActivity({ category: 'workspace', title: 'Removed desktop', details: removedSpace.name });
       }
     },
-    [spaces, activeSpaceId]
+    [spaces, activeSpaceId, recordActivity, setActiveSpaceId]
   );
 
   // Dock items
   const toggleDockPin = useCallback((appId: string) => {
+    const appName = APP_REGISTRY[appId]?.name || appId;
+    void recordActivity({ category: 'setting', title: 'Dock updated', details: appName });
     setDockAppIds(prev => {
       const exists = prev.includes(appId);
       const updated = exists ? prev.filter(id => id !== appId) : [...prev, appId];
@@ -910,7 +1197,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       } catch { }
       return updated;
     });
-  }, []);
+  }, [recordActivity]);
 
   const reorderDockApps = useCallback((newOrder: string[]) => {
     setDockAppIds(newOrder);
@@ -1082,7 +1369,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       });
 
       addNotification({
-        title: 'Files Imported to Abhishek OS',
+        title: 'Files Imported to ARLO OS',
         message: `Indexed ${imported.length} local files from your computer to ${targetPath}.`,
         type: 'download',
         appName: 'Finder',
@@ -1121,45 +1408,44 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   // Global Keyboard Shortcuts
   useEffect(() => {
+    const openAppSwitcher = async () => {
+      await captureWindowPreviews(
+        windows.filter(win => !win.desktopSpaceId || win.desktopSpaceId === activeSpaceId),
+      );
+      setShowMissionControl(false);
+      setShowAppSwitcher(true);
+      sound.playClick();
+    };
+
+    const openMissionControl = async () => {
+      await captureWindowPreviews(
+        windows.filter(win => !win.desktopSpaceId || win.desktopSpaceId === activeSpaceId),
+      );
+      setShowAppSwitcher(false);
+      setShowMissionControl(true);
+      sound.playClick();
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isLocked) return;
 
       const isMod = e.ctrlKey || e.metaKey;
 
-      if (
-        (e.metaKey && e.code === 'Tab') ||
-        (e.ctrlKey && e.altKey && e.code === 'Tab')
-      ) {
+      if (e.ctrlKey && (e.key === 'Meta' || e.code === 'MetaLeft' || e.code === 'MetaRight')) {
         e.preventDefault();
-        appSwitcherOrderRef.current = [];
-        setShowAppSwitcher(false);
-        setShowMissionControl(true);
+        void openMissionControl();
         return;
       }
 
-      if (e.altKey && e.code === 'Tab') {
+      if (e.ctrlKey && e.metaKey && e.code === 'Tab') {
         e.preventDefault();
-        const availableWindows = windows
-          .filter(win => !win.desktopSpaceId || win.desktopSpaceId === activeSpaceId)
-          .sort((a, b) => b.zIndex - a.zIndex);
-        if (availableWindows.length === 0) return;
+        void openMissionControl();
+        return;
+      }
 
-        if (appSwitcherOrderRef.current.length === 0) {
-          appSwitcherOrderRef.current = availableWindows.map(win => win.id);
-          const focusedIndex = availableWindows.findIndex(win => win.isFocused);
-          appSwitcherIndexRef.current = focusedIndex >= 0 ? focusedIndex : -1;
-        }
-
-        const order = appSwitcherOrderRef.current.filter(id =>
-          availableWindows.some(win => win.id === id)
-        );
-        appSwitcherOrderRef.current = order;
-        if (order.length === 0) return;
-        const direction = e.shiftKey ? -1 : 1;
-        appSwitcherIndexRef.current =
-          (appSwitcherIndexRef.current + direction + order.length) % order.length;
-        setShowAppSwitcher(true);
-        focusWindow(order[appSwitcherIndexRef.current]);
+      if (e.ctrlKey && !e.metaKey && e.code === 'Tab') {
+        e.preventDefault();
+        void openAppSwitcher();
         return;
       }
 
@@ -1172,7 +1458,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       }
 
       // Cmd/Ctrl + Space -> Spotlight
-      if (isMod && e.code === 'Space') {
+      if (isMod && e.code === 'Space' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         setShowSpotlight(prev => !prev);
         sound.playClick();
@@ -1185,10 +1471,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         sound.playClick();
       }
 
-      // Cmd/Ctrl + Up -> Mission Control
-      if (isMod && e.code === 'ArrowUp') {
+      const ghostShortcutPressed = settings.ghostShortcut === 'ctrl-shift-space'
+        ? isMod && e.code === 'Space' && e.shiftKey
+        : settings.ghostShortcut === 'ctrl-alt-space'
+          ? isMod && e.code === 'Space' && e.altKey
+          : isMod && e.code === 'KeyG' && e.shiftKey;
+      if (!window.electronAPI && ghostShortcutPressed) {
         e.preventDefault();
-        setShowMissionControl(prev => !prev);
+        setShowGhostAssistant(prev => !prev);
       }
 
       // Cmd/Ctrl + W -> Close Focused Window
@@ -1222,7 +1512,6 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       if (e.code === 'Escape') {
         if (showAppSwitcher) {
           setShowAppSwitcher(false);
-          appSwitcherOrderRef.current = [];
         } else if (quickLookFile) {
           setQuickLookFile(null);
         } else if (showSpotlight) {
@@ -1239,33 +1528,29 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           setShowPowerDialog(false);
         } else if (showAboutModal) {
           setShowAboutModal(false);
+        } else if (showActivityHistory) {
+          setShowActivityHistory(false);
+        } else if (showGhostAssistant) {
+          setShowGhostAssistant(false);
         }
       }
     };
 
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Alt' || e.key === 'Meta') {
-        setShowAppSwitcher(false);
-        appSwitcherOrderRef.current = [];
-      }
-    };
     const handleWindowBlur = () => {
       setShowAppSwitcher(false);
-      appSwitcherOrderRef.current = [];
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('blur', handleWindowBlur);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleWindowBlur);
     };
   }, [
     windows,
-    isLocked,
     activeSpaceId,
+    isLocked,
+    settings.ghostShortcut,
     showSpotlight,
     showCommandPalette,
     showControlCenter,
@@ -1273,11 +1558,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     showMissionControl,
     showPowerDialog,
     showAboutModal,
+    showActivityHistory,
+    showGhostAssistant,
     showAppSwitcher,
     quickLookFile,
     closeWindow,
     minimizeWindow,
-    focusWindow,
   ]);
 
   return (
@@ -1288,6 +1574,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         isSleeping,
         isShuttingDown,
         hasCompletedSetup,
+        activityEntries,
+        activityError,
+        activityTrackingEnabled,
+        setActivityTrackingEnabled,
+        recordActivity,
+        deleteActivity,
+        clearActivity,
         finishOnboarding,
         resetSetup,
         lockSystem,
@@ -1314,6 +1607,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         setShowAppSwitcher,
         showCommandPalette,
         setShowCommandPalette,
+        showGhostAssistant,
+        setShowGhostAssistant,
+        showActivityHistory,
+        setShowActivityHistory,
         quickLookFile,
         setQuickLookFile,
 
@@ -1333,6 +1630,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         activeSpaceId,
         setActiveSpaceId,
         addSpace,
+        renameSpace,
         removeSpace,
 
         windows,

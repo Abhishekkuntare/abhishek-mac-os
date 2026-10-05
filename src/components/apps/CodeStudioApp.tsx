@@ -832,7 +832,7 @@ export const CodeStudioApp: React.FC = () => {
 
     let html =
       htmlFile?.code ||
-      '<h1>Abhishek OS Preview</h1>';
+      '<h1>ARLO OS Preview</h1>';
 
     if (cssFile) {
       html = html.replace(
@@ -905,7 +905,7 @@ export const CodeStudioApp: React.FC = () => {
         } else {
           if (!window.electronAPI?.runCode) {
             throw new Error(
-              'Run code in the Abhishek OS desktop app to use the local program runners.'
+              'Run code in the ARLO OS desktop app to use the local program runners.'
             );
           }
 
@@ -1802,7 +1802,7 @@ export const CodeStudioApp: React.FC = () => {
               </div>
 
               <div className="text-[9px] text-slate-500">
-                Abhishek OS Development Environment
+                ARLO OS Development Environment
               </div>
             </div>
           </div>
@@ -3211,7 +3211,7 @@ export const CodeStudioApp: React.FC = () => {
 
             <div className="relative min-h-0 flex-1 bg-white">
               <iframe
-                title="Abhishek OS Web Preview"
+                title="ARLO OS Web Preview"
                 srcDoc={previewHtml}
                 sandbox="allow-scripts"
                 className="h-full w-full border-0"

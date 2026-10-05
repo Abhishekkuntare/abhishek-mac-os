@@ -1,5 +1,5 @@
 /**
- * Real-time Web Audio Synthesizer & Music Engine for Abhishek OS
+ * Real-time Web Audio Synthesizer & Music Engine for ARLO OS
  * Provides authentic procedural ambient, synthwave, chillhop, and classical soundscapes,
  * as well as playback for local computer audio files (.mp3, .wav, .m4a, .ogg).
  */

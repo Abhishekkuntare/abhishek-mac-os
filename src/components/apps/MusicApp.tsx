@@ -769,7 +769,7 @@ export const MusicApp: React.FC = () => {
 
                 <p className="text-xs text-slate-400 mt-2">
                   Your audio will be stored in the
-                  Abhishek OS Music Library.
+                  ARLO OS Music Library.
                 </p>
               </motion.div>
             </div>
@@ -811,7 +811,7 @@ export const MusicApp: React.FC = () => {
             </div>
 
             <div className="text-[9px] uppercase tracking-[0.22em] text-slate-500">
-              Abhishek OS Audio
+              ARLO OS Audio
             </div>
           </div>
         </div>
