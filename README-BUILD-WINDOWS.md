@@ -23,15 +23,17 @@ it with the Python listener into the Windows app. This adds a larger model and
 uses more CPU than the old English-only recognizer. Installed builds do not need
 Python or an internet connection for speech recognition.
 
-The installer is generated at:
+The Windows installer and Microsoft Store package are generated together in:
 
 ```text
 release\ARLO-OS-Setup.exe
+release\ARLO-OS-Setup.appx
 ```
 
 Windows installer icons use `build\icon.ico`; Microsoft Store tile icons use
 the ARLO PNG artwork in `build\appx\`. Keep the existing Partner Center identity
-in `electron-builder-store.cjs` when publishing updates to the same Store listing.
+in `electron-builder-release.cjs` and `electron-builder-store.cjs` when publishing
+updates to the same Store listing.
 
 ## Development
 
@@ -39,9 +41,8 @@ in `electron-builder-store.cjs` when publishing updates to the same Store listin
 npm run electron:dev
 ```
 
-This command builds the bundled offline voice listener when needed, then starts
-the Electron app and its Vite development server. To run only the browser preview,
-use `npm run dev`; microphone wake listening requires Electron.
+This starts the Electron app and its Vite development server. To run only the
+browser preview, use `npm run dev`; microphone wake listening requires Electron.
 
 Install the Python build dependencies before the first Electron launch with
 `python -m pip install -r voice-requirements.txt`.
@@ -59,4 +60,7 @@ Ghost does not have unrestricted control of the PC; high-risk tools remain disab
 `npm run build` only creates the React/Vite web bundle in `dist/`.
 It does **not** create a Windows installer.
 
-`npm run dist:win` first builds `dist/`, then runs Electron Builder with the NSIS target to create the installable `.exe`.
+`npm run dist:win` cleans previous generated `dist/` and `release/` outputs,
+builds the renderer and offline voice listener, then runs Electron Builder once
+for both NSIS and AppX targets. It creates both the Windows installer `.exe` and
+the Store upload `.appx` in `release/`.

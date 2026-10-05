@@ -501,9 +501,20 @@ export const Desktop: React.FC = () => {
     startX: number;
     startY: number;
     additive: boolean;
+    rootLeft: number;
+    rootTop: number;
+    icons: Array<{
+      id: string;
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+    }>;
   } | null>(null);
 
   const marqueeJustFinishedRef = useRef(false);
+  const marqueeFrameRef = useRef<number | null>(null);
+  const marqueePointerRef = useRef<{ x: number; y: number } | null>(null);
 
   const [selectionBox, setSelectionBox] = useState<{
     x: number;
@@ -1657,12 +1668,10 @@ export const Desktop: React.FC = () => {
   });
 
   const updateMarqueeSelection = (clientX: number, clientY: number) => {
-    const root = desktopContainerRef.current;
     const box = selectionBoxRef.current;
-    if (!root || !box) return;
+    if (!box) return;
 
-    const rootRect = root.getBoundingClientRect();
-    const current = { x: clientX - rootRect.left, y: clientY - rootRect.top };
+    const current = { x: clientX - box.rootLeft, y: clientY - box.rootTop };
     const start = { x: box.startX, y: box.startY };
     const rect = getDesktopSelectionRect(start, current);
 
@@ -1673,30 +1682,27 @@ export const Desktop: React.FC = () => {
       height: rect.bottom - rect.top,
     });
 
-    const selected = Array.from(
-      root.querySelectorAll<HTMLElement>('[data-desktop-icon="true"]')
-    )
-      .filter(el => {
-        const r = el.getBoundingClientRect();
-        const elLeft = r.left - rootRect.left;
-        const elTop = r.top - rootRect.top;
-        const elRight = elLeft + r.width;
-        const elBottom = elTop + r.height;
+    const selected = box.icons
+      .filter(icon => {
         return !(
-          elRight < rect.left ||
-          elLeft > rect.right ||
-          elBottom < rect.top ||
-          elTop > rect.bottom
+          icon.right < rect.left ||
+          icon.left > rect.right ||
+          icon.bottom < rect.top ||
+          icon.top > rect.bottom
         );
       })
-      .map(el => el.dataset.desktopItemId)
-      .filter((id): id is string => Boolean(id));
+      .map(icon => icon.id);
 
     const next = box.additive
       ? Array.from(new Set([...selectedIconIds, ...selected]))
       : selected;
 
-    setSelectedIconIds(next);
+    setSelectedIconIds(previous =>
+      previous.length === next.length &&
+      previous.every((id, index) => id === next[index])
+        ? previous
+        : next,
+    );
   };
 
   const handleDesktopSelectionPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1717,6 +1723,22 @@ export const Desktop: React.FC = () => {
     const rect = root.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+    const icons = Array.from(
+      root.querySelectorAll<HTMLElement>('[data-desktop-icon="true"]'),
+    ).flatMap(element => {
+      const id = element.dataset.desktopItemId;
+      if (!id) return [];
+      const iconRect = element.getBoundingClientRect();
+      const left = iconRect.left - rect.left;
+      const top = iconRect.top - rect.top;
+      return [{
+        id,
+        left,
+        top,
+        right: left + iconRect.width,
+        bottom: top + iconRect.height,
+      }];
+    });
 
     setContextMenu(prev => ({ ...prev, visible: false }));
 
@@ -1724,6 +1746,9 @@ export const Desktop: React.FC = () => {
       startX: x,
       startY: y,
       additive: e.ctrlKey || e.metaKey || e.shiftKey,
+      rootLeft: rect.left,
+      rootTop: rect.top,
+      icons,
     };
 
     if (!(e.ctrlKey || e.metaKey || e.shiftKey)) {
@@ -1739,12 +1764,23 @@ export const Desktop: React.FC = () => {
 
   const handleDesktopSelectionPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!selectionBoxRef.current) return;
-    updateMarqueeSelection(e.clientX, e.clientY);
+    marqueePointerRef.current = { x: e.clientX, y: e.clientY };
+    if (marqueeFrameRef.current !== null) return;
+    marqueeFrameRef.current = window.requestAnimationFrame(() => {
+      marqueeFrameRef.current = null;
+      const pointer = marqueePointerRef.current;
+      if (pointer) updateMarqueeSelection(pointer.x, pointer.y);
+    });
   };
 
   const handleDesktopSelectionPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!selectionBoxRef.current) return;
 
+    if (marqueeFrameRef.current !== null) {
+      window.cancelAnimationFrame(marqueeFrameRef.current);
+      marqueeFrameRef.current = null;
+    }
+    marqueePointerRef.current = null;
     updateMarqueeSelection(e.clientX, e.clientY);
     selectionBoxRef.current = null;
     marqueeJustFinishedRef.current = true;
@@ -2590,6 +2626,11 @@ export const Desktop: React.FC = () => {
       onPointerUp={handleDesktopSelectionPointerUp}
 
       onPointerCancel={() => {
+        if (marqueeFrameRef.current !== null) {
+          window.cancelAnimationFrame(marqueeFrameRef.current);
+          marqueeFrameRef.current = null;
+        }
+        marqueePointerRef.current = null;
         selectionBoxRef.current = null;
         marqueeJustFinishedRef.current = false;
         setSelectionBox(null);

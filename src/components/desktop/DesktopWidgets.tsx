@@ -1599,6 +1599,7 @@ export const DesktopWidgets: React.FC = () => {
     settings,
     updateSettings,
     resolvedTheme,
+    isLocked,
   } = useOS();
 
   const isLight = resolvedTheme === 'light';
@@ -1608,15 +1609,26 @@ export const DesktopWidgets: React.FC = () => {
   const [clockNow, setClockNow] =
     useState(() => new Date());
 
-  useEffect(() => {
-    const interval = window.setInterval(
-      () => setClockNow(new Date()),
-      1000
-    );
-    return () => window.clearInterval(interval);
-  }, []);
+  const {
+    positions,
+    minimized,
+    dragging,
+    startDrag,
+    minimize,
+    restore,
+  } = useWidgetManager(settings.desktopWidgets);
 
   useEffect(() => {
+    if (isLocked || !settings.desktopWidgets.clock) return;
+    const interval = window.setInterval(
+      () => setClockNow(new Date()),
+      60_000
+    );
+    return () => window.clearInterval(interval);
+  }, [isLocked, settings.desktopWidgets.clock]);
+
+  useEffect(() => {
+    if (isLocked || !settings.desktopWidgets.system || minimized.system) return;
     let active = true;
     const updateResourceUsage = async () => {
       try {
@@ -1635,16 +1647,7 @@ export const DesktopWidgets: React.FC = () => {
       active = false;
       window.clearInterval(intervalId);
     };
-  }, []);
-
-  const {
-    positions,
-    minimized,
-    dragging,
-    startDrag,
-    minimize,
-    restore,
-  } = useWidgetManager(settings.desktopWidgets);
+  }, [isLocked, settings.desktopWidgets.system, minimized.system]);
 
   return (
     <div

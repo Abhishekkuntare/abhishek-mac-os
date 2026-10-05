@@ -103,9 +103,25 @@ features such as Ghost AI, workspace workflows, and productivity experiences.
 
 ---
 
-## 📸 Screenshots
+### 🖥️ Desktop
 
-Screenshots and demonstrations are available in the repository and project releases.
+![Arlo OS Desktop](./screenshots/desktop.png)
+
+### 📁 Finder
+
+![Arlo OS Finder](./screenshots/finder.png)
+
+### 💻 Terminal
+
+![Arlo OS Terminal](./screenshots/terminal.png)
+
+### ⚙️ Settings
+
+![Arlo OS Settings](./screenshots/settings.png)
+
+### 🎮 Games
+
+![Arlo OS Games](./screenshots/games.png)
 
 ---
 

@@ -22,21 +22,18 @@ if not exist node_modules (
   if errorlevel 1 goto :error
 )
 
-echo Building React renderer...
-call npm run build:renderer
-if errorlevel 1 goto :error
-
-echo Creating Windows NSIS installer...
-call npm run package:win
+echo Creating Windows installer and Microsoft Store package...
+call npm run dist:win
 if errorlevel 1 goto :error
 
 echo.
 echo =============================================
 echo BUILD COMPLETE
 echo Installer: release\ARLO-OS-Setup.exe
+echo Store package: release\ARLO-OS-Setup.appx
 echo =============================================
 echo.
-if exist "release\ARLO-OS-Setup.exe" start "" explorer.exe /select,"%CD%\release\ARLO-OS-Setup.exe"
+if exist "release" start "" explorer.exe "%CD%\release"
 pause
 exit /b 0
 

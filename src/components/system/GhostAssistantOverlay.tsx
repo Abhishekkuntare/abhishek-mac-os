@@ -535,7 +535,6 @@ export const GhostAssistantOverlay: React.FC = () => {
     isSleeping,
     isShuttingDown,
     setShowGhostAssistant,
-    updateSettings,
   ]);
 
   useEffect(() => () => {

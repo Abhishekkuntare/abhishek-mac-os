@@ -247,6 +247,24 @@ ipcMain.handle('ghost-ai:startWakeListener', async event => {
       console.warn('[Ghost AI] Local speech recognizer:', detail);
     });
   });
+  let controlPipeFailed = false;
+  const handleControlPipeError = error => {
+    if (controlPipeFailed) return;
+    controlPipeFailed = true;
+    if (error.code === 'EPIPE') {
+      console.warn('[Ghost AI] Local speech recognizer control pipe closed.');
+    } else {
+      console.error('[Ghost AI] Local speech recognizer control pipe failed:', error);
+    }
+    if (ghostWakeProcess === speechProcess) {
+      ghostWakeStopping = false;
+      sendGhostWakeState({
+        status: 'error',
+        message: 'The local speech recognizer stopped. Restart ARLO OS to enable wake-word listening again.',
+      });
+    }
+  };
+  speechProcess.stdin.on('error', handleControlPipeError);
   speechProcess.on('error', error => {
     console.error('[Ghost AI] Could not launch the local Windows speech recognizer:', error);
     if (ghostWakeProcess === speechProcess) {
@@ -256,15 +274,16 @@ ipcMain.handle('ghost-ai:startWakeListener', async event => {
     sendGhostWakeState({ status: 'error', message: error.message });
   });
   speechProcess.on('exit', (code, signal) => {
+    const wasStopping = ghostWakeStopping;
     if (ghostWakeProcess === speechProcess) {
       ghostWakeProcess = null;
       ghostWakeStopping = false;
     }
     if (code !== 0 && code !== null) {
       sendGhostWakeState({ status: 'error', message: `The local speech recognizer exited with code ${code}.` });
-    } else if (code === 0 && !ghostWakeStopping) {
+    } else if (code === 0 && !wasStopping) {
       sendGhostWakeState({ status: 'error', message: 'The local speech recognizer stopped unexpectedly.' });
-    } else if (signal) {
+    } else if (wasStopping || signal) {
       sendGhostWakeState({ status: 'stopped' });
     }
   });
@@ -280,7 +299,15 @@ ipcMain.handle('ghost-ai:stopWakeListener', event => {
   }
   if (ghostWakeProcess && ghostWakeProcess.exitCode === null) {
     ghostWakeStopping = true;
-    ghostWakeProcess.stdin.write('stop\n');
+    try {
+      if (!ghostWakeProcess.stdin.destroyed && !ghostWakeProcess.stdin.writableEnded) {
+        ghostWakeProcess.stdin.write('stop\n');
+      }
+    } catch (error) {
+      if (error.code !== 'EPIPE') {
+        console.error('[Ghost AI] Could not stop the local speech recognizer:', error);
+      }
+    }
   }
   sendGhostWakeState({ status: 'stopped' });
 });
@@ -297,7 +324,18 @@ ipcMain.handle('ghost-ai:setWakePaused', (event, paused) => {
     const expectedState = paused ? 'paused' : 'ready';
     if (ghostWakeStatus === expectedState) return;
     const stateChanged = waitForGhostWakeState(expectedState);
-    ghostWakeProcess.stdin.write(`${paused ? 'pause' : 'resume'}\n`);
+    try {
+      if (ghostWakeProcess.stdin.destroyed || ghostWakeProcess.stdin.writableEnded) {
+        sendGhostWakeState({ status: 'error', message: 'The local speech recognizer is no longer accepting commands.' });
+        return stateChanged;
+      }
+      ghostWakeProcess.stdin.write(`${paused ? 'pause' : 'resume'}\n`);
+    } catch (error) {
+      if (error.code !== 'EPIPE') {
+        console.error('[Ghost AI] Could not update local speech recognizer state:', error);
+      }
+      sendGhostWakeState({ status: 'error', message: 'The local speech recognizer stopped responding.' });
+    }
     return stateChanged;
   }
 });

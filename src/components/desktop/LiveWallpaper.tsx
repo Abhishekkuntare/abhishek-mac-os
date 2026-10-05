@@ -14,14 +14,30 @@ export const LiveWallpaper: React.FC<LiveWallpaperProps> = ({ type, performanceM
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let animId: number;
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
+    let animId: number | null = null;
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    let lastFrameTime = 0;
+    const frameInterval = performanceMode === 'batterySaver'
+      ? 1000 / 30
+      : 1000 / 60;
+    const renderScale = performanceMode === 'batterySaver'
+      ? 0.65
+      : performanceMode === 'quality'
+        ? 1
+        : 0.8;
+
+    const resizeCanvas = () => {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = Math.round(width * renderScale);
+      canvas.height = Math.round(height * renderScale);
+      ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+    };
+    resizeCanvas();
 
     const handleResize = () => {
-      if (!canvas) return;
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
+      resizeCanvas();
     };
     window.addEventListener('resize', handleResize);
 
@@ -53,7 +69,17 @@ export const LiveWallpaper: React.FC<LiveWallpaperProps> = ({ type, performanceM
       alpha: Math.random() * 0.25 + 0.08,
     }));
 
-    const render = () => {
+    const render = (timestamp: number) => {
+      if (document.hidden) {
+        animId = null;
+        return;
+      }
+      if (timestamp - lastFrameTime < frameInterval) {
+        animId = requestAnimationFrame(render);
+        return;
+      }
+      lastFrameTime = timestamp;
+
       step += 0.012 * speedMultiplier;
 
       if (type === 'aurora') {
@@ -149,10 +175,24 @@ export const LiveWallpaper: React.FC<LiveWallpaperProps> = ({ type, performanceM
       animId = requestAnimationFrame(render);
     };
 
-    render();
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (animId !== null) cancelAnimationFrame(animId);
+        animId = null;
+        return;
+      }
+      if (animId === null) {
+        lastFrameTime = 0;
+        animId = requestAnimationFrame(render);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    if (!document.hidden) render(performance.now());
 
     return () => {
-      cancelAnimationFrame(animId);
+      if (animId !== null) cancelAnimationFrame(animId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('resize', handleResize);
     };
   }, [type, performanceMode]);
