@@ -23,6 +23,8 @@ The project combines a familiar desktop workflow with a responsive interface, bu
 * 🎵 Media and entertainment applications
 * ⚙️ System settings
 * 🔔 Notifications and system interactions
+* 📊 Activity tracking and recent user actions with your own bot arlo custmizable
+* 👻 Ghost AI — OS-level AI assistant for natural-language desktop automation with Lily and Brad Agent
 * 📱 Responsive layouts
 * ✨ Animated and glass-inspired interface
 * 🔄 Automatic application updates
@@ -75,6 +77,29 @@ for local English, Hindi, and Marathi speech recognition. Microphone audio stays
 on-device; recognized text may be sent to Gemini only when the user requests an AI
 response and configures that service. Voice response language and installed Windows
 speech voices affect pronunciation quality.
+
+### 👻 Ghost AI and Gemini
+
+Ghost AI is ARLO OS's OS-level AI assistant, powered by Google's official
+`@google/genai` SDK and the `gemini-3.8-flash` model through Electron's main
+process.
+
+Ghost can understand natural-language commands and interact with registered
+OS tools for opening and closing applications, creating files and folders,
+showing the desktop, reading system information, and toggling Focus Mode.
+
+Ghost AI also supports optional local wake-word voice interaction using a
+bundled multilingual Whisper model for English, Hindi, and Marathi. Microphone
+audio remains on-device unless the user explicitly requests an AI response.
+
+### 📊 Activity Tracking
+
+ARLO OS includes an Activity system that tracks recent user actions and
+desktop interactions, helping users understand their workflow and quickly
+return to previous tasks.
+
+Activity history can be used by ARLO OS to provide contextual information for
+features such as Ghost AI, workspace workflows, and productivity experiences.
 
 ---
 
