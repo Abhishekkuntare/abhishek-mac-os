@@ -4,6 +4,7 @@ import {
   Activity,
   AppWindow,
   CalendarDays,
+  ChevronDown,
   Download,
   FileClock,
   FileText,
@@ -29,6 +30,21 @@ const CATEGORY_LABELS: Record<ActivityCategory, string> = {
   workspace: 'Navigation',
   system: 'System',
 };
+
+const contextLabels: Array<[keyof NonNullable<ActivityEntry['context']>, string]> = [
+  ['appName', 'App'],
+  ['appId', 'App ID'],
+  ['windowTitle', 'Opened view'],
+  ['desktop', 'Desktop'],
+  ['itemName', 'Item'],
+  ['itemType', 'Item type'],
+];
+
+const getContextRows = (entry: ActivityEntry) =>
+  contextLabels.flatMap(([key, label]) => {
+    const value = entry.context?.[key];
+    return value ? [{ label, value }] : [];
+  });
 
 const formatTimestamp = (value: string) =>
   new Intl.DateTimeFormat(undefined, {
@@ -62,12 +78,13 @@ const saveDownload = (filename: string, data: Blob) => {
 const makeCsv = (entries: ActivityEntry[]) => {
   const escapeCell = (value: string) => `"${value.replace(/"/g, '""')}"`;
   return [
-    ['Date and time', 'Category', 'Activity', 'Details'].map(escapeCell).join(','),
+    ['Date and time', 'Category', 'Activity', 'Details', 'Context'].map(escapeCell).join(','),
     ...entries.map(entry => [
       formatTimestamp(entry.timestamp),
       CATEGORY_LABELS[entry.category],
       entry.title,
       entry.details || '',
+      getContextRows(entry).map(({ label, value }) => `${label}: ${value}`).join(' · '),
     ].map(escapeCell).join(',')),
   ].join('\r\n');
 };
@@ -78,13 +95,17 @@ const makeSvg = (entries: ActivityEntry[]) => {
   const rows = entries.map((entry, index) => {
     const y = 138 + index * rowHeight;
     const detail = entry.details ? escapeMarkup(entry.details) : '';
+    const context = getContextRows(entry)
+      .map(({ label, value }) => `${label}: ${value}`)
+      .join(' · ');
     return `
       <g transform="translate(52 ${y})">
         <circle cx="12" cy="12" r="5" fill="#38bdf8"/>
         <text x="32" y="9" fill="#f8fafc" font-family="Arial, sans-serif" font-size="17" font-weight="700">${escapeMarkup(entry.title)}</text>
         <text x="32" y="32" fill="#94a3b8" font-family="Arial, sans-serif" font-size="13">${escapeMarkup(CATEGORY_LABELS[entry.category])}${detail ? ` · ${detail}` : ''}</text>
+        ${context ? `<text x="32" y="50" fill="#64748b" font-family="Arial, sans-serif" font-size="11">${escapeMarkup(context)}</text>` : ''}
         <text x="1148" y="9" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="12" text-anchor="end">${escapeMarkup(formatTimestamp(entry.timestamp))}</text>
-        <path d="M32 48H1148" stroke="#ffffff" stroke-opacity=".08"/>
+        <path d="M32 58H1148" stroke="#ffffff" stroke-opacity=".08"/>
       </g>`;
   }).join('');
 
@@ -125,6 +146,7 @@ export const ActivityHistoryModal: React.FC = () => {
   const [toDate, setToDate] = useState('');
   const [visibleCount, setVisibleCount] = useState(80);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
 
   const filteredEntries = useMemo(() => {
     const query = searchText.trim().toLocaleLowerCase();
@@ -133,7 +155,8 @@ export const ActivityHistoryModal: React.FC = () => {
       const day = localDateKey(entry.timestamp);
       if (fromDate && day < fromDate) return false;
       if (toDate && day > toDate) return false;
-      if (query && !`${entry.title} ${entry.details || ''} ${CATEGORY_LABELS[entry.category]}`.toLocaleLowerCase().includes(query)) {
+      const contextText = getContextRows(entry).map(({ label, value }) => `${label} ${value}`).join(' ');
+      if (query && !`${entry.title} ${entry.details || ''} ${CATEGORY_LABELS[entry.category]} ${contextText}`.toLocaleLowerCase().includes(query)) {
         return false;
       }
       return true;
@@ -216,6 +239,7 @@ export const ActivityHistoryModal: React.FC = () => {
                   <span className={`h-1.5 w-1.5 rounded-full ${activityTrackingEnabled ? 'bg-emerald-300' : 'bg-amber-300'}`} />
                   {activityTrackingEnabled ? 'Tracking on' : 'Tracking paused'} · stored only on this device · no outside-app monitoring
                 </p>
+                <p className="mt-1 text-[10px] text-slate-500">Shows app, window, desktop, and item names/actions only — never file contents.</p>
               </div>
             </div>
             <button
@@ -331,6 +355,8 @@ export const ActivityHistoryModal: React.FC = () => {
                 <div className="space-y-1">
                   {filteredEntries.slice(0, visibleCount).map((entry, index) => {
                     const Icon = categoryIcon(entry.category);
+                    const contextRows = getContextRows(entry);
+                    const isExpanded = expandedEntryId === entry.id;
                     return (
                       <motion.article
                         key={entry.id}
@@ -353,7 +379,28 @@ export const ActivityHistoryModal: React.FC = () => {
                           <span className="mt-1.5 inline-block rounded-md border border-white/[0.07] bg-white/[0.025] px-1.5 py-0.5 text-[9px] text-slate-500">
                             {CATEGORY_LABELS[entry.category]}
                           </span>
+                          {isExpanded && contextRows.length > 0 && (
+                            <div className="mt-3 grid gap-2 rounded-xl bg-black/20 p-3 sm:grid-cols-2">
+                              {contextRows.map(({ label, value }) => (
+                                <div key={label} className="min-w-0">
+                                  <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
+                                  <p className="mt-0.5 break-words text-[11px] text-slate-200">{value}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
+                        {contextRows.length > 0 && (
+                          <button
+                            type="button"
+                            aria-label={`${isExpanded ? 'Hide' : 'Show'} details for ${entry.title}`}
+                            aria-expanded={isExpanded}
+                            onClick={() => setExpandedEntryId(isExpanded ? null : entry.id)}
+                            className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-white/[0.06] hover:text-slate-200"
+                          >
+                            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                          </button>
+                        )}
                         <button
                           type="button"
                           aria-label={`Delete activity: ${entry.title}`}

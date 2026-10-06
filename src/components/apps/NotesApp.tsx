@@ -24,6 +24,7 @@ import {
   Check,
   X,
   PanelLeft,
+  ArrowLeft,
   Sparkles,
   Command,
   Archive,
@@ -295,6 +296,9 @@ export const NotesApp: React.FC = () => {
   const [sidebarCollapsed, setSidebarCollapsed] =
     useState(false);
 
+  const [mobileNoteOpen, setMobileNoteOpen] =
+    useState(false);
+
   const [showDetails, setShowDetails] =
     useState(false);
 
@@ -321,6 +325,14 @@ export const NotesApp: React.FC = () => {
 
   const saveTimerRef =
     useRef<number | null>(null);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 1023px), (hover: none) and (pointer: coarse)');
+    const syncSidebar = () => setSidebarCollapsed(media.matches);
+    syncSidebar();
+    media.addEventListener('change', syncSidebar);
+    return () => media.removeEventListener('change', syncSidebar);
+  }, []);
 
   const selectedNote =
     notes.find(
@@ -696,6 +708,7 @@ export const NotesApp: React.FC = () => {
     setSelectedNoteId(
       newNote.id
     );
+    setMobileNoteOpen(true);
 
     setActiveFolder(
       'All Notes'
@@ -743,6 +756,7 @@ export const NotesApp: React.FC = () => {
     id: string
   ) => {
     setSelectedNoteId(id);
+    setMobileNoteOpen(true);
     setShowMoreMenu(false);
     sound.playClick();
   };
@@ -950,7 +964,7 @@ export const NotesApp: React.FC = () => {
   }
 
   return (
-    <div className="relative flex-1 h-full overflow-hidden bg-[#070a10] text-white select-none">
+    <div data-note-open={mobileNoteOpen} data-note-sidebar-expanded={!sidebarCollapsed} className="relative flex-1 h-full overflow-hidden bg-[#070a10] text-white select-none">
       {/* =====================================================
           AMBIENT BACKGROUND
       ====================================================== */}
@@ -1018,6 +1032,15 @@ export const NotesApp: React.FC = () => {
           >
             <PanelLeft className="w-4 h-4" />
           </motion.button>
+          <button
+            type="button"
+            data-note-back
+            aria-label="Back to notes"
+            onClick={() => setMobileNoteOpen(false)}
+            className="hidden h-8 w-8 items-center justify-center rounded-xl text-slate-300 hover:bg-white/10"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
 
           <div className="hidden sm:flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-300 to-orange-500 flex items-center justify-center shadow-lg shadow-orange-500/20">
@@ -1120,6 +1143,7 @@ export const NotesApp: React.FC = () => {
         <AnimatePresence initial={false}>
           {!sidebarCollapsed && (
             <motion.aside
+              data-note-sidebar
               initial={{
                 width: 0,
                 opacity: 0,
@@ -1306,7 +1330,7 @@ export const NotesApp: React.FC = () => {
             NOTE LIST
         ================================================== */}
 
-        <div className="w-[280px] shrink-0 border-r border-white/[0.08] bg-white/[0.018] backdrop-blur-xl flex flex-col min-h-0">
+        <div data-note-list className="w-[280px] shrink-0 border-r border-white/[0.08] bg-white/[0.018] backdrop-blur-xl flex flex-col min-h-0">
 
           <div className="p-3 border-b border-white/[0.07]">
             <div className="relative">
@@ -1503,7 +1527,7 @@ export const NotesApp: React.FC = () => {
             EDITOR
         ================================================== */}
 
-        <main className="relative flex-1 min-w-0 min-h-0 overflow-hidden bg-black/[0.08]">
+        <main data-note-editor className="relative flex-1 min-w-0 min-h-0 overflow-hidden bg-black/[0.08]">
 
           <div className="absolute pointer-events-none w-[500px] h-[500px] rounded-full bg-amber-500/[0.025] blur-[120px] -top-64 left-1/2 -translate-x-1/2" />
 

@@ -8,6 +8,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { useOS } from "../../context/OSContext";
 import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowLeft,
@@ -406,8 +407,10 @@ const ArrowRightIcon: React.FC = () => (
 );
 
 export const BrowserApp: React.FC = () => {
+  const { recordActivity } = useOS();
   const addressInputRef = useRef<HTMLInputElement | null>(null);
   const webviewsRef = useRef(new Map<string, NativeWebview>());
+  const lastActivityHostByTabRef = useRef(new Map<string, string>());
   const [tabs, setTabs] = useState<BrowserTab[]>(() => {
     const tab = createTab();
     tab.id = "tab-main";
@@ -495,6 +498,23 @@ export const BrowserApp: React.FC = () => {
   }, []);
 
   const handleWebviewNavigate = useCallback((tabId: string, url: string) => {
+    if (/^https?:\/\//i.test(url)) {
+      const host = getHostname(url);
+      if (host && lastActivityHostByTabRef.current.get(tabId) !== host) {
+        lastActivityHostByTabRef.current.set(tabId, host);
+        void recordActivity({
+          category: 'workspace',
+          title: 'Opened website',
+          details: host,
+          context: {
+            appId: 'browser',
+            appName: 'Browser',
+            itemName: host,
+            itemType: 'Website',
+          },
+        });
+      }
+    }
     setTabs(current => current.map(tab => {
       if (tab.id !== tabId) return tab;
       if (tab.history[tab.historyIndex] === url) {
@@ -512,7 +532,7 @@ export const BrowserApp: React.FC = () => {
       };
     }));
     setRecentUrls(current => [url, ...current.filter(item => item !== url)]);
-  }, []);
+  }, [recordActivity]);
 
   const handlePopupUrl = useCallback((url: string) => {
     if (!/^https?:\/\//i.test(url)) return;
@@ -584,6 +604,23 @@ export const BrowserApp: React.FC = () => {
     },
     [activeTabId, updateTab],
   );
+
+  useEffect(() => {
+    let pendingUrl = '';
+    try {
+      pendingUrl = localStorage.getItem('browser-pending-open-url') ?? '';
+      if (pendingUrl) localStorage.removeItem('browser-pending-open-url');
+    } catch (error) {
+      console.warn('Could not read the pending Browser search result.', error);
+      return;
+    }
+    if (!/^https?:\/\//i.test(pendingUrl)) return;
+    const tab = createTab(pendingUrl);
+    setTabs(current => [...current, tab]);
+    setActiveTabId(tab.id);
+    setAddressInput(pendingUrl);
+    setRecentUrls(current => [pendingUrl, ...current.filter(url => url !== pendingUrl)]);
+  }, []);
 
   const handleAddressSubmit = (event: FormEvent) => {
     event.preventDefault();

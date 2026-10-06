@@ -2980,6 +2980,8 @@ import {
   PinOff,
   Bot,
   Mic,
+  Share2,
+  ArrowUpRight,
 } from 'lucide-react';
 
 import { motion, AnimatePresence } from 'motion/react';
@@ -3005,7 +3007,16 @@ import {
 import { sound } from '../../services/soundService';
 import { AppIcon } from '../system/AppIcon';
 import { BatteryStatusIcon } from '../system/BatteryStatusIcon';
-import { configureGhostUtterance } from '../../services/ghostVoice';
+import instagramLogo from '../../assets/doom-scroll/instagram.jpg';
+import snapchatLogo from '../../assets/doom-scroll/snapchat.png';
+import whatsappLogo from '../../assets/doom-scroll/whatsapp.png';
+import xLogo from '../../assets/doom-scroll/x.jpg';
+import threadsLogo from '../../assets/doom-scroll/threads.png';
+import linkedinLogo from '../../assets/doom-scroll/linkedin.png';
+import discordLogo from '../../assets/doom-scroll/discord.png';
+import telegramLogo from '../../assets/doom-scroll/telegram.png';
+import spotifyLogo from '../../assets/doom-scroll/spotify.png';
+import pinterestLogo from '../../assets/doom-scroll/pinterest.png';
 import {
   loadMascotCompanionConfig,
   MASCOT_ACTIONS,
@@ -3019,6 +3030,7 @@ import {
 
 type SettingsTab =
   | 'profile'
+  | 'connections'
   | 'appearance'
   | 'themes'
   | 'wallpaper'
@@ -3277,6 +3289,12 @@ const NAV_ITEMS: {
     description: 'Account, avatar and personal details',
   },
   {
+    id: 'connections',
+    label: 'Connections',
+    icon: Share2,
+    description: 'Connect social and music accounts securely',
+  },
+  {
     id: 'appearance',
     label: 'Appearance',
     icon: Palette,
@@ -3349,6 +3367,78 @@ const NAV_ITEMS: {
     description: 'System information',
   },
 ];
+
+const SOCIAL_PROVIDERS = [
+  { id: 'instagram', name: 'Instagram', logo: instagramLogo, url: 'https://www.instagram.com/', color: '#e1306c', description: 'Photos, reels and messages' },
+  { id: 'snapchat', name: 'Snapchat', logo: snapchatLogo, url: 'https://www.snapchat.com/', color: '#facc15', description: 'Snaps and conversations' },
+  { id: 'whatsapp', name: 'WhatsApp', logo: whatsappLogo, url: 'https://www.whatsapp.com/', color: '#22c55e', description: 'Private chats and calls' },
+  { id: 'x', name: 'X', logo: xLogo, url: 'https://x.com/', color: '#e2e8f0', description: 'Posts and conversations' },
+  { id: 'threads', name: 'Threads', logo: threadsLogo, url: 'https://www.threads.net/', color: '#f8fafc', description: 'Join public conversations' },
+  { id: 'linkedin', name: 'LinkedIn', logo: linkedinLogo, url: 'https://www.linkedin.com/', color: '#38bdf8', description: 'Professional network' },
+  { id: 'discord', name: 'Discord', logo: discordLogo, url: 'https://discord.com/app', color: '#818cf8', description: 'Communities and voice chat' },
+  { id: 'telegram', name: 'Telegram', logo: telegramLogo, url: 'https://telegram.org/', color: '#38bdf8', description: 'Messaging across devices' },
+  { id: 'spotify', name: 'Spotify', logo: spotifyLogo, url: 'https://open.spotify.com/', color: '#4ade80', description: 'Music, podcasts and playlists' },
+  { id: 'pinterest', name: 'Pinterest', logo: pinterestLogo, url: 'https://www.pinterest.com/', color: '#fb7185', description: 'Ideas and inspiration' },
+] as const;
+
+interface SocialWebviewElement extends HTMLElement {
+  getURL: () => string;
+}
+
+type SocialWebviewTagProps = {
+  src: string;
+  partition: string;
+  ref: React.Ref<SocialWebviewElement>;
+  style: React.CSSProperties;
+};
+
+const SocialWebviewTag = 'webview' as unknown as React.ComponentType<SocialWebviewTagProps>;
+
+const SocialSignInView: React.FC<{
+  src: string;
+  onNavigate: (url: string) => void;
+  onError: (message: string) => void;
+}> = ({ src, onNavigate, onError }) => {
+  const webviewRef = useRef<SocialWebviewElement | null>(null);
+  const handlersRef = useRef({ onNavigate, onError });
+  handlersRef.current = { onNavigate, onError };
+
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+    const navigated = (event: Event) => {
+      const url = (event as Event & { url?: string }).url;
+      if (url) handlersRef.current.onNavigate(url);
+    };
+    const failed = (event: Event) => {
+      const detail = event as Event & {
+        errorCode?: number;
+        errorDescription?: string;
+        isMainFrame?: boolean;
+      };
+      if (detail.isMainFrame && detail.errorCode !== -3) {
+        handlersRef.current.onError(detail.errorDescription || 'This service does not allow sign-in in an embedded browser. Open its website externally instead.');
+      }
+    };
+    webview.addEventListener('did-navigate', navigated);
+    webview.addEventListener('did-navigate-in-page', navigated);
+    webview.addEventListener('did-fail-load', failed);
+    return () => {
+      webview.removeEventListener('did-navigate', navigated);
+      webview.removeEventListener('did-navigate-in-page', navigated);
+      webview.removeEventListener('did-fail-load', failed);
+    };
+  }, []);
+
+  return (
+    <SocialWebviewTag
+      ref={webviewRef}
+      src={src}
+      partition="persist:abhishek-browser"
+      style={{ display: 'flex', height: '100%', width: '100%' }}
+    />
+  );
+};
 
 /* ============================================================
    HELPERS
@@ -3730,6 +3820,10 @@ export const SettingsApp: React.FC = () => {
 
   const [search, setSearch] =
     useState('');
+  const [connectionsError, setConnectionsError] = useState('');
+  const [selectedSocialProvider, setSelectedSocialProvider] = useState<(typeof SOCIAL_PROVIDERS)[number] | null>(null);
+  const [socialCurrentUrl, setSocialCurrentUrl] = useState('');
+  const [socialLoadError, setSocialLoadError] = useState('');
 
   const [dockAppSearch, setDockAppSearch] = useState('');
   const dockApps = useMemo(
@@ -3770,6 +3864,7 @@ export const SettingsApp: React.FC = () => {
   const [radioBusy, setRadioBusy] = useState(false);
   const [ghostShortcutError, setGhostShortcutError] = useState('');
   const [ghostVoicePreviewError, setGhostVoicePreviewError] = useState('');
+  const ghostVoicePreviewAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const updateGhostShortcut = async (shortcut: GhostShortcut) => {
     setGhostShortcutError('');
@@ -3800,24 +3895,23 @@ export const SettingsApp: React.FC = () => {
     }
     updateSettings({ ghostWakeEnabled: enabled });
   };
-  const previewGhostVoice = () => {
+  const previewGhostVoice = async () => {
     setGhostVoicePreviewError('');
-    if (!('speechSynthesis' in window)) {
-      setGhostVoicePreviewError('Speech preview is not available on this device.');
+    ghostVoicePreviewAudioRef.current?.pause();
+    const synthesize = window.electronAPI?.ghostAISynthesizeSpeech;
+    if (!synthesize) {
+      setGhostVoicePreviewError('Lily’s online voice is only available in the ARLO OS desktop app.');
       return;
     }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(
-      settings.ghostVoice === 'lily'
-        ? 'Hello, I’m Lily. I’m here and ready to help.'
-        : 'Hello, I’m Brad. I’m here and ready to help.',
-    );
-    configureGhostUtterance(utterance, settings.ghostVoice);
-    utterance.onerror = event => {
-      console.error('[Ghost AI] Voice preview failed:', event.error);
-      setGhostVoicePreviewError('Could not preview this voice on the current device.');
-    };
-    window.speechSynthesis.speak(utterance);
+    try {
+      const audioData = await synthesize('Hello, I’m Lily. I’m here and ready to help.');
+      const audio = new Audio(`data:audio/wav;base64,${audioData}`);
+      ghostVoicePreviewAudioRef.current = audio;
+      await audio.play();
+    } catch (error) {
+      console.error('[Ghost AI] Online Lily voice preview failed:', error);
+      setGhostVoicePreviewError(error instanceof Error ? error.message : 'Could not preview Lily’s online voice.');
+    }
   };
 
   const focusEnabled = settings.doNotDisturb;
@@ -4129,6 +4223,27 @@ export const SettingsApp: React.FC = () => {
     sound.playClick();
   };
 
+  const openSocialWebsite = async (url: string) => {
+    setConnectionsError('');
+    try {
+      if (window.electronAPI?.openExternal) {
+        await window.electronAPI.openExternal(url);
+        return;
+      }
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!opened) throw new Error('The website could not be opened. Check your browser popup settings.');
+    } catch (error) {
+      console.error('[Settings] Could not open social platform website:', error);
+      setConnectionsError(error instanceof Error ? error.message : 'Could not open that website.');
+    }
+  };
+
+  const openSocialSignIn = (provider: (typeof SOCIAL_PROVIDERS)[number]) => {
+    setSocialLoadError('');
+    setSocialCurrentUrl(provider.url);
+    setSelectedSocialProvider(provider);
+  };
+
   /* ==========================================================
      HEADER
   ========================================================== */
@@ -4372,7 +4487,7 @@ export const SettingsApp: React.FC = () => {
                 <img
                   src={user.avatarUrl}
                   alt="User"
-                  className="w-full h-full object-cover"
+                  className={`w-full h-full object-cover ${user.avatarType === 'preset' ? 'object-[center_25%]' : 'object-center'}`}
                 />
               ) : (
                 user.fullName
@@ -4660,7 +4775,7 @@ export const SettingsApp: React.FC = () => {
                           <img
                             src={user.avatarUrl}
                             alt="Profile"
-                            className="w-full h-full object-cover"
+                            className={`w-full h-full object-cover ${user.avatarType === 'preset' ? 'object-[center_25%]' : 'object-center'}`}
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-6xl font-black">
@@ -6665,6 +6780,120 @@ export const SettingsApp: React.FC = () => {
                 FOCUS
             ================================================= */}
 
+            {activeTab === 'connections' && (
+              <motion.div
+                key="connections"
+                variants={pageVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="space-y-6"
+              >
+                <PageHeader
+                  title="Social connections"
+                  description="Keep your favorite communities and music services together in ARLO OS."
+                  icon={Share2}
+                />
+
+                <SectionCard className="p-5 sm:p-7">
+                  <div className="absolute -right-14 -top-20 h-64 w-64 rounded-full bg-violet-500/15 blur-3xl" />
+                  <div className="absolute -bottom-24 left-1/3 h-56 w-56 rounded-full bg-sky-500/10 blur-3xl" />
+                  <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="max-w-xl">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-violet-300/20 bg-violet-300/[0.08] px-3 py-1 text-[9px] font-bold uppercase tracking-[.16em] text-violet-200">
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        Official websites
+                      </div>
+                      <h3 className="mt-4 text-xl font-black text-white sm:text-2xl">Sign in directly with each service.</h3>
+                      <p className="mt-2 text-xs leading-5 text-slate-400">
+                        Open the genuine website in this window and enter your details there. ARLO OS does not collect or store your social passwords. Some services may require opening in your system browser.
+                      </p>
+                    </div>
+                    <div className="shrink-0 rounded-2xl border border-white/10 bg-black/20 px-5 py-4 text-center">
+                      <div className="text-2xl font-black text-white">10</div>
+                      <div className="mt-1 text-[9px] font-bold uppercase tracking-[.16em] text-slate-500">Services available</div>
+                    </div>
+                  </div>
+                </SectionCard>
+
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Your services</h3>
+                    <p className="mt-1 text-[10px] text-slate-500">Select a service to open its official sign-in page.</p>
+                  </div>
+                  <span className="rounded-full border border-emerald-300/15 bg-emerald-300/[0.07] px-3 py-1.5 text-[9px] font-semibold text-emerald-200/80">
+                    Provider-hosted sign-in
+                  </span>
+                </div>
+
+                {connectionsError && (
+                  <p role="alert" className="rounded-xl border border-rose-400/20 bg-rose-400/[0.07] px-4 py-3 text-xs text-rose-200">
+                    {connectionsError}
+                  </p>
+                )}
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {SOCIAL_PROVIDERS.map((provider, index) => (
+                    <motion.article
+                      key={provider.id}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: Math.min(index * 0.035, 0.28), duration: 0.28 }}
+                      whileHover={{ y: -3, scale: 1.01 }}
+                      className="group relative overflow-hidden rounded-2xl border border-white/[0.09] bg-gradient-to-br from-white/[0.065] to-white/[0.02] p-4 shadow-lg shadow-black/10 transition-colors hover:border-white/20"
+                    >
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full opacity-[0.12] blur-2xl transition-opacity group-hover:opacity-25"
+                        style={{ backgroundColor: provider.color }}
+                      />
+                      <div className="relative flex items-start gap-3">
+                        <div
+                          className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[15px] border border-white/10 bg-black/25 shadow-inner"
+                        >
+                          <img
+                            src={provider.logo}
+                            alt=""
+                            className="h-full w-full object-cover"
+                            aria-hidden="true"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <h4 className="truncate text-xs font-bold text-white">{provider.name}</h4>
+                            <span className="shrink-0 rounded-full border border-slate-300/10 bg-slate-300/[0.06] px-2 py-1 text-[8px] font-semibold text-slate-400">
+                              Official site
+                            </span>
+                          </div>
+                          <p className="mt-1 truncate text-[10px] text-slate-500">{provider.description}</p>
+                        </div>
+                      </div>
+                      <div className="relative mt-4 flex items-center gap-2">
+                        <motion.button
+                          type="button"
+                          onClick={() => openSocialSignIn(provider)}
+                          aria-label={`Open ${provider.name} website`}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          className="flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.055] px-3 text-[10px] font-semibold text-slate-200 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                        >
+                          Open {provider.name}
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                        </motion.button>
+                      </div>
+                    </motion.article>
+                  ))}
+                </div>
+
+                <SectionCard className="flex items-start gap-3 p-4">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                  <p className="text-[10px] leading-5 text-slate-400">
+                    Sign-in is provided by the selected service itself. Passwords are entered on that service’s page and are not read or saved by ARLO OS. Some providers block embedded browsers; use “Open in browser” if their sign-in page does not load here.
+                  </p>
+                </SectionCard>
+              </motion.div>
+            )}
+
             {activeTab === 'ghost' && (
               <motion.div
                 key="ghost"
@@ -6707,9 +6936,9 @@ export const SettingsApp: React.FC = () => {
                     <div className="flex items-start gap-3">
                       <Mic className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
                       <div>
-                        <h3 className="text-sm font-bold text-white">Always listen for “Hey Ghost”</h3>
+                        <h3 className="text-sm font-bold text-white">Always listen for “Hey Lily” or “Hey Ghost”</h3>
                         <p className="mt-1 max-w-lg text-[11px] leading-5 text-slate-400">
-                          Ghost uses a bundled offline English speech model while ARLO OS is running, then waits for your command. Audio is processed on this device and is not sent to a speech provider. The microphone is paused while the OS is locked, sleeping, or shut down.
+                          Say “Hey Ghost” or “Hey Lily” to start. Speech recognition runs locally; the microphone is paused while the OS is locked, sleeping, or shut down.
                         </p>
                       </div>
                     </div>
@@ -6723,9 +6952,9 @@ export const SettingsApp: React.FC = () => {
                     <div className="flex items-start gap-3">
                       <Volume2 className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
                       <div>
-                        <h3 className="text-sm font-bold text-white">Speak Ghost’s replies</h3>
+                        <h3 className="text-sm font-bold text-white">Speak Lily’s replies</h3>
                         <p className="mt-1 max-w-lg text-[11px] leading-5 text-slate-400">
-                          Uses the speech voices available on this device. Replies are not sent to a voice service.
+                          Lily’s natural voice is generated online by Gemini. The reply text is sent to Google for speech generation.
                         </p>
                       </div>
                     </div>
@@ -6738,32 +6967,17 @@ export const SettingsApp: React.FC = () => {
                     <div className="flex items-start gap-3">
                       <Volume2 className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
                       <div>
-                        <h3 className="text-sm font-bold text-white">Ghost’s voice</h3>
+                        <h3 className="text-sm font-bold text-white">Lily’s voice</h3>
                         <p className="mt-1 max-w-lg text-[11px] leading-5 text-slate-400">
-                          Choose a calm voice profile. Lily is selected by default; Ghost uses the closest matching English voice installed on this device.
+                          Lily is the only voice. Replies use Gemini’s natural Kore voice when available, with a local female voice fallback if Gemini is offline or rate-limited.
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2" role="group" aria-label="Choose Ghost's voice">
-                      {([
-                        { id: 'lily', name: 'Lily', style: 'Female · calm' },
-                        { id: 'brad', name: 'Brad', style: 'Male · calm' },
-                      ] as const).map(voice => (
-                        <button
-                          key={voice.id}
-                          type="button"
-                          aria-pressed={settings.ghostVoice === voice.id}
-                          onClick={() => updateSettings({ ghostVoice: voice.id })}
-                          className={`rounded-xl border px-3.5 py-2 text-left transition-colors ${
-                            settings.ghostVoice === voice.id
-                              ? 'border-sky-200/30 bg-sky-300/10 text-sky-100'
-                              : 'border-white/[0.08] bg-white/[0.025] text-slate-400 hover:border-white/15 hover:text-slate-200'
-                          }`}
-                        >
-                          <span className="block text-[11px] font-semibold">{voice.name}</span>
-                          <span className="mt-0.5 block text-[9px] opacity-65">{voice.style}</span>
-                        </button>
-                      ))}
+                    <div className="flex items-center gap-2" role="group" aria-label="Lily's voice">
+                      <div className="rounded-xl border border-sky-200/30 bg-sky-300/10 px-3.5 py-2 text-left text-sky-100">
+                        <span className="block text-[11px] font-semibold">Lily</span>
+                        <span className="mt-0.5 block text-[9px] opacity-65">Natural · Gemini AI</span>
+                      </div>
                       <button
                         type="button"
                         onClick={previewGhostVoice}
@@ -6777,7 +6991,7 @@ export const SettingsApp: React.FC = () => {
                 </SectionCard>
 
                 <SectionCard className="border border-sky-300/10 p-4 text-[11px] leading-5 text-slate-400">
-                  “Hey Ghost” wake listening is active by default. Use the switch above to turn the microphone off at any time. Voice recognition and spoken replies are processed on this device.
+                  “Hey Ghost” and “Hey Lily” wake listening are active by default. Voice recognition runs locally; online spoken replies are generated by Gemini.
                 </SectionCard>
               </motion.div>
             )}
@@ -7065,7 +7279,7 @@ export const SettingsApp: React.FC = () => {
                       </h3>
 
                       <div className="text-sm text-slate-400 mt-1">
-                        Version 1.0.0 Pro
+                        Version 1.0.7 Pro
                       </div>
 
                       <p className="text-xs text-slate-300 mt-5 max-w-xl leading-relaxed">
@@ -7144,6 +7358,105 @@ export const SettingsApp: React.FC = () => {
           </AnimatePresence>
         </div>
       </main>
+      <AnimatePresence>
+        {selectedSocialProvider && (
+          <motion.div
+            key="social-sign-in-modal"
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-3 backdrop-blur-md sm:p-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onMouseDown={event => {
+              if (event.target === event.currentTarget) setSelectedSocialProvider(null);
+            }}
+          >
+            <motion.section
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${selectedSocialProvider.name} sign-in`}
+              className="flex h-[min(820px,94vh)] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/15 bg-[#090d16] shadow-[0_30px_120px_rgba(0,0,0,.75)]"
+              initial={{ opacity: 0, y: 20, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.985 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+            >
+              <header className="flex shrink-0 items-center gap-3 border-b border-white/10 bg-white/[0.025] px-4 py-3 sm:px-5">
+                <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-black/25">
+                  <img
+                    src={selectedSocialProvider.logo}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    aria-hidden="true"
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-sm font-bold text-white">{selectedSocialProvider.name}</h2>
+                  <p className="mt-0.5 flex items-center gap-1.5 truncate text-[10px] text-slate-400">
+                    <ShieldCheck className="h-3 w-3 shrink-0 text-emerald-300" />
+                    Official website · {(() => {
+                      try {
+                        return new URL(socialCurrentUrl).host;
+                      } catch {
+                        return 'secure website';
+                      }
+                    })()}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void openSocialWebsite(socialCurrentUrl)}
+                  className="hidden h-9 items-center gap-2 rounded-xl border border-white/10 px-3 text-[10px] font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white sm:flex"
+                >
+                  Open in browser
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Close sign-in window"
+                  onClick={() => setSelectedSocialProvider(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition hover:bg-white/10 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </header>
+              <div className="relative min-h-0 flex-1 bg-white">
+                <SocialSignInView
+                  key={selectedSocialProvider.id}
+                  src={selectedSocialProvider.url}
+                  onNavigate={url => {
+                    setSocialCurrentUrl(url);
+                    setSocialLoadError('');
+                  }}
+                  onError={setSocialLoadError}
+                />
+                {socialLoadError && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-[#090d16]/95 p-6 text-center">
+                    <div className="max-w-md">
+                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-300/10 text-amber-200">
+                        <Globe2 className="h-5 w-5" />
+                      </div>
+                      <h3 className="mt-4 text-sm font-bold text-white">This service blocked the in-app sign-in window</h3>
+                      <p className="mt-2 text-xs leading-5 text-slate-400">{socialLoadError}</p>
+                      <button
+                        type="button"
+                        onClick={() => void openSocialWebsite(socialCurrentUrl)}
+                        className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-sky-500 px-4 text-xs font-bold text-white transition hover:bg-sky-400"
+                      >
+                        Continue in system browser
+                        <ArrowUpRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <footer className="flex shrink-0 items-center gap-2 border-t border-white/10 bg-white/[0.025] px-4 py-2.5 text-[9px] text-slate-500 sm:px-5">
+                <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+                Enter sign-in details only on the provider’s page. ARLO OS does not read or store them.
+              </footer>
+            </motion.section>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

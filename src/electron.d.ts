@@ -45,6 +45,14 @@ declare global {
     updatedAt: string;
   }
 
+  interface AuthorizedSearchResult {
+    name: string;
+    path: string;
+    extension: string;
+    snippet: string;
+    score: number;
+  }
+
   interface LocalTrashEntry {
     id: string;
     name: string;
@@ -142,6 +150,7 @@ declare global {
       revokeAllDrives: () => Promise<LocalFolderGrant[]>;
       removeLocalFolder: (folderPath: string) => Promise<LocalFolderGrant[]>;
       listLocalFolder: (folderPath: string) => Promise<LocalFolderEntry[]>;
+      searchAuthorizedFiles: (terms: string[]) => Promise<AuthorizedSearchResult[]>;
       openLocalPath: (targetPath: string) => Promise<string>;
       openLocalCodeFile: (targetPath: string) => Promise<{ opened: boolean; content?: string }>;
       openLocalCodePath: (targetPath: string) => Promise<{ opened: boolean; content?: string }>;
@@ -170,6 +179,7 @@ declare global {
         pendingToolCalls?: GhostAIToolCall[];
         toolResults?: GhostAIToolResult[];
       }) => Promise<GhostAIChatResponse>;
+      ghostAISynthesizeSpeech: (text: string) => Promise<string>;
       ghostAICancelChat: (requestId: string) => Promise<boolean>;
       ghostAISetGlobalShortcut: (shortcut: 'ctrl-shift-space' | 'ctrl-alt-space' | 'ctrl-shift-g') => Promise<boolean>;
       onGhostAIToggle: (callback: () => void) => () => void;

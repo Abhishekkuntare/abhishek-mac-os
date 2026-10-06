@@ -163,7 +163,7 @@ export interface SystemSettings {
   ghostShortcut: GhostShortcut;
   ghostWakeEnabled: boolean;
   ghostVoiceResponses: boolean;
-  ghostVoice: 'brad' | 'lily';
+  ghostVoice: 'lily';
 }
 
 export interface AudioTrack {

@@ -193,7 +193,17 @@ export const FinderApp: React.FC = () => {
     if (previousPathRef.current === currentPath) return;
     previousPathRef.current = currentPath;
     const folderName = currentPath.split(/[\\/]+/).filter(Boolean).pop() || 'Computer';
-    void recordActivity({ category: 'workspace', title: 'Opened Finder location', details: folderName });
+    void recordActivity({
+      category: 'workspace',
+      title: 'Opened Finder location',
+      details: folderName,
+      context: {
+        appId: 'finder',
+        appName: 'Finder',
+        itemName: folderName,
+        itemType: 'Folder',
+      },
+    });
   }, [currentPath, recordActivity]);
 
   // Sorting
@@ -454,6 +464,20 @@ export const FinderApp: React.FC = () => {
   }, [renamingId]);
 
   // Handle open file in correct app
+  const recordOpenedFile = (file: VirtualFile) => {
+    void recordActivity({
+      category: 'file',
+      title: file.type === 'folder' ? 'Opened folder' : 'Opened file',
+      details: file.name,
+      context: {
+        appId: 'finder',
+        appName: 'Finder',
+        itemName: file.name,
+        itemType: file.type,
+      },
+    });
+  };
+
   const openInCodeStudio = (file: VirtualFile, content = file.content || '') => {
     const request = {
       name: file.name,
@@ -462,6 +486,7 @@ export const FinderApp: React.FC = () => {
     };
     try {
       localStorage.setItem('code-studio-pending-open-file', JSON.stringify(request));
+      recordOpenedFile(file);
       openApp('codestudio');
       window.dispatchEvent(new CustomEvent('code-studio:open-file', { detail: request }));
     } catch (error) {
@@ -481,7 +506,10 @@ export const FinderApp: React.FC = () => {
         return;
       }
       try {
-        await window.electronAPI?.openLocalPath(file.hostPath);
+        if (window.electronAPI?.openLocalPath) {
+          await window.electronAPI.openLocalPath(file.hostPath);
+          recordOpenedFile(file);
+        }
         addNotification({
           appId: 'finder',
           title: 'Opened with your default app',
@@ -501,9 +529,11 @@ export const FinderApp: React.FC = () => {
     try {
       const result = await window.electronAPI.openLocalCodeFile(file.hostPath);
       if (!result.opened) openInCodeStudio(file, result.content || '');
+      else recordOpenedFile(file);
     } catch (error) {
       try {
         await window.electronAPI.openLocalPath(file.hostPath);
+        recordOpenedFile(file);
         addNotification({
           appId: 'finder',
           title: 'Opened with your default app',
@@ -530,19 +560,25 @@ export const FinderApp: React.FC = () => {
         navigateTo(file.hostPath);
       } else {
         setQuickLookFile(file);
+        recordOpenedFile(file);
       }
     } else if (file.type === 'code') {
       if (file.hostPath) void openCodeFile(file);
-      else setQuickLookFile(file);
+      else {
+        setQuickLookFile(file);
+        recordOpenedFile(file);
+      }
     } else if (file.type === 'image' && file.hostPath) {
-      void openFinderImage(file).catch(error => {
-        addNotification({
-          appId: 'finder',
-          title: 'Unable to preview image',
-          message: error instanceof Error ? error.message : String(error),
-          type: 'system',
+      void openFinderImage(file)
+        .then(() => recordOpenedFile(file))
+        .catch(error => {
+          addNotification({
+            appId: 'finder',
+            title: 'Unable to preview image',
+            message: error instanceof Error ? error.message : String(error),
+            type: 'system',
+          });
         });
-      });
     } else if (file.hostPath) {
       if (!window.electronAPI?.openLocalPath) {
         addNotification({
@@ -553,24 +589,31 @@ export const FinderApp: React.FC = () => {
         });
         return;
       }
-      void window.electronAPI.openLocalPath(file.hostPath).catch(error => {
-        addNotification({
-          appId: 'finder',
-          title: 'Unable to open item',
-          message: error instanceof Error ? error.message : String(error),
-          type: 'system',
+      void window.electronAPI.openLocalPath(file.hostPath)
+        .then(() => recordOpenedFile(file))
+        .catch(error => {
+          addNotification({
+            appId: 'finder',
+            title: 'Unable to open item',
+            message: error instanceof Error ? error.message : String(error),
+            type: 'system',
+          });
         });
-      });
     } else if (file.type === 'image') {
       setQuickLookFile(file);
+      recordOpenedFile(file);
     } else if (file.type === 'document') {
       setQuickLookFile(file);
+      recordOpenedFile(file);
     } else if (file.type === 'audio') {
-      openApp('music');
+      recordOpenedFile(file);
+      openApp('music', file.name);
     } else if (file.type === 'video') {
-      openApp('tv');
+      recordOpenedFile(file);
+      openApp('tv', file.name);
     } else {
       setQuickLookFile(file);
+      recordOpenedFile(file);
     }
   };
 
@@ -1536,8 +1579,13 @@ export const FinderApp: React.FC = () => {
                 if (e.key === 'Enter' && searchQuery.trim()) {
                   void recordActivity({
                     category: 'search',
-                    title: 'Finder search',
-                    details: searchQuery.trim(),
+                    title: 'Searched in Finder',
+                    details: 'Search submitted',
+                    context: {
+                      appId: 'finder',
+                      appName: 'Finder',
+                      itemType: 'Search',
+                    },
                   });
                 }
               }}

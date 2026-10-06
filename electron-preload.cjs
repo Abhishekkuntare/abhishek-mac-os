@@ -127,6 +127,9 @@ contextBridge.exposeInMainWorld(
     listLocalFolder: (folderPath) =>
       ipcRenderer.invoke('files:listFolder', folderPath),
 
+    searchAuthorizedFiles: (terms) =>
+      ipcRenderer.invoke('files:searchAuthorizedFiles', terms),
+
     openLocalPath: (targetPath) =>
       ipcRenderer.invoke('files:openPath', targetPath),
 
@@ -186,6 +189,9 @@ contextBridge.exposeInMainWorld(
 
     ghostAIChat: (request) =>
       ipcRenderer.invoke('ghost-ai:chat', request),
+
+    ghostAISynthesizeSpeech: (text) =>
+      ipcRenderer.invoke('ghost-ai:synthesizeSpeech', text),
 
     ghostAICancelChat: (requestId) =>
       ipcRenderer.invoke('ghost-ai:cancelChat', requestId),

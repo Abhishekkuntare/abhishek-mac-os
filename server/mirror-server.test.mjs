@@ -76,6 +76,53 @@ test('signaling pairs one desktop and one phone and relays SDP offers', async ()
   mobile.close();
 });
 
+test('ARLO Share peers establish a signaling-only path for direct data channels', async () => {
+  const response = await fetch(`${origin}/api/rooms`, { method: 'POST' });
+  const { token } = await response.json();
+  const signalUrl = role => {
+    const url = new URL('/api/signal', origin);
+    url.protocol = 'ws:';
+    url.searchParams.set('room', token);
+    url.searchParams.set('role', role);
+    return url.toString();
+  };
+  const sender = new WebSocket(signalUrl('share-sender'));
+  const receiver = new WebSocket(signalUrl('share-receiver'));
+  const senderMessages = [];
+  const receiverMessages = [];
+  sender.on('message', data => senderMessages.push(JSON.parse(data.toString())));
+  receiver.on('message', data => receiverMessages.push(JSON.parse(data.toString())));
+  await Promise.all([once(sender, 'open'), once(receiver, 'open')]);
+  await new Promise(resolve => {
+    const check = () => {
+      if (senderMessages.some(message => message.type === 'peer-ready') &&
+          receiverMessages.some(message => message.type === 'peer-ready')) resolve();
+      else setTimeout(check, 5);
+    };
+    check();
+  });
+
+  sender.send(JSON.stringify({ type: 'offer', sdp: 'v=0\r\ns=-\r\n' }));
+  await new Promise(resolve => {
+    const check = () => {
+      if (receiverMessages.some(message => message.type === 'offer')) resolve();
+      else setTimeout(check, 5);
+    };
+    check();
+  });
+  receiver.send(JSON.stringify({ type: 'answer', sdp: 'v=0\r\ns=-\r\n' }));
+  await new Promise(resolve => {
+    const check = () => {
+      if (senderMessages.some(message => message.type === 'answer')) resolve();
+      else setTimeout(check, 5);
+    };
+    check();
+  });
+  assert.ok(senderMessages.some(message => message.type === 'answer'));
+  sender.close();
+  receiver.close();
+});
+
 test('signaling rejects invalid session tokens', async () => {
   const socket = new WebSocket(`${origin.replace('http:', 'ws:')}/api/signal?room=invalid&role=desktop`);
   socket.on('error', () => {});

@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
 
   Folder,
+  Music,
 
   FileText,
 
@@ -91,7 +92,7 @@ import { VirtualFile } from '../../types/desktop';
 import { APP_REGISTRY } from '../../data/defaultApps';
 import { AppFeaturesModal } from '../system/AppFeaturesModal';
 import { pushUndoAction, redo, undo } from '../../services/undoManager';
-import { AppIcon } from '../system/AppIcon';
+import { AppIcon, getAppIconAsset } from '../system/AppIcon';
 import {
   DESKTOP_ICON_SHAPE_EVENT,
   DESKTOP_ICON_SHAPE_KEY,
@@ -911,7 +912,7 @@ export const Desktop: React.FC = () => {
           type: 'app',
           appId,
           iconAssetId: appId,
-          icon: Folder,
+          icon: app.iconName === 'Music' ? Music : Folder,
           gradient: 'from-sky-500 to-indigo-500',
         };
       });
@@ -936,7 +937,7 @@ export const Desktop: React.FC = () => {
           type: 'app',
           appId: copy.appId,
           iconAssetId: copy.appId,
-          icon: Folder,
+          icon: app.iconName === 'Music' ? Music : Folder,
           gradient: 'from-sky-500 to-indigo-500',
         };
       }),
@@ -2610,9 +2611,8 @@ export const Desktop: React.FC = () => {
   return (
 
     <div
-
       ref={desktopContainerRef}
-
+      data-os-desktop-surface
       className="relative w-full h-full overflow-hidden select-none"
 
       onContextMenu={e => handleContextMenu(e, null)}
@@ -2767,14 +2767,16 @@ export const Desktop: React.FC = () => {
 
       {/* Movable Desktop Widgets (weather, now-playing, system stats on right side) */}
 
-      <DesktopWidgets />
+      <div data-desktop-widgets className="contents">
+        <DesktopWidgets />
+      </div>
 
 
 
       {/* Draggable Desktop Icons Canvas */}
 
       {showDesktopIcons && (
-      <div className="absolute inset-0 pointer-events-none z-10">
+      <div data-desktop-icons className="absolute inset-0 pointer-events-none z-10">
 
         {allDesktopItems.map((item, idx) => {
 
@@ -2783,6 +2785,10 @@ export const Desktop: React.FC = () => {
           const isSelected = selectedIconIds.includes(item.id);
 
           const isDraggingThis = draggingItemId === item.id;
+          const iconArtwork = item.isSystem ? getAppIconAsset(item.iconAssetId) : undefined;
+          const iconBackground = item.isSystem && item.type === 'app'
+            ? APP_REGISTRY[item.appId]?.iconBg
+            : undefined;
 
 
 
@@ -2817,11 +2823,17 @@ export const Desktop: React.FC = () => {
               }}
 
               onClick={e => {
-
                 e.stopPropagation();
-
                 if (dragTrackerRef.current?.hasMoved) return;
-
+                if (window.matchMedia('(max-width: 1023px), (hover: none) and (pointer: coarse)').matches) {
+                  handleOpenItem(
+                    item.id,
+                    item.type,
+                    'file' in item ? item.file : undefined,
+                    item.isSystem ? item.appId : undefined,
+                  );
+                  return;
+                }
                 if (e.metaKey || e.ctrlKey) {
 
                   setSelectedIconIds(prev =>
@@ -2894,8 +2906,12 @@ export const Desktop: React.FC = () => {
                 <div
 
                   data-desktop-icon-shape={desktopIconShape}
-                  className={`${desktopIconSize === 'large' ? 'w-16 h-16' : desktopIconSize === 'small' ? 'w-11 h-11' : 'w-14 h-14'} ${item.iconAssetId ? '' : `bg-gradient-to-tr ${item.gradient} shadow-lg text-white`} flex items-center justify-center overflow-hidden group-hover:scale-105 transition-transform pointer-events-none`}
-                  style={getDesktopIconShapeStyle(desktopIconShape)}
+                  className={`${desktopIconSize === 'large' ? 'w-16 h-16' : desktopIconSize === 'small' ? 'w-11 h-11' : 'w-14 h-14'} ${iconArtwork || iconBackground ? '' : `bg-gradient-to-tr ${item.gradient} shadow-lg text-white`} flex items-center justify-center overflow-hidden group-hover:scale-105 transition-transform pointer-events-none`}
+                  style={{
+                    ...getDesktopIconShapeStyle(desktopIconShape),
+                    ...(iconBackground ? { background: iconBackground } : {}),
+                    ...(iconArtwork ? { background: 'transparent' } : {}),
+                  }}
 
                 >
 
@@ -2903,7 +2919,7 @@ export const Desktop: React.FC = () => {
                     assetId={item.iconAssetId}
                     className="h-full w-full object-contain"
                     style={getDesktopIconShapeStyle(desktopIconShape)}
-                    fallback={React.createElement(item.icon, { className: desktopIconSize === 'large' ? 'w-8 h-8' : desktopIconSize === 'small' ? 'w-5 h-5' : 'w-7 h-7' })}
+                    fallback={React.createElement(item.icon, { className: `${desktopIconSize === 'large' ? 'w-8 h-8' : desktopIconSize === 'small' ? 'w-5 h-5' : 'w-7 h-7'} drop-shadow-sm` })}
                   />
 
                 </div>

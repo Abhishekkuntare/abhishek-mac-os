@@ -25,6 +25,8 @@ const ScreenshotApp = lazy(() => import('../apps/ScreenshotApp').then(module => 
 const MobileLinkApp = lazy(() => import('../apps/MobileLinkApp').then(module => ({ default: module.MobileLinkApp })));
 const CameraApp = lazy(() => import('../apps/CameraApp').then(module => ({ default: module.CameraApp })));
 const GameCenterApp = lazy(() => import('../apps/GameCenterApp').then(module => ({ default: module.GameCenterApp })));
+const DoomScrollApp = lazy(() => import('../apps/DoomScrollApp').then(module => ({ default: module.DoomScrollApp })));
+const UniversalShareApp = lazy(() => import('../apps/UniversalShareApp').then(module => ({ default: module.UniversalShareApp })));
 
 const AppLoading: React.FC = () => (
   <div className="flex h-full min-h-40 flex-1 items-center justify-center bg-slate-950/40 text-sm text-slate-400">
@@ -102,6 +104,10 @@ export const WindowManager: React.FC = () => {
         return <AppStoreApp />;
       case 'gamecenter':
         return <GameCenterApp />;
+      case 'doomscroll':
+        return <DoomScrollApp />;
+      case 'universalshare':
+        return <UniversalShareApp />;
       case 'screenshot':
         return <ScreenshotApp />;
       default:

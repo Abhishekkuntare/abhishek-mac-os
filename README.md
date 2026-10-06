@@ -6,6 +6,8 @@ ARLO OS is an open-source desktop environment designed to provide a modern, cust
 
 The project combines a familiar desktop workflow with a responsive interface, built-in applications, productivity tools, system utilities and a strong focus on visual design and user experience.
 
+Doom Scroll brings Instagram, Snapchat, WhatsApp, X, Threads, LinkedIn, Discord, Telegram, Spotify and Pinterest together in one app. Each service opens its official website; sign-in details are entered with that provider and are not collected by ARLO OS.
+
 ---
 
 ## ✨ Features
@@ -15,6 +17,7 @@ The project combines a familiar desktop workflow with a responsive interface, bu
 * 🪟 Desktop windows and application management
 * 📁 File and folder workflows
 * 🌐 Built-in browser experience
+* 🌌 Doom Scroll social hub for opening official social and music websites
 * 💻 Developer-focused tools
 * 📝 Productivity applications
 * 📅 Calendar and reminders
@@ -24,7 +27,7 @@ The project combines a familiar desktop workflow with a responsive interface, bu
 * ⚙️ System settings
 * 🔔 Notifications and system interactions
 * 📊 Activity tracking and recent user actions with your own bot arlo custmizable
-* 👻 Ghost AI — OS-level AI assistant for natural-language desktop automation with Lily and Brad Agent
+* 👻 Ghost AI — OS-level AI assistant for natural-language desktop automation with Lily
 * 📱 Responsive layouts
 * ✨ Animated and glass-inspired interface
 * 🔄 Automatic application updates
@@ -65,12 +68,38 @@ Ghost AI settings; it is not used to call Gemini from the React renderer. Chat
 requests continue through the `ghost-ai:chat` IPC handler and return structured,
 bounded errors.
 
+Lily's spoken replies use Gemini 3.8 Flash TTS with the Kore voice through a
+main-process-only IPC handler. Reply text is sent to Google for audio generation;
+if online speech generation fails, the app reports the issue and falls back to
+the installed local speech voice. Say “Hey Lily” or “Hey Ghost” to activate the
+assistant. The API key can be loaded from the project `.env` or saved encrypted
+in Ghost AI settings.
+
 Gemini can request explicitly registered Ghost tools for opening/closing installed
 apps, creating named desktop files/folders, showing the desktop, reading local
 time and battery status, and toggling Focus Mode. Tool execution is checked
 against the registry and the OS APIs; high- and critical-risk actions remain
 disabled until a confirmation workflow exists. General AI chat requires a valid
 Gemini API key and an internet connection.
+
+### Meaning-based search
+
+Spotlight searches ARLO-imported text and code by content using on-device
+concept expansion, and can search text/code files under Finder folders the user
+has authorized. It also searches locally stored recent browser URLs by domain.
+Authorized-folder indexing is bounded to 1,200 files per query, 512 KB per file,
+and 32 MB read per query. PDF/PowerPoint extraction and screenshot OCR are not
+currently supported. Search content stays on the device.
+
+### ARLO Share
+
+Universal Share pairs devices with a one-time QR link, then sends chosen files,
+text, URLs, clipboard text, and an optional workspace metadata JSON file over a
+direct encrypted WebRTC data channel. The pairing service relays connection
+setup only; it does not receive transfer contents. The workspace metadata
+includes open window layout, desktop names, and recent browser URLs, but excludes
+Ghost conversations and does not automatically reopen apps on the receiving
+device. Transfers are limited to 25 MB per session.
 
 The optional Windows wake listener uses a bundled multilingual Whisper base model
 for local English, Hindi, and Marathi speech recognition. Microphone audio stays

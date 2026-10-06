@@ -1760,7 +1760,7 @@ export const Dock: React.FC = () => {
           : bounds.left + bounds.width / 2;
         const distance = Math.abs(pointerAxis - center);
         const scale = settings.dockMagnification && !settings.lowPowerMode && draggedAppId === null
-          ? 1 + 0.48 * Math.exp(-(distance * distance) / (2 * radius * radius))
+          ? 1 + 0.18 * Math.exp(-(distance * distance) / (2 * radius * radius))
           : 1;
 
         icon.style.scale = scale.toFixed(3);
@@ -2232,6 +2232,7 @@ export const Dock: React.FC = () => {
       ======================================================= */}
 
       <div
+        data-os-dock-container
         className={`fixed flex justify-center z-40 pointer-events-none select-none ${
           settings.dockPosition === 'top'
             ? dockSharesMenuBarEdge

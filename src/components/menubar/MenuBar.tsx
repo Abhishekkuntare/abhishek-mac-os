@@ -247,6 +247,7 @@ export const MenuBar: React.FC = () => {
   return (
     <div
       ref={menuBarRef}
+      data-menu-bar
       data-menu-bar-orientation={verticalMenuBar ? 'vertical' : 'horizontal'}
       className={`fixed ${menuBarPositionClass} px-3 flex items-center justify-between z-[10000] electron-drag-region text-xs font-medium select-none transition-colors duration-200 ${
         isLight
@@ -1209,7 +1210,7 @@ export const MenuBar: React.FC = () => {
             <img
               src={user.avatarUrl}
               alt={user.fullName}
-              className="w-full h-full object-cover"
+              className={`w-full h-full object-cover ${user.avatarType === 'preset' ? 'object-[center_25%]' : 'object-center'}`}
             />
           ) : (
             <span>{user.fullName.charAt(0)}</span>

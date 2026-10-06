@@ -1,7 +1,7 @@
 export const MOBILE_MIRROR_ORIGIN_KEY = 'abhishek_os_mobile_mirror_origin_v1';
 export const MOBILE_MIRROR_DEFAULT_ORIGIN = import.meta.env.VITE_MOBILE_MIRROR_ORIGIN?.trim() || '';
 
-export type MobileMirrorRole = 'desktop' | 'mobile';
+export type MobileMirrorRole = 'desktop' | 'mobile' | 'share-sender' | 'share-receiver';
 export type MobileMirrorSignal =
   | { type: 'peer-ready'; role: MobileMirrorRole }
   | { type: 'peer-left'; role: MobileMirrorRole }

@@ -38,7 +38,7 @@ On Windows, the application may query the current Wi-Fi network name and Bluetoo
 
 This information is stored on the user's device unless a particular feature explicitly requires communication with an external service.
 
-The optional “Hey Ghost” wake listener uses a bundled multilingual Whisper speech model to process microphone audio locally while the feature is enabled. Audio is not sent to a speech-recognition provider or saved by the wake listener. The listener is paused while ARLO OS is locked or sleeping and can be turned off in Settings. General AI chat may send recognized text to Gemini when that integration is configured and used.
+The optional “Hey Lily” / “Hey Ghost” wake listener uses a bundled multilingual Whisper speech model to process microphone audio locally while the feature is enabled. Audio is not sent to a speech-recognition provider or saved by the wake listener. The listener is paused while ARLO OS is locked or sleeping and can be turned off in Settings. General AI chat may send recognized text to Gemini when that integration is configured and used. When spoken replies are enabled, Lily's reply text is sent to Gemini's TTS service to generate audio.
 
 ---
 

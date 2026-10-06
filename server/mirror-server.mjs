@@ -18,6 +18,12 @@ const closeSocket = (socket, code, message) => {
   if (socket?.readyState === WebSocket.OPEN) socket.close(code, message);
 };
 
+const closeRoomSockets = (room, code, message) => {
+  for (const role of ['desktop', 'mobile', 'share-sender', 'share-receiver']) {
+    closeSocket(room[role], code, message);
+  }
+};
+
 export const createMirrorServer = ({ port = Number(process.env.PORT) || 4173, publicOrigin = process.env.PUBLIC_ORIGIN || process.env.RENDER_EXTERNAL_URL } = {}) => {
   const app = express();
   const server = createServer(app);
@@ -79,8 +85,7 @@ export const createMirrorServer = ({ port = Number(process.env.PORT) || 4173, pu
     for (const [token, room] of rooms) {
       if (room.expiresAt <= now) {
         clearTimeout(room.expiryTimer);
-        room.desktop?.close(4001, 'Pairing expired');
-        room.mobile?.close(4001, 'Pairing expired');
+        closeRoomSockets(room, 4001, 'Pairing expired');
         rooms.delete(token);
       }
     }
@@ -107,11 +112,17 @@ export const createMirrorServer = ({ port = Number(process.env.PORT) || 4173, pu
       return;
     }
 
-    const room = { expiresAt: now + ROOM_TTL_MS, desktop: null, mobile: null, expiryTimer: null };
+    const room = {
+      expiresAt: now + ROOM_TTL_MS,
+      desktop: null,
+      mobile: null,
+      'share-sender': null,
+      'share-receiver': null,
+      expiryTimer: null,
+    };
     room.expiryTimer = setTimeout(() => {
       if (rooms.get(token) !== room) return;
-      room.desktop?.close(4001, 'Pairing expired');
-      room.mobile?.close(4001, 'Pairing expired');
+      closeRoomSockets(room, 4001, 'Pairing expired');
       rooms.delete(token);
     }, ROOM_TTL_MS);
     room.expiryTimer.unref();
@@ -143,7 +154,8 @@ export const createMirrorServer = ({ port = Number(process.env.PORT) || 4173, pu
       'http://localhost:3000',
       'http://127.0.0.1:3000',
     ]);
-    if (!room || room.expiresAt <= Date.now() || !['desktop', 'mobile'].includes(role)) {
+    if (!room || room.expiresAt <= Date.now() ||
+      !['desktop', 'mobile', 'share-sender', 'share-receiver'].includes(role)) {
       socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
       socket.destroy();
       return;
@@ -161,7 +173,13 @@ export const createMirrorServer = ({ port = Number(process.env.PORT) || 4173, pu
       }
 
       room[role] = webSocket;
-      const otherRole = role === 'desktop' ? 'mobile' : 'desktop';
+      const otherRole = role === 'desktop'
+        ? 'mobile'
+        : role === 'mobile'
+          ? 'desktop'
+          : role === 'share-sender'
+            ? 'share-receiver'
+            : 'share-sender';
       if (room[otherRole]) {
         send(room[otherRole], { type: 'peer-ready', role });
         send(webSocket, { type: 'peer-ready', role: otherRole });
@@ -176,8 +194,10 @@ export const createMirrorServer = ({ port = Number(process.env.PORT) || 4173, pu
           return;
         }
 
-        const validOffer = role === 'desktop' && message?.type === 'offer' && typeof message.sdp === 'string';
-        const validAnswer = role === 'mobile' && message?.type === 'answer' && typeof message.sdp === 'string';
+        const validOffer = ['desktop', 'share-sender'].includes(role) &&
+          message?.type === 'offer' && typeof message.sdp === 'string';
+        const validAnswer = ['mobile', 'share-receiver'].includes(role) &&
+          message?.type === 'answer' && typeof message.sdp === 'string';
         const validCandidate = message?.type === 'candidate' &&
           (message.candidate === null || (
             typeof message.candidate === 'object' &&
@@ -226,8 +246,7 @@ export const createMirrorServer = ({ port = Number(process.env.PORT) || 4173, pu
     close: () => new Promise((resolve, reject) => {
       for (const room of rooms.values()) {
         clearTimeout(room.expiryTimer);
-        room.desktop?.close(1001, 'Pairing service shutting down');
-        room.mobile?.close(1001, 'Pairing service shutting down');
+        closeRoomSockets(room, 1001, 'Pairing service shutting down');
       }
       webSocketServer.close();
       server.close(error => error ? reject(error) : resolve());

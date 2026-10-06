@@ -49,11 +49,13 @@ Install the Python build dependencies before the first Electron launch with
 
 The microphone must be available to desktop apps in Windows privacy settings.
 Recognition is offline and includes English, Hindi, and Marathi transcription.
-The selected Brad or Lily name and Ghost wake phrase are supported. Common actions
+Say “Hey Lily” or “Hey Ghost” to activate the Lily assistant. Common actions
 include opening/closing apps, creating/renaming desktop items, reading local time
 and battery state, showing the desktop, and toggling Focus Mode. Gemini must be
 configured for open-ended answers and additional natural-language tool planning.
-Ghost does not have unrestricted control of the PC; high-risk tools remain disabled.
+When spoken replies are enabled, Lily uses Gemini's online TTS service, so the
+reply text is sent to Google and requires internet access. Ghost does not have
+unrestricted control of the PC; high-risk tools remain disabled.
 
 ## Important
 

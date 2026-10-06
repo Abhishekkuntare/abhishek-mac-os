@@ -70,6 +70,54 @@ export const GHOST_TOOL_DECLARATIONS = [
   },
 ];
 
+const GHOST_TOOL_NAMES = new Set(GHOST_TOOL_DECLARATIONS.map(tool => tool.name));
+
+export const isValidGhostToolResults = (pendingToolCalls, toolResults) => {
+  if (
+    !Array.isArray(pendingToolCalls) ||
+    pendingToolCalls.length < 1 ||
+    pendingToolCalls.length > 5 ||
+    !Array.isArray(toolResults) ||
+    toolResults.length !== pendingToolCalls.length
+  ) {
+    return false;
+  }
+
+  return pendingToolCalls.every((call, index) => {
+    const result = toolResults[index];
+    const declaration = call && GHOST_TOOL_DECLARATIONS.find(tool => tool.name === call.name);
+    const properties = declaration?.parametersJsonSchema.properties ?? {};
+    const required = declaration?.parametersJsonSchema.required ?? [];
+    const validArgs = call?.args &&
+      typeof call.args === 'object' &&
+      !Array.isArray(call.args) &&
+      Object.keys(call.args).every(key => Object.hasOwn(properties, key)) &&
+      required.every(key => Object.hasOwn(call.args, key)) &&
+      Object.entries(call.args).every(([key, value]) => {
+        const type = properties[key]?.type;
+        return type === 'string'
+          ? typeof value === 'string'
+          : type === 'boolean'
+            ? typeof value === 'boolean'
+            : false;
+      });
+    return Boolean(
+      call &&
+      typeof call.id === 'string' &&
+      /^[\w-]{1,120}$/.test(call.id) &&
+      typeof call.name === 'string' &&
+      GHOST_TOOL_NAMES.has(call.name) &&
+      validArgs &&
+      result &&
+      result.id === call.id &&
+      result.name === call.name &&
+      typeof result.success === 'boolean' &&
+      typeof result.result === 'string' &&
+      result.result.length <= 2_000,
+    );
+  });
+};
+
 const isRetryableGeminiError = error => {
   const status = Number(error?.status ?? error?.code);
   if ([408, 429, 500, 502, 503, 504].includes(status)) return true;

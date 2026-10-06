@@ -44,7 +44,7 @@ export const AboutModal: React.FC = () => {
 
           <div>
             <h2 className="text-xl font-extrabold tracking-tight">ARLO OS</h2>
-            <p className="text-xs text-slate-300 font-medium">Version 1.0.0 Pro (Build 26A382)</p>
+            <p className="text-xs text-slate-300 font-medium">Version 1.0.7 Pro (Build 26A382)</p>
             <div className="flex items-center gap-1.5 mt-1 text-[11px] text-sky-400 font-medium">
               <Sparkles className="w-3 h-3" />
               <span>Crafted by Abhishek Kuntare</span>

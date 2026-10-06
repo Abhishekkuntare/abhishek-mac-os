@@ -357,8 +357,21 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   ) => {
     if (!activityTrackingEnabled) return;
 
+    const safeEvent = event.category === 'search'
+      ? {
+          ...event,
+          details: 'Search submitted',
+          context: event.context
+            ? {
+                appId: event.context.appId,
+                appName: event.context.appName,
+                itemType: 'Search',
+              }
+            : undefined,
+        }
+      : event;
     const entry: ActivityEntry = {
-      ...event,
+      ...safeEvent,
       id: typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `activity-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -430,31 +443,49 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
             category: 'file',
             title: kind,
             details: `${file.name} · ${file.path}`,
+            context: { itemName: file.name, itemType: file.type },
           });
           continue;
         }
         if (!before.isDeleted && file.isDeleted) {
-          void recordActivity({ category: 'file', title: 'Moved to Trash', details: file.name });
+          void recordActivity({
+            category: 'file',
+            title: 'Moved to Trash',
+            details: file.name,
+            context: { itemName: file.name, itemType: file.type },
+          });
         } else if (before.isDeleted && !file.isDeleted) {
-          void recordActivity({ category: 'file', title: 'Restored from Trash', details: file.name });
+          void recordActivity({
+            category: 'file',
+            title: 'Restored from Trash',
+            details: file.name,
+            context: { itemName: file.name, itemType: file.type },
+          });
         } else if (before.name !== file.name) {
           void recordActivity({
             category: 'file',
             title: 'Renamed item',
             details: `${before.name} → ${file.name}`,
+            context: { itemName: file.name, itemType: file.type },
           });
         } else if (before.path !== file.path) {
           void recordActivity({
             category: 'file',
             title: 'Moved item',
             details: `${file.name} · ${before.path} → ${file.path}`,
+            context: { itemName: file.name, itemType: file.type },
           });
         } else if (before.content !== file.content || before.size !== file.size) {
           const existingTimer = fileActivityTimersRef.current.get(file.id);
           if (existingTimer !== undefined) window.clearTimeout(existingTimer);
           const timer = window.setTimeout(() => {
             fileActivityTimersRef.current.delete(file.id);
-            void recordActivity({ category: 'file', title: 'Edited file', details: file.name });
+            void recordActivity({
+              category: 'file',
+              title: 'Edited file',
+              details: file.name,
+              context: { itemName: file.name, itemType: file.type },
+            });
           }, 1200);
           fileActivityTimersRef.current.set(file.id, timer);
         }
@@ -462,7 +493,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       previous.forEach(file => {
         if (!current.has(file.id)) {
-          void recordActivity({ category: 'file', title: 'Permanently deleted item', details: file.name });
+          void recordActivity({
+            category: 'file',
+            title: 'Permanently deleted item',
+            details: file.name,
+            context: { itemName: file.name, itemType: file.type },
+          });
         }
       });
       previous = current;
@@ -487,6 +523,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         ? {
             ...DEFAULT_SETTINGS,
             ...JSON.parse(stored),
+            ghostVoice: 'lily',
             ghostWakeEnabled: localStorage.getItem(STORAGE_KEYS.GHOST_WAKE_ENABLED) !== 'false',
             desktopWidgets: {
               ...DEFAULT_SETTINGS.desktopWidgets,
@@ -640,10 +677,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const stored = localStorage.getItem(STORAGE_KEYS.DOCK_APPS);
       return stored
         ? [...new Set(
-            (JSON.parse(stored) as string[]).map(appId =>
-              appId === 'mail' ? 'nextpad' : appId === 'messages' ? 'ghostai' : appId,
-            ),
-          )].filter(appId => Boolean(APP_REGISTRY[appId]))
+            [
+              ...(JSON.parse(stored) as string[]).map(appId =>
+                appId === 'mail' ? 'nextpad' : appId === 'messages' ? 'ghostai' : appId,
+              ),
+              'clock',
+              'doomscroll',
+            ],
+          )].filter(appId => appId !== 'mobile' && Boolean(APP_REGISTRY[appId]))
         : Object.values(APP_REGISTRY)
           .filter(a => a.inDock)
           .map(a => a.id);
@@ -913,7 +954,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const existing = windows.find(w => w.appId === appId);
       if (existing) {
         if (existing.isMinimized) {
-          void recordActivity({ category: 'app', title: 'Reopened app', details: app.name });
+          void recordActivity({
+            category: 'app',
+            title: 'Reopened app',
+            details: app.name,
+            context: {
+              appId,
+              appName: app.name,
+              windowTitle: existing.title,
+              desktop: spaces.find(space => space.id === existing.desktopSpaceId)?.name || 'Desktop',
+            },
+          });
         }
         if (existing.desktopSpaceId !== activeSpaceId) {
           setActiveSpaceId(existing.desktopSpaceId);
@@ -930,7 +981,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       // Trigger dock bounce effect
       triggerAppBounce(appId);
       sound.playWindowOpen();
-      void recordActivity({ category: 'app', title: 'Opened app', details: app.name });
+      void recordActivity({
+        category: 'app',
+        title: 'Opened app',
+        details: app.name,
+        context: {
+          appId,
+          appName: app.name,
+          windowTitle: initialTitle || app.name,
+          desktop: spaces.find(space => space.id === activeSpaceId)?.name || 'Desktop',
+        },
+      });
 
       // Screen dimension heuristics for nice cascade
       const screenW = typeof window !== 'undefined' ? window.innerWidth : 1440;
@@ -965,19 +1026,30 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       setWindows(prev => [...prev.map(w => ({ ...w, isFocused: false })), newWin]);
     },
-    [windows, maxZIndex, activeSpaceId, focusWindow, setActiveSpaceId, triggerAppBounce, recordActivity]
+    [windows, maxZIndex, activeSpaceId, spaces, focusWindow, setActiveSpaceId, triggerAppBounce, recordActivity]
   );
 
   const closeWindow = useCallback((id: string) => {
     const closingWindow = windows.find(window => window.id === id);
     if (closingWindow) {
-      const appName = APP_REGISTRY[closingWindow.appId]?.name || closingWindow.title;
-      void recordActivity({ category: 'app', title: 'Closed app', details: appName });
+      const app = APP_REGISTRY[closingWindow.appId];
+      const appName = app?.name || closingWindow.title;
+      void recordActivity({
+        category: 'app',
+        title: 'Closed app',
+        details: appName,
+        context: {
+          appId: closingWindow.appId,
+          appName,
+          windowTitle: closingWindow.title,
+          desktop: spaces.find(space => space.id === closingWindow.desktopSpaceId)?.name || 'Desktop',
+        },
+      });
     }
     sound.playWindowClose();
     removeWindowPreview(id);
     setWindows(prev => prev.filter(w => w.id !== id));
-  }, [recordActivity, windows]);
+  }, [recordActivity, spaces, windows]);
 
   const minimizeWindow = useCallback(async (id: string) => {
     const appWindow = windows.find(win => win.id === id && !win.isMinimized);

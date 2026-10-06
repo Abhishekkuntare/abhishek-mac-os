@@ -98,6 +98,7 @@ function OSWorkspace() {
    */
   return (
     <div
+      data-os-root
       data-ui-density={settings.uiStyle}
       data-low-power={settings.lowPowerMode}
       className="relative h-screen w-screen overflow-hidden bg-black font-sans text-slate-100 select-none"
@@ -136,7 +137,7 @@ function OSWorkspace() {
 
         <QuickLookModal />
 
-        <GhostAssistantOverlay />
+        {hasCompletedSetup && <GhostAssistantOverlay />}
 
         {/* First-time Onboarding Setup Wizard */}
         {!hasCompletedSetup && <OnboardingModal />}

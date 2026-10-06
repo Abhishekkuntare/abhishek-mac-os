@@ -1,20 +1,16 @@
-import type { GhostVoice } from './ghostVoice';
-
 export interface GhostWakeMatch {
   command: string;
 }
 
-const VOICE_NAMES: Record<GhostVoice, string[]> = {
-  brad: ['brad', 'ब्रैड', 'ब्रैड'],
-  lily: ['lily', 'लिली', 'लीली'],
-};
+export const isMeaningfulGhostTranscript = (transcript: string) =>
+  /[\p{L}\p{N}]/u.test(transcript);
+
+const ASSISTANT_NAMES = ['lily', 'lilli', 'ghost', 'gost', 'goast', 'लिली', 'लीली', 'घोस्ट', 'गोस्ट'];
 
 export const matchGhostWakePhrase = (
   transcript: string,
-  voice: GhostVoice,
 ): GhostWakeMatch | null => {
-  const names = ['ghost', 'gost', 'goast', 'घोस्ट', 'गोस्ट', ...VOICE_NAMES[voice]];
-  const name = names
+  const name = ASSISTANT_NAMES
     .map(value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|');
   const greetings = [

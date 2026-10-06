@@ -16,6 +16,7 @@
   "files": [
     "dist/**/*",
     "electron-main.mjs",
+    "ghost-api-key.mjs",
     "ghost-agent-service.mjs",
     "electron-preload.cjs",
     "code-runner.mjs",

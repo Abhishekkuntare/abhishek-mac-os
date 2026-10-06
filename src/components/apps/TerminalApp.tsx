@@ -220,7 +220,7 @@ export const TerminalApp: React.FC = () => {
     ),
     createLine(
       'output',
-      'ARLO OS [Version 1.0.0 Pro (x86_64-apple-darwin26)]'
+      'ARLO OS [Version 1.0.7 Pro (x86_64-apple-darwin26)]'
     ),
     createLine(
       'output',

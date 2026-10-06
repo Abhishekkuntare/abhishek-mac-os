@@ -81,7 +81,7 @@ const localized = (language: GhostCommandLanguage, en: string, hi: string, mr: s
   language === 'hi' ? hi : language === 'mr' ? mr : en;
 
 const cleanAddressing = (command: string) =>
-  command.replace(/^(?:(?:hey|hi|hello|okay|ok)\s+)?(?:ghost|ghost ai|lily|brad|घोस्ट|लिली|ब्रैड)\s*[,،:]?\s*/i, '').trim();
+  command.replace(/^(?:(?:hey|hi|hello|okay|ok)\s+)?(?:ghost|ghost ai|lily|घोस्ट|लिली)\s*[,،:]?\s*/i, '').trim();
 
 const appIdFor = (value: string) => {
   const target = normalize(value)
@@ -181,7 +181,7 @@ export const executeGhostCommand = async (
     return { reply: host.createDesktopItem(pendingCreate, name) };
   }
 
-  if (/^(?:hello|hi|hey)(?: ghost| ghost ai| lily| brad)?$/i.test(command)) {
+  if (/^(?:hello|hi|hey)(?: ghost| ghost ai| lily)?$/i.test(command)) {
     return {
       reply: localized(
         language,
@@ -247,7 +247,8 @@ export const executeGhostCommand = async (
     return { reply: result ?? `I couldn't find "${deleteMatch[1]}" on the desktop.` };
   }
 
-  const closeMatch = command.match(/^(?:(?:please|can you)\s+)?(?:close|quit|exit|बंद करो|बंद करें|बंद करा|बंद कर|band kara)\s+(?:the |my )?(.+)$/i);
+  const politePrefix = String.raw`(?:(?:please|can you|could you|would you|will you)\s+)*`;
+  const closeMatch = command.match(new RegExp(`^${politePrefix}(?:close|quit|exit|बंद करो|बंद करें|बंद करा|बंद कर|band kara)\\s+(?:the |my )?(.+)$`, 'i'));
   if (closeMatch) {
     const target = normalize(closeMatch[1]);
     const appId = ['it', 'this', 'app', 'window', 'current app', 'this window'].includes(target)
@@ -266,7 +267,7 @@ export const executeGhostCommand = async (
     };
   }
 
-  const openMatch = command.match(/^(?:(?:please|can you|could you|hey ghost|ghost)\s+)?(?:open|launch|start|show|play|खोलो|खोलिए|खोल|उघड|उघडा|दिखाओ|दाखव|दाखवा|चालू करो|चालू करा|chalu kara)\s+(?:the |my )?(.+)$/i)
+  const openMatch = command.match(new RegExp(`^${politePrefix}(?:open|launch|start|show|play|खोलो|खोलिए|खोल|उघड|उघडा|दिखाओ|दाखव|दाखवा|चालू करो|चालू करा|chalu kara)\\s+(?:the |my )?(.+)$`, 'i'))
     ?? command.match(/^(.+?)\s+(?:खोलो|खोलिए|खोल|उघड|उघडा|दिखाओ|दाखव|दाखवा|चालू करो|चालू करा|please open|open it)$/i);
   if (!openMatch) return null;
 

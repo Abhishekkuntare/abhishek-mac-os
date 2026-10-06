@@ -274,6 +274,8 @@ import {
 import { useOS } from '../../context/OSContext';
 import { APP_REGISTRY } from '../../data/defaultApps';
 import { vfs } from '../../services/virtualFileSystem';
+import { getSemanticSearchTerms, searchFilesByMeaning } from '../../services/semanticSearch';
+import type { VirtualFile } from '../../types/desktop';
 import { sound } from '../../services/soundService';
 
 interface BatteryManagerLike {
@@ -308,6 +310,8 @@ export const Spotlight: React.FC = () => {
 
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [authorizedFileResults, setAuthorizedFileResults] = useState<AuthorizedSearchResult[]>([]);
+  const [authorizedSearchError, setAuthorizedSearchError] = useState('');
 
   /*
    * ---------------------------------------------------------
@@ -568,8 +572,6 @@ export const Spotlight: React.FC = () => {
     }
   }, [showSpotlight]);
 
-  if (!showSpotlight) return null;
-
   /*
    * ---------------------------------------------------------
    * BUILD FILTERED ITEMS
@@ -577,6 +579,36 @@ export const Spotlight: React.FC = () => {
    */
 
   const q = query.toLowerCase().trim();
+
+  useEffect(() => {
+    if (!showSpotlight || q.length < 3 || !window.electronAPI?.searchAuthorizedFiles) {
+      setAuthorizedFileResults([]);
+      setAuthorizedSearchError('');
+      return;
+    }
+    let active = true;
+    const searchAuthorizedFiles = window.electronAPI.searchAuthorizedFiles;
+    const timeout = window.setTimeout(() => {
+      void searchAuthorizedFiles(getSemanticSearchTerms(q))
+        .then(results => {
+          if (!active) return;
+          setAuthorizedFileResults(results);
+          setAuthorizedSearchError('');
+        })
+        .catch(error => {
+          if (!active) return;
+          console.error('[Spotlight] Could not search authorized files:', error);
+          setAuthorizedFileResults([]);
+          setAuthorizedSearchError('Authorized files could not be searched. Check Finder folder permissions.');
+        });
+    }, 350);
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+    };
+  }, [q, showSpotlight]);
+
+  if (!showSpotlight) return null;
 
   /*
    * ---------------------------------------------------------
@@ -625,8 +657,51 @@ export const Spotlight: React.FC = () => {
    * ---------------------------------------------------------
    */
 
+  const browserHistoryFiles = q
+    ? (() => {
+        try {
+          const stored: unknown = JSON.parse(localStorage.getItem('abhishek-browser-history') || '[]');
+          if (!Array.isArray(stored)) return [];
+          return stored.flatMap((url, index) => {
+            if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return [];
+            let host: string;
+            try {
+              host = new URL(url).hostname.replace(/^www\./, '');
+            } catch {
+              return [];
+            }
+            return [{
+              id: `browser-history-${index}-${host}`,
+              name: host,
+              path: 'Browser history',
+              size: url.length,
+              type: 'document' as const,
+              content: url,
+              createdAt: new Date(0).toISOString(),
+              updatedAt: new Date(0).toISOString(),
+            }];
+          });
+        } catch (error) {
+          console.warn('Could not search local browser history.', error);
+          return [];
+        }
+      })()
+    : [];
+
+  const authorizedVirtualFiles: VirtualFile[] = authorizedFileResults.map((result, index) => ({
+    id: `authorized-${index}-${result.path}`,
+    name: result.name,
+    hostPath: result.path,
+    path: 'Authorized Finder location',
+    size: 0,
+    type: 'document',
+    extension: result.extension,
+    content: result.snippet,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+  }));
   const matchedFiles = q
-    ? vfs.search(q).slice(0, 4)
+    ? searchFilesByMeaning(q, [...vfs.getAllActiveFiles(), ...browserHistoryFiles, ...authorizedVirtualFiles], 10)
     : [];
 
   /*
@@ -775,13 +850,32 @@ export const Spotlight: React.FC = () => {
   /*
    * Files
    */
-  matchedFiles.forEach((file) => {
+  matchedFiles.forEach(({ file, snippet, matchedConcepts }) => {
+    const isBrowserHistory = file.id.startsWith('browser-history-');
+    const isAuthorizedFile = file.id.startsWith('authorized-');
     allResults.push({
       id: file.id,
       type: 'file',
-      title: file.name,
-      subtitle: file.path,
-      onSelect: () => openApp('finder'),
+      title: isBrowserHistory ? `Website · ${file.name}` : file.name,
+      subtitle: snippet
+        ? `${isAuthorizedFile ? 'Authorized local file · ' : ''}${matchedConcepts.length ? `Meaning match · ${matchedConcepts.join(', ')} · ` : ''}${isBrowserHistory ? 'Browser history' : snippet}`
+        : `${file.path} · ${file.type}`,
+      onSelect: () => {
+        try {
+          if (isBrowserHistory) {
+            localStorage.setItem('browser-pending-open-url', file.content ?? '');
+          } else if (isAuthorizedFile && file.hostPath) {
+            const parentPath = file.hostPath.replace(/[\\/][^\\/]+$/, '');
+            localStorage.setItem('finder-pending-open-path', parentPath);
+            window.dispatchEvent(new CustomEvent('finder:open-host-path', { detail: parentPath }));
+          } else {
+            localStorage.setItem('finder-pending-open-path', file.path);
+          }
+        } catch (error) {
+          console.warn('Could not save the search result location.', error);
+        }
+        openApp(isBrowserHistory ? 'browser' : 'finder');
+      },
     });
   });
 
@@ -829,8 +923,13 @@ export const Spotlight: React.FC = () => {
       if (submittedQuery) {
         void recordActivity({
           category: 'search',
-          title: 'Spotlight search',
-          details: submittedQuery,
+          title: 'Searched with Spotlight',
+          details: 'Search submitted',
+          context: {
+            appId: 'spotlight',
+            appName: 'Spotlight',
+            itemType: 'Search',
+          },
         });
       }
 
@@ -911,7 +1010,7 @@ export const Spotlight: React.FC = () => {
           <input
             ref={inputRef}
             type="text"
-            placeholder="Spotlight Search applications, files, calculations..."
+            placeholder="Search apps, files by meaning, websites, calculations…"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -930,6 +1029,9 @@ export const Spotlight: React.FC = () => {
             RESULTS LIST
         ================================================== */}
 
+        {authorizedSearchError && (
+          <p role="status" className="px-4 pt-3 text-[10px] text-amber-200/80">{authorizedSearchError}</p>
+        )}
         <div className="max-h-96 overflow-y-auto p-2 divide-y divide-white/5">
           {allResults.length === 0 ? (
             <div className="p-8 text-center text-slate-400 text-sm">
@@ -951,8 +1053,13 @@ export const Spotlight: React.FC = () => {
                     if (query.trim()) {
                       void recordActivity({
                         category: 'search',
-                        title: 'Spotlight search',
-                        details: query.trim(),
+                        title: 'Searched with Spotlight',
+                        details: 'Search submitted',
+                        context: {
+                          appId: 'spotlight',
+                          appName: 'Spotlight',
+                          itemType: 'Search',
+                        },
                       });
                     }
                     item.onSelect();

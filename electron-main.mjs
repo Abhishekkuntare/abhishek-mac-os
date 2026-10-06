@@ -15,7 +15,12 @@ import {
 
 import electronUpdater from 'electron-updater';
 import dotenv from 'dotenv';
-import { GHOST_GEMINI_MODEL, GHOST_TOOL_DECLARATIONS, runGhostAgent } from './ghost-agent-service.mjs';
+import {
+  GHOST_GEMINI_MODEL,
+  GHOST_TOOL_DECLARATIONS,
+  isValidGhostToolResults,
+  runGhostAgent,
+} from './ghost-agent-service.mjs';
 
 
 
@@ -27,11 +32,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import http from 'node:http';
 import { installCodeRuntime, runCode } from './code-runner.mjs';
+import { resolveGeminiApiKey } from './ghost-api-key.mjs';
 
 const { autoUpdater } = electronUpdater;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.join(__dirname, '.env'), quiet: true });
+const dotenvResult = dotenv.config({ path: path.join(__dirname, '.env'), quiet: true });
+const dotenvGeminiApiKey = dotenvResult.parsed?.GEMINI_API_KEY ?? '';
 
 const isDev = !app.isPackaged;
 const isStorePackage = process.windowsStore;
@@ -400,7 +407,7 @@ ipcMain.handle('ghost-ai:isConfigured', event => {
 });
 
 const getGeminiApiKey = async () => {
-  const environmentKey = process.env.GEMINI_API_KEY?.trim();
+  const environmentKey = resolveGeminiApiKey(process.env.GEMINI_API_KEY, dotenvGeminiApiKey);
   if (environmentKey) return environmentKey;
 
   let encryptedKey;
@@ -437,6 +444,76 @@ ipcMain.handle('ghost-ai:setApiKey', async (event, apiKey) => {
 
   await fs.writeFile(geminiApiKeyFile(), safeStorage.encryptString(apiKey.trim()));
   return true;
+});
+
+ipcMain.handle('ghost-ai:synthesizeSpeech', async (event, text) => {
+  if (
+    event.sender !== mainWindow?.webContents ||
+    !isTrustedCodeRunnerFrame(event.senderFrame)
+  ) {
+    throw new Error('Lily speech is only available to the ARLO OS desktop window.');
+  }
+  if (typeof text !== 'string' || !text.trim() || text.length > 5000) {
+    throw new Error('Lily can speak text up to 5,000 characters.');
+  }
+
+  const apiKey = await getGeminiApiKey();
+  if (!apiKey) {
+    throw new Error('Gemini API key is missing. Check GEMINI_API_KEY in the app .env file or configure it in Ghost AI.');
+  }
+
+  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
+    body: JSON.stringify({
+      model: 'gemini-3.8-flash-tts',
+      input: [{
+        type: 'user_input',
+        content: [{
+          type: 'text',
+          text: text.trim(),
+          annotations: [{
+            type: 'speech_metadata',
+            style: 'Speak in a natural, warm, calm, friendly female voice. Use clear conversational pacing and pronounce the text in its original language.',
+          }],
+        }],
+      }],
+      response_format: { type: 'audio' },
+      generation_config: { speech_config: [{ voice: 'Kore' }] },
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    throw new Error('Gemini returned an unreadable voice response.', { cause: error });
+  }
+  if (!response.ok) {
+    const detail = typeof payload?.error?.message === 'string'
+      ? payload.error.message.replaceAll(apiKey, '[REDACTED]').slice(0, 300)
+      : `HTTP ${response.status}`;
+    throw new Error(`Lily's online voice request failed: ${detail}`);
+  }
+
+  const audioData = payload?.output_audio?.data ??
+    (Array.isArray(payload?.steps)
+      ? payload.steps.flatMap(step => Array.isArray(step?.content) ? step.content : [])
+        .filter(content => content?.type === 'audio')
+        .at(-1)?.data
+      : undefined);
+  if (
+    typeof audioData !== 'string' ||
+    audioData.length > 20_000_000 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(audioData)
+  ) {
+    throw new Error('Gemini did not return valid audio for Lily.');
+  }
+  return audioData;
 });
 
 ipcMain.handle('ghost-ai:removeApiKey', async event => {
@@ -524,33 +601,11 @@ ipcMain.handle('ghost-ai:chat', async (event, request) => {
   let pendingToolCalls;
   let toolResults;
   if (request.pendingToolCalls !== undefined || request.toolResults !== undefined) {
-    if (
-      !Array.isArray(request.pendingToolCalls) ||
-      request.pendingToolCalls.length < 1 ||
-      request.pendingToolCalls.length > 5 ||
-      !Array.isArray(request.toolResults) ||
-      request.toolResults.length !== request.pendingToolCalls.length
-    ) {
+    if (!isValidGhostToolResults(request.pendingToolCalls, request.toolResults)) {
       return { success: false, code: 'INVALID_TOOL_RESULTS', message: 'Ghost received invalid tool results.' };
     }
-    pendingToolCalls = [];
-    toolResults = [];
-    for (let index = 0; index < request.pendingToolCalls.length; index += 1) {
-      const call = request.pendingToolCalls[index];
-      const result = request.toolResults[index];
-      if (
-        !call || typeof call.id !== 'string' || !call.id ||
-        call.name !== 'open_app' ||
-        !call.args || typeof call.args !== 'object' || Array.isArray(call.args) ||
-        !result || result.id !== call.id || result.name !== call.name ||
-        typeof result.success !== 'boolean' ||
-        typeof result.result !== 'string' || result.result.length > 2_000
-      ) {
-        return { success: false, code: 'INVALID_TOOL_RESULTS', message: 'Ghost received invalid tool results.' };
-      }
-      pendingToolCalls.push(call);
-      toolResults.push(result);
-    }
+    pendingToolCalls = request.pendingToolCalls;
+    toolResults = request.toolResults;
   }
 
   const controller = new AbortController();
@@ -699,6 +754,10 @@ ipcMain.handle('files:removeFolder', (event, folderPath) => {
 ipcMain.handle('files:listFolder', (event, folderPath) => {
   assertTrustedFilesFrame(event);
   return listLocalFolder(folderPath);
+});
+ipcMain.handle('files:searchAuthorizedFiles', (event, terms) => {
+  assertTrustedFilesFrame(event);
+  return searchAuthorizedFiles(terms);
 });
 ipcMain.handle('files:openPath', (event, targetPath) => {
   assertTrustedFilesFrame(event);
@@ -1034,6 +1093,85 @@ async function listLocalFolder(folderPath) {
     if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
     return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
   });
+}
+
+async function searchAuthorizedFiles(terms) {
+  if (
+    !Array.isArray(terms) ||
+    terms.length < 1 ||
+    terms.length > 100 ||
+    !terms.every(term => typeof term === 'string' && /^[\p{L}\p{N}_-]{2,40}$/u.test(term))
+  ) {
+    throw new Error('The local search request is invalid.');
+  }
+
+  const searchableExtensions = new Set([
+    'c', 'cc', 'cpp', 'css', 'csv', 'go', 'h', 'hpp', 'html', 'java', 'js',
+    'jsx', 'json', 'md', 'py', 'rs', 'scss', 'sh', 'sql', 'ts', 'tsx', 'txt',
+    'xml', 'yaml', 'yml',
+  ]);
+  const ignoredDirectoryNames = new Set([
+    '$recycle.bin', '.git', 'appdata', 'node_modules', 'program files',
+    'program files (x86)', 'system volume information', 'windows',
+  ]);
+  const queue = (await getAuthorizedFolders()).map(folder => folder.path);
+  const found = [];
+  let visitedFiles = 0;
+  let readBytes = 0;
+
+  while (queue.length && visitedFiles < 1_200 && readBytes < 32 * 1024 * 1024) {
+    const folderPath = queue.shift();
+    if (!folderPath || !(await isLocalPathAuthorized(folderPath))) continue;
+    let entries;
+    try {
+      entries = await fs.readdir(folderPath, { withFileTypes: true });
+    } catch (error) {
+      console.warn('[Local Search] Could not inspect an authorized folder:', error);
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      const targetPath = path.join(folderPath, entry.name);
+      if (entry.isDirectory()) {
+        if (!ignoredDirectoryNames.has(entry.name.toLocaleLowerCase()) && queue.length < 300) {
+          queue.push(targetPath);
+        }
+        continue;
+      }
+      if (!entry.isFile()) continue;
+
+      const extension = path.extname(entry.name).slice(1).toLocaleLowerCase();
+      if (!searchableExtensions.has(extension)) continue;
+      visitedFiles += 1;
+      try {
+        const stats = await fs.stat(targetPath);
+        if (stats.size > 512 * 1024 || readBytes + stats.size > 32 * 1024 * 1024) continue;
+        const content = await fs.readFile(targetPath, 'utf8');
+        readBytes += stats.size;
+        const lowerContent = content.toLocaleLowerCase();
+        const matchedTerms = terms.filter(term => lowerContent.includes(term.toLocaleLowerCase()));
+        if (!matchedTerms.length) continue;
+        const firstMatch = Math.min(...matchedTerms
+          .map(term => lowerContent.indexOf(term.toLocaleLowerCase()))
+          .filter(offset => offset >= 0));
+        const start = Math.max(0, firstMatch - 80);
+        const snippet = content.slice(start, start + 220).replace(/\s+/g, ' ').trim();
+        found.push({
+          name: entry.name,
+          path: targetPath,
+          extension,
+          snippet: `${start ? '…' : ''}${snippet}${start + 220 < content.length ? '…' : ''}`,
+          score: matchedTerms.length,
+        });
+      } catch (error) {
+        console.warn(`[Local Search] Could not read "${targetPath}":`, error);
+      }
+      if (visitedFiles >= 1_200) break;
+    }
+  }
+
+  return found.sort((left, right) => right.score - left.score || left.name.localeCompare(right.name)).slice(0, 20);
 }
 
 async function openAuthorizedLocalPath(targetPath) {
@@ -1575,7 +1713,7 @@ let connectivityCacheTime = 0;
 let connectivityRequest = null;
 
 async function getConnectivityState() {
-  if (connectivityCache && Date.now() - connectivityCacheTime < 10000) {
+  if (connectivityCache && Date.now() - connectivityCacheTime < 1000) {
     return connectivityCache;
   }
   if (connectivityRequest) {
@@ -1611,7 +1749,7 @@ async function queryConnectivityState() {
 function Wait-WinRtOperation($method, $target, [object[]]$arguments) {
   $operation = $method.Invoke($target, $arguments)
   $resultType = $method.ReturnType.GenericTypeArguments[0]
-  $asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -like 'IAsyncOperation*' } | Select-Object -First 1
+  $asTask = ([System.WindowsRuntimeSystemExtensions]).GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -like 'IAsyncOperation*' } | Select-Object -First 1
   return $asTask.MakeGenericMethod($resultType).Invoke($null, @($operation)).GetAwaiter().GetResult()
 }
 $radioType = [Windows.Devices.Radios.Radio, Windows.System.Devices, ContentType=WindowsRuntime]
@@ -1684,7 +1822,7 @@ async function setRadioEnabled(kind, enabled) {
 function Wait-WinRtOperation($method, $target, [object[]]$arguments) {
   $operation = $method.Invoke($target, $arguments)
   $resultType = $method.ReturnType.GenericTypeArguments[0]
-  $asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -like 'IAsyncOperation*' } | Select-Object -First 1
+  $asTask = ([System.WindowsRuntimeSystemExtensions]).GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -like 'IAsyncOperation*' } | Select-Object -First 1
   return $asTask.MakeGenericMethod($resultType).Invoke($null, @($operation)).GetAwaiter().GetResult()
 }
 $radioType = [Windows.Devices.Radios.Radio, Windows.System.Devices, ContentType=WindowsRuntime]
@@ -2022,7 +2160,7 @@ async function startDevServer() {
   );
 
   viteProcess = spawn(
-    process.execPath,
+    process.env.npm_node_execpath || 'node',
     [
       viteCli,
       '--host',
@@ -2032,13 +2170,12 @@ async function startDevServer() {
     ],
     {
       cwd: __dirname,
-      stdio: ['ignore', 'ignore', 'inherit'],
+      stdio: ['ignore', 'inherit', 'inherit'],
       shell: false,
       windowsHide: true,
       env: {
         ...process.env,
         BROWSER: 'none',
-        ELECTRON_RUN_AS_NODE: '1',
       },
     }
   );

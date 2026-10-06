@@ -191,7 +191,7 @@ export const TVApp: React.FC = () => {
   const [duration, setDuration] = useState(0);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
@@ -220,6 +220,12 @@ export const TVApp: React.FC = () => {
     }, 1800);
   }, []);
 
+  const handlePlaybackError = useCallback(() => {
+    setIsLoading(false);
+    setIsPlaying(false);
+    showToast('Playback could not be started. Check your connection and try again.');
+  }, [showToast]);
+
   /*
    * ------------------------------------------------------------
    * Play / Pause
@@ -237,16 +243,14 @@ export const TVApp: React.FC = () => {
         .then(() => {
           setIsPlaying(true);
         })
-        .catch(() => {
-          showToast('Playback could not be started');
-        });
+        .catch(handlePlaybackError);
     } else {
       video.pause();
       setIsPlaying(false);
     }
 
     sound.playClick();
-  }, [showToast]);
+  }, [handlePlaybackError]);
 
   /*
    * ------------------------------------------------------------
@@ -276,13 +280,11 @@ export const TVApp: React.FC = () => {
             .then(() => {
               setIsPlaying(true);
             })
-            .catch(() => {
-              setIsPlaying(false);
-            });
+            .catch(handlePlaybackError);
         }
       }, 80);
     },
-    [],
+    [handlePlaybackError],
   );
 
   /*
@@ -812,7 +814,7 @@ export const TVApp: React.FC = () => {
                       src={activeVideo.video}
                       poster={activeVideo.thumbnail}
                       playsInline
-                      preload="metadata"
+                      preload="none"
                       className="h-full w-full object-cover"
                       onLoadedMetadata={
                         handleLoadedMetadata
@@ -823,6 +825,7 @@ export const TVApp: React.FC = () => {
                       onPause={handleVideoPause}
                       onWaiting={() => setIsLoading(true)}
                       onCanPlay={() => setIsLoading(false)}
+                      onError={handlePlaybackError}
                     />
                   </motion.div>
                 </AnimatePresence>
@@ -878,6 +881,7 @@ export const TVApp: React.FC = () => {
                         scale: 0.9,
                       }}
                       onClick={togglePlay}
+                      aria-label="Play video"
                       className="absolute left-1/2 top-1/2 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-white/15 text-white shadow-[0_20px_70px_rgba(0,0,0,.5)] backdrop-blur-xl"
                     >
                       <Play className="ml-1 h-8 w-8 fill-current" />

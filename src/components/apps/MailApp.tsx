@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Archive,
@@ -202,6 +202,7 @@ export const MailApp: React.FC = () => {
   const [folder, setFolder] = useState<MailFolder>('inbox');
 
   const [isComposing, setIsComposing] = useState(false);
+  const [mobileEmailOpen, setMobileEmailOpen] = useState(false);
 
   const [composeTo, setComposeTo] = useState('');
   const [composeSubject, setComposeSubject] = useState('');
@@ -211,6 +212,14 @@ export const MailApp: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const [hoveredEmail, setHoveredEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 1023px), (hover: none) and (pointer: coarse)');
+    const syncSidebar = () => setIsSidebarCollapsed(media.matches);
+    syncSidebar();
+    media.addEventListener('change', syncSidebar);
+    return () => media.removeEventListener('change', syncSidebar);
+  }, []);
 
   const unreadCount = emails.filter(mail => mail.unread).length;
 
@@ -262,6 +271,7 @@ export const MailApp: React.FC = () => {
 
   const selectEmail = (email: Email) => {
     setSelectedEmailId(email.id);
+    setMobileEmailOpen(true);
 
     setEmails(previous =>
       previous.map(item =>
@@ -405,7 +415,7 @@ export const MailApp: React.FC = () => {
   };
 
   return (
-    <div className="relative flex h-full w-full flex-1 overflow-hidden bg-[#070b12] text-white select-none">
+    <div data-mail-email-open={mobileEmailOpen} className="relative flex h-full w-full flex-1 overflow-hidden bg-[#070b12] text-white select-none">
       {/* =========================================================
           AMBIENT 3D BACKGROUND
       ========================================================== */}
@@ -447,6 +457,7 @@ export const MailApp: React.FC = () => {
       ========================================================== */}
 
       <motion.aside
+        data-mail-sidebar
         animate={{
           width: isSidebarCollapsed ? 68 : 205,
         }}
@@ -651,7 +662,7 @@ export const MailApp: React.FC = () => {
           EMAIL LIST
       ========================================================== */}
 
-      <section className="relative z-10 flex w-[300px] shrink-0 flex-col border-r border-white/[0.07] bg-black/10 backdrop-blur-2xl">
+      <section data-mail-list className="relative z-10 flex w-[300px] shrink-0 flex-col border-r border-white/[0.07] bg-black/10 backdrop-blur-2xl">
         {/* List header */}
         <div className="border-b border-white/[0.07] p-3">
           <div className="mb-3 flex items-center justify-between">
@@ -869,7 +880,7 @@ export const MailApp: React.FC = () => {
           EMAIL READER
       ========================================================== */}
 
-      <main className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden bg-gradient-to-br from-transparent via-white/[0.01] to-sky-500/[0.015]">
+      <main data-mail-reader className="relative z-10 flex min-w-0 flex-1 flex-col overflow-hidden bg-gradient-to-br from-transparent via-white/[0.01] to-sky-500/[0.015]">
         {selectedEmail ? (
           <>
             {/* Toolbar */}
@@ -880,6 +891,7 @@ export const MailApp: React.FC = () => {
                   whileTap={{ scale: 0.9 }}
                   onClick={() => {
                     setSelectedEmailId('');
+                    setMobileEmailOpen(false);
                     sound.playClick();
                   }}
                   className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-white/10 hover:text-white"

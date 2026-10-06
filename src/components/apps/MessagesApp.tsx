@@ -9,6 +9,7 @@ import {
 
 import {
   ArrowDown,
+  ArrowLeft,
   Check,
   CheckCheck,
   ChevronDown,
@@ -198,6 +199,7 @@ export const MessagesApp: React.FC = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [mobileListOpen, setMobileListOpen] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
 
@@ -268,6 +270,7 @@ export const MessagesApp: React.FC = () => {
 
   const selectConversation = (id: string) => {
     setActiveChatId(id);
+    setMobileListOpen(false);
     setShowInfo(false);
     setShowQuickReplies(false);
     sound.playClick();
@@ -405,6 +408,7 @@ export const MessagesApp: React.FC = () => {
 
   return (
     <div
+      data-messages-list-open={mobileListOpen}
       className="relative flex-1 flex h-full min-h-0 overflow-hidden bg-[#070a10] text-white select-none"
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
@@ -437,6 +441,7 @@ export const MessagesApp: React.FC = () => {
       ========================================================= */}
 
       <motion.aside
+        data-messages-sidebar
         initial={{ x: -30, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{
@@ -691,6 +696,7 @@ export const MessagesApp: React.FC = () => {
       ========================================================= */}
 
       <motion.main
+        data-messages-chat
         style={{
           rotateX,
           rotateY,
@@ -705,6 +711,15 @@ export const MessagesApp: React.FC = () => {
           className="relative h-[66px] shrink-0 flex items-center justify-between px-5 border-b border-white/[0.08] bg-slate-950/50 backdrop-blur-2xl"
         >
           <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              data-messages-back
+              aria-label="Back to conversations"
+              onClick={() => setMobileListOpen(true)}
+              className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-300 hover:bg-white/10"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
             <Avatar3D
               name={activeChat.name}
               src={activeChat.avatar}

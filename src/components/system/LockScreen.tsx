@@ -53,7 +53,11 @@ export const LockScreen: React.FC = () => {
       >
         <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-white/40 shadow-2xl mb-4 bg-slate-800 flex items-center justify-center text-3xl font-bold">
           {user.avatarUrl ? (
-            <img src={user.avatarUrl} alt={user.fullName} className="w-full h-full object-cover" />
+            <img
+              src={user.avatarUrl}
+              alt={user.fullName}
+              className={`w-full h-full object-cover ${user.avatarType === 'preset' ? 'object-[center_25%]' : 'object-center'}`}
+            />
           ) : (
             <span>{user.fullName.charAt(0)}</span>
           )}

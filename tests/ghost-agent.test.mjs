@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { GHOST_GEMINI_MODEL, runGhostAgent } from '../ghost-agent-service.mjs';
-import { runGhostChat } from '../src/services/ghostChatClient.ts';
+import { GHOST_GEMINI_MODEL, isValidGhostToolResults, runGhostAgent } from '../ghost-agent-service.mjs';
+import { resolveGeminiApiKey } from '../ghost-api-key.mjs';
+import { getLocalFallbackReply, runGhostChat } from '../src/services/ghostChatClient.ts';
 import { executeGhostCommand } from '../src/services/ghostCommands.ts';
-import { matchGhostWakePhrase } from '../src/services/ghostWakePhrases.ts';
+import { isMeaningfulGhostTranscript, matchGhostWakePhrase } from '../src/services/ghostWakePhrases.ts';
 import { executeRegisteredTool, GHOST_TOOLS } from '../src/services/ghostToolRegistry.ts';
 
 const request = {
@@ -14,6 +15,46 @@ const request = {
     availableApps: [{ id: 'music', name: 'Music' }],
   },
 };
+
+test('accepts result payloads for every registered Ghost tool', () => {
+  const toolArgs = {
+    open_app: { app: 'music' },
+    close_app: { app: 'music' },
+    create_desktop_item: { type: 'file', name: 'notes.txt' },
+    show_desktop: {},
+    get_local_time: {},
+    get_battery_status: {},
+    set_focus_mode: { enabled: true },
+  };
+  for (const [name, args] of Object.entries(toolArgs)) {
+    const call = { id: `call-${name}`, name, args };
+    const result = { id: call.id, name, success: true, result: 'Action completed.' };
+    assert.equal(isValidGhostToolResults([call], [result]), true, `${name} results should be accepted`);
+  }
+});
+
+test('rejects mismatched or unregistered Ghost tool results', () => {
+  const call = { id: 'call-unknown', name: 'run_terminal_command', args: { command: 'whoami' } };
+  assert.equal(isValidGhostToolResults([call], [{ ...call, success: true, result: 'done' }]), false);
+  const validCall = { id: 'call-open-app', name: 'open_app', args: { app: 'music' } };
+  assert.equal(isValidGhostToolResults([validCall], [{ ...validCall, name: 'close_app', success: true, result: 'done' }]), false);
+  assert.equal(isValidGhostToolResults([], []), false);
+});
+
+test('rejects malformed arguments for otherwise registered Ghost tools', () => {
+  const invalidCalls = [
+    { id: 'bad-open', name: 'open_app', args: {} },
+    { id: 'bad-focus', name: 'set_focus_mode', args: { enabled: 'yes' } },
+    { id: 'extra-field', name: 'show_desktop', args: { app: 'music' } },
+  ];
+  for (const call of invalidCalls) {
+    assert.equal(
+      isValidGhostToolResults([call], [{ ...call, success: true, result: 'done' }]),
+      false,
+      `${call.name} malformed arguments should be rejected`,
+    );
+  }
+});
 
 test('uses the requested Gemini model and answers a personalized greeting', async () => {
   let payload;
@@ -116,6 +157,36 @@ test('direct Music command accepts natural phrasing without “for me” as app 
   assert.equal(result?.reply, 'Opening Music.');
 });
 
+test('natural app-opening requests are handled locally without Gemini', async () => {
+  const opened = [];
+  const result = await executeGhostCommand('Could you please open Finder for me?', {
+    openApp: appId => { opened.push(appId); return true; },
+    closeApp: () => false,
+    showDesktop: async () => {},
+    createDesktopItem: () => '',
+    renameDesktopItem: () => null,
+    deleteDesktopItem: () => null,
+    updateSettings: () => {},
+  });
+  assert.deepEqual(opened, ['finder']);
+  assert.equal(result?.reply, 'Opening Finder.');
+});
+
+test('natural polite app-closing requests are handled locally without Gemini', async () => {
+  const closed = [];
+  const result = await executeGhostCommand('Can you please close the calculator?', {
+    openApp: () => true,
+    closeApp: appId => { closed.push(appId); return true; },
+    showDesktop: async () => {},
+    createDesktopItem: () => '',
+    renameDesktopItem: () => null,
+    deleteDesktopItem: () => null,
+    updateSettings: () => {},
+  });
+  assert.deepEqual(closed, ['calculator']);
+  assert.equal(result?.reply, 'Closing Calculator.');
+});
+
 test('direct app closing distinguishes a closed app from an open app', async () => {
   const closed = [];
   const host = {
@@ -186,13 +257,38 @@ test('Hindi and Marathi text commands open Music and create desktop folders', as
   assert.equal(file.reply, 'Created file "index.py" on the desktop.');
 });
 
-test('wake phrases accept Ghost and the selected Brad or Lily name in three languages', () => {
-  assert.deepEqual(matchGhostWakePhrase('Hello Lily', 'lily'), { command: '' });
-  assert.deepEqual(matchGhostWakePhrase('Wake up Brad, open Music', 'brad'), { command: 'open Music' });
-  assert.deepEqual(matchGhostWakePhrase('नमस्ते लिली', 'lily'), { command: '' });
-  assert.deepEqual(matchGhostWakePhrase('जागो ब्रैड, टर्मिनल खोलो', 'brad'), { command: 'टर्मिनल खोलो' });
-  assert.deepEqual(matchGhostWakePhrase('namaskar Lily', 'lily'), { command: '' });
-  assert.equal(matchGhostWakePhrase('Hello Brad', 'lily'), null);
+test('Gemini API key resolution prefers a non-empty environment key and falls back to dotenv', () => {
+  assert.equal(resolveGeminiApiKey(' environment-key ', 'dotenv-key'), 'environment-key');
+  assert.equal(resolveGeminiApiKey('', ' dotenv-key '), 'dotenv-key');
+  assert.equal(resolveGeminiApiKey('  ', undefined), '');
+});
+
+test('wake phrases accept Hey Lily and Hey Ghost in English, Hindi, and Marathi', () => {
+  assert.deepEqual(matchGhostWakePhrase('Hey Lily, open Finder'), { command: 'open Finder' });
+  assert.deepEqual(matchGhostWakePhrase('Hey Ghost open Music'), { command: 'open Music' });
+  assert.deepEqual(matchGhostWakePhrase('Hi Ghost'), { command: '' });
+  assert.deepEqual(matchGhostWakePhrase('Hi Lily'), { command: '' });
+  assert.deepEqual(matchGhostWakePhrase('Hi Lily, open Finder'), { command: 'open Finder' });
+  assert.deepEqual(matchGhostWakePhrase('Hello Lily'), { command: '' });
+  assert.deepEqual(matchGhostWakePhrase('नमस्ते लिली'), { command: '' });
+  assert.deepEqual(matchGhostWakePhrase('जागो लिली, टर्मिनल खोलो'), { command: 'टर्मिनल खोलो' });
+  assert.deepEqual(matchGhostWakePhrase('namaskar Lily'), { command: '' });
+  assert.equal(matchGhostWakePhrase('Hey Assistant, open Finder'), null);
+});
+
+test('ignores punctuation-only wake-listener transcripts but accepts multilingual words', () => {
+  assert.equal(isMeaningfulGhostTranscript('.'), false);
+  assert.equal(isMeaningfulGhostTranscript('...?!'), false);
+  assert.equal(isMeaningfulGhostTranscript('   '), false);
+  assert.equal(isMeaningfulGhostTranscript('open Music'), true);
+  assert.equal(isMeaningfulGhostTranscript('फ़ोल्डर बनाओ'), true);
+});
+
+test('unavailable AI replies stay concise and offer local desktop actions without an error banner', () => {
+  assert.match(getLocalFallbackReply('en'), /opening or closing apps/);
+  assert.doesNotMatch(getLocalFallbackReply('en'), /offline|API key|Gemini|unavailable/i);
+  assert.match(getLocalFallbackReply('hi'), /ऐप खोलने या बंद करने/);
+  assert.match(getLocalFallbackReply('mr'), /apps उघडणे किंवा बंद करणे/);
 });
 
 test('tool result is sent to Gemini before producing the final response', async () => {

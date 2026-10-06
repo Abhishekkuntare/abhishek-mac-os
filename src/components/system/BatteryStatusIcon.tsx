@@ -57,6 +57,7 @@ export const BatteryStatusIcon: React.FC<BatteryStatusIconProps> = ({
   const innerWidth = 14;
   const innerHeight = 6;
   const fillWidth = innerWidth * boundedLevel / 100;
+  const fillScale = Math.max(0.6, fillWidth) / innerWidth;
 
   return (
     <span className={`relative inline-flex shrink-0 items-center justify-center ${className}`} aria-hidden="true">
@@ -67,11 +68,13 @@ export const BatteryStatusIcon: React.FC<BatteryStatusIconProps> = ({
           <motion.rect
             x="3"
             y="4"
-            width={Math.max(0.6, fillWidth)}
+            width={innerWidth}
             height={innerHeight}
             rx={rounded ? 1.5 : 0}
             fill={fill}
-            animate={{ width: Math.max(0.6, fillWidth) }}
+            initial={false}
+            animate={{ scaleX: fillScale }}
+            style={{ transformBox: 'fill-box', transformOrigin: 'left center' }}
             transition={{ duration: 0.55, ease: 'easeOut' }}
           />
         )}

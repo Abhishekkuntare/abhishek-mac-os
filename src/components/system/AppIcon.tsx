@@ -1,5 +1,6 @@
 import React from 'react';
 
+import doomScrollLogoVideo from '../../assets/doom-scroll/doomscroll-logo.mp4';
 import appStoreIcon from '../../assets/app-icons/appstore.png';
 import browserIcon from '../../assets/app-icons/browser.png';
 import calculatorIcon from '../../assets/app-icons/calculator.png';
@@ -72,6 +73,22 @@ export const AppIcon: React.FC<AppIconProps> = ({
   const resolvedAssetId = assetId ?? appId;
   const source = getAppIconAsset(resolvedAssetId);
 
+  if (resolvedAssetId === 'doomscroll') {
+    return (
+      <video
+        src={doomScrollLogoVideo}
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="metadata"
+        aria-hidden="true"
+        className={`${className ?? ''} object-cover`.trim()}
+        style={{ ...style, objectFit: 'cover', borderRadius: style?.borderRadius ?? '30%' }}
+      />
+    );
+  }
+
   if (!source) return <>{fallback}</>;
 
   return (
@@ -81,7 +98,7 @@ export const AppIcon: React.FC<AppIconProps> = ({
       aria-hidden="true"
       draggable={false}
       decoding="async"
-      className={`${className ?? ''} ${resolvedAssetId === 'gamecenter' ? 'scale-[0.8]' : ''}`.trim()}
+      className={className ?? ''}
       style={style}
     />
   );

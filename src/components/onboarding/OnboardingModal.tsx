@@ -1719,7 +1719,7 @@
 // };
 
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import {
@@ -1749,10 +1749,16 @@ import { UserProfile, SystemSettings, AccentColor, ThemeMode } from '../../types
 import { sound } from '../../services/soundService';
 import { ArloLogo } from '../system/ArloLogo';
 import { MascotMark } from '../system/MascotMark';
+import sunnyGirlAvatar from '../../assets/profile-characters/sunny-girl.jpg';
+import curlyGlassesAvatar from '../../assets/profile-characters/curly-glasses.jpg';
+import frogHoodGirlAvatar from '../../assets/profile-characters/frog-hood-girl.jpg';
+import bearHatBoyAvatar from '../../assets/profile-characters/bear-hat-boy.jpg';
+import frogCapBoyAvatar from '../../assets/profile-characters/frog-cap-boy.jpg';
+import winkingBoyAvatar from '../../assets/profile-characters/winking-boy.jpg';
+import adventurerGirlAvatar from '../../assets/profile-characters/adventurer-girl.jpg';
+import storybookBoyAvatar from '../../assets/profile-characters/storybook-boy.jpg';
 
-// Cute cartoon / 3D character avatars.
-// These are self-contained SVG characters, so they work offline and don't
-// depend on external image hosts.
+// Bundled character portraits keep profile choices available offline.
 type AvatarPreset = {
   name: string;
   url: string;
@@ -1964,126 +1970,14 @@ const createCartoonAvatar = ({
 };
 
 const PRESET_AVATARS: AvatarPreset[] = [
-  {
-    name: 'Sunny',
-    url: createCartoonAvatar({
-      skin: '#f2b28d',
-      hair: '#3a241c',
-      shirt: '#38bdf8',
-      pants: '#2563eb',
-      shoes: '#e0f2fe',
-      bg1: '#38bdf8',
-      bg2: '#6366f1',
-      hairStyle: 'soft',
-      accessory: 'cap',
-      expression: 'happy',
-    }),
-  },
-  {
-    name: 'Mimi',
-    url: createCartoonAvatar({
-      skin: '#f5c7a8',
-      hair: '#5b2d45',
-      shirt: '#f472b6',
-      pants: '#7c3aed',
-      shoes: '#fce7f3',
-      bg1: '#fb7185',
-      bg2: '#a855f7',
-      hairStyle: 'bob',
-      accessory: 'bow',
-      expression: 'smile',
-    }),
-  },
-  {
-    name: 'Bobo',
-    url: createCartoonAvatar({
-      skin: '#c98765',
-      hair: '#202938',
-      shirt: '#22d3ee',
-      pants: '#0f766e',
-      shoes: '#cffafe',
-      bg1: '#06b6d4',
-      bg2: '#2563eb',
-      hairStyle: 'spiky',
-      accessory: 'glasses',
-      expression: 'cool',
-    }),
-  },
-  {
-    name: 'Coco',
-    url: createCartoonAvatar({
-      skin: '#8d5b49',
-      hair: '#171717',
-      shirt: '#fb923c',
-      pants: '#ea580c',
-      shoes: '#ffedd5',
-      bg1: '#f97316',
-      bg2: '#db2777',
-      hairStyle: 'curly',
-      accessory: 'flower',
-      expression: 'happy',
-    }),
-  },
-  {
-    name: 'Lumi',
-    url: createCartoonAvatar({
-      skin: '#f0b18b',
-      hair: '#6b3e26',
-      shirt: '#a78bfa',
-      pants: '#4f46e5',
-      shoes: '#ede9fe',
-      bg1: '#8b5cf6',
-      bg2: '#ec4899',
-      hairStyle: 'bun',
-      accessory: 'crown',
-      expression: 'wink',
-    }),
-  },
-  {
-    name: 'Max',
-    url: createCartoonAvatar({
-      skin: '#d99a72',
-      hair: '#101827',
-      shirt: '#34d399',
-      pants: '#047857',
-      shoes: '#d1fae5',
-      bg1: '#10b981',
-      bg2: '#0ea5e9',
-      hairStyle: 'fringe',
-      accessory: 'headphones',
-      expression: 'happy',
-    }),
-  },
-  {
-    name: 'Piku',
-    url: createCartoonAvatar({
-      skin: '#efbd99',
-      hair: '#33211d',
-      shirt: '#facc15',
-      pants: '#ca8a04',
-      shoes: '#fef9c3',
-      bg1: '#f59e0b',
-      bg2: '#f43f5e',
-      hairStyle: 'soft',
-      accessory: 'flower',
-      expression: 'wink',
-    }),
-  },
-  {
-    name: 'Zoya',
-    url: createCartoonAvatar({
-      skin: '#a96d52',
-      hair: '#25182f',
-      shirt: '#c084fc',
-      pants: '#7e22ce',
-      shoes: '#f3e8ff',
-      bg1: '#a855f7',
-      bg2: '#4f46e5',
-      hairStyle: 'curly',
-      accessory: 'headphones',
-      expression: 'smile',
-    }),
-  },
+  { name: 'Sunny', url: sunnyGirlAvatar },
+  { name: 'Curly', url: curlyGlassesAvatar },
+  { name: 'Frog Girl', url: frogHoodGirlAvatar },
+  { name: 'Bear Hat', url: bearHatBoyAvatar },
+  { name: 'Frog Cap', url: frogCapBoyAvatar },
+  { name: 'Winky', url: winkingBoyAvatar },
+  { name: 'Adventurer', url: adventurerGirlAvatar },
+  { name: 'Storybook', url: storybookBoyAvatar },
 ];
 
 const ROLES_LIST = [
@@ -2266,8 +2160,13 @@ const ACCENT_COLORS: { id: AccentColor; label: string; color: string }[] = [
 
 export const OnboardingModal: React.FC = () => {
   const { finishOnboarding } = useOS();
+  const onboardingModalRef = useRef<HTMLDivElement | null>(null);
   const [step, setStep] = useState(1);
   const [emailError, setEmailError] = useState('');
+
+  useEffect(() => {
+    onboardingModalRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+  }, [step]);
 
   // Draft profile
   const [profile, setProfile] = useState<UserProfile>({
@@ -2419,7 +2318,7 @@ export const OnboardingModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center p-4 select-none font-sans overflow-hidden">
+    <div ref={onboardingModalRef} data-onboarding-modal className="fixed inset-0 z-[100] bg-black flex items-center justify-center p-4 select-none font-sans overflow-hidden">
       {/* Background ambient light */}
       <div
         aria-hidden="true"
@@ -2431,7 +2330,7 @@ export const OnboardingModal: React.FC = () => {
       />
 
       {/* Modal Container */}
-      <div className="relative z-10 w-full max-w-2xl min-h-[520px] rounded-3xl glass-panel text-white p-8 shadow-2xl border border-white/20 flex flex-col justify-between">
+      <div data-onboarding-card className="relative z-10 w-full max-w-2xl min-h-[520px] rounded-3xl glass-panel text-white p-8 shadow-2xl border border-white/20 flex flex-col justify-between">
         {/* Step Indicator */}
         <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-6">
           <div className="flex items-center gap-2">
@@ -3114,7 +3013,7 @@ export const OnboardingModal: React.FC = () => {
                   text-sky-300
                 "
                           >
-                            3D
+                            ART
                           </span>
                         </div>
 
@@ -3176,7 +3075,7 @@ export const OnboardingModal: React.FC = () => {
                                 <img
                                   src={profile.avatarUrl}
                                   alt="Selected profile avatar"
-                                  className="h-full w-full object-cover"
+                                  className={`h-full w-full object-cover ${profile.avatarType === 'preset' ? 'object-[center_25%]' : 'object-center'}`}
                                 />
                               ) : (
                                 <div className="flex h-full w-full flex-col items-center justify-center">
@@ -3337,7 +3236,7 @@ export const OnboardingModal: React.FC = () => {
                             </span>
                           </div>
 
-                          <div className="grid grid-cols-4 gap-1.5">
+                          <div className="grid grid-cols-4 gap-2">
                             {PRESET_AVATARS.map((avatar, i) => {
                               const isSelected =
                                 profile.avatarType === "preset" &&
@@ -3348,6 +3247,8 @@ export const OnboardingModal: React.FC = () => {
                                   key={avatar.name}
                                   type="button"
                                   title={`Choose ${avatar.name}`}
+                                  aria-label={`Choose ${avatar.name} avatar`}
+                                  aria-pressed={isSelected}
                                   onClick={() => {
                                     setProfile(p => ({
                                       ...p,
@@ -3376,29 +3277,30 @@ export const OnboardingModal: React.FC = () => {
                                     scale: 0.93,
                                   }}
                                   className={`
-                        group relative rounded-xl p-[1.5px]
+                        group relative rounded-2xl p-[2px]
                         transition-all duration-300
                         ${isSelected
                                       ? "bg-gradient-to-br from-sky-300 via-indigo-400 to-fuchsia-400 shadow-[0_8px_25px_rgba(56,189,248,0.18)]"
-                                      : "bg-transparent"
+                                      : "bg-white/[0.08] hover:bg-white/[0.18]"
                                     }
+                        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300
                       `}
                                 >
                                   <div
                                     className="
-                          relative aspect-square
+                          relative aspect-[4/5]
                           overflow-hidden
-                          rounded-[10px]
+                          rounded-[14px]
                           border border-white/[0.07]
                           bg-[#080c15]
                         "
                                   >
                                     <img
                                       src={avatar.url}
-                                      alt={`${avatar.name} 3D cartoon avatar`}
+                                      alt={`${avatar.name} character`}
                                       loading="lazy"
                                       className="
-                            h-full w-full object-cover
+                            h-full w-full object-cover object-[center_25%]
                             transition-transform
                             duration-500
                             group-hover:scale-110

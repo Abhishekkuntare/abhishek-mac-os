@@ -3,11 +3,11 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ArrowDownRight, ArrowUp, AudioLines, Bot, Grip, Mic, X } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { detectGhostCommandLanguage, executeGhostCommand, PendingCreateType } from '../../services/ghostCommands';
-import { runGhostChat } from '../../services/ghostChatClient';
+import { getLocalFallbackReply, runGhostChat } from '../../services/ghostChatClient';
+import { configureGhostUtterance } from '../../services/ghostVoice';
 import { GhostChatError } from '../../types/ghostAgent';
 import type { GhostToolHost } from '../../types/ghostAgent';
-import { configureGhostUtterance, type GhostSpeechLanguage } from '../../services/ghostVoice';
-import { matchGhostWakePhrase } from '../../services/ghostWakePhrases';
+import { isMeaningfulGhostTranscript, matchGhostWakePhrase } from '../../services/ghostWakePhrases';
 import { createGhostDesktopItem, getGhostLocalTime } from '../../services/ghostDesktopActions';
 import { APP_REGISTRY } from '../../data/defaultApps';
 import { AppIcon } from './AppIcon';
@@ -22,6 +22,33 @@ interface PanelPosition {
   x: number;
   y: number;
 }
+
+const LilyOrb: React.FC<{ active: boolean }> = ({ active }) => (
+  <span className="relative isolate block h-full w-full overflow-hidden rounded-full bg-[#080718] shadow-[0_0_34px_rgba(138,91,255,.42),inset_0_0_18px_rgba(255,255,255,.14)]">
+    <motion.span
+      aria-hidden="true"
+      className="absolute inset-[-15%] rounded-full bg-[radial-gradient(ellipse_at_38%_44%,rgba(122,74,255,.56),transparent_42%),radial-gradient(ellipse_at_65%_48%,rgba(32,221,255,.46),transparent_43%)] blur-md"
+      animate={{ rotate: active ? [0, 14, -10, 0] : [0, 8, 0], scale: active ? [1, 1.1, 0.98, 1] : [1, 1.04, 1] }}
+      transition={{ duration: active ? 2.6 : 6, repeat: Infinity, ease: 'easeInOut' }}
+    />
+    <span
+      aria-hidden="true"
+      className="absolute inset-[7%] rounded-full border border-violet-100/35 bg-[radial-gradient(circle_at_32%_22%,rgba(255,255,255,.46),transparent_18%),radial-gradient(ellipse_at_50%_82%,rgba(6,8,26,.96),transparent_70%)]"
+    />
+    <motion.svg
+      aria-hidden="true"
+      viewBox="0 0 100 100"
+      className="absolute inset-[15%] h-[70%] w-[70%] overflow-visible"
+      animate={{ scaleY: active ? [0.82, 1.12, 0.9] : [0.92, 1.02, 0.92], rotate: active ? [0, -2, 2, 0] : [0, 1, 0] }}
+      transition={{ duration: active ? 1.15 : 3.2, repeat: Infinity, ease: 'easeInOut' }}
+    >
+      <path d="M3 52 C12 14 19 84 29 49 S45 18 53 49 S68 82 77 49 S91 21 97 51" fill="none" stroke="#d5a8ff" strokeWidth="2.4" opacity=".9" />
+      <path d="M2 49 C12 25 20 73 29 48 S44 27 53 48 S68 70 77 48 S90 29 98 49" fill="none" stroke="#74f4ff" strokeWidth="1.8" opacity=".95" />
+      <path d="M3 55 C13 37 20 66 29 53 S44 39 53 53 S67 68 77 53 S90 39 97 54" fill="none" stroke="#ffffff" strokeWidth=".8" opacity=".75" />
+    </motion.svg>
+    <span aria-hidden="true" className="absolute inset-[7%] rounded-full border border-white/20" />
+  </span>
+);
 
 export const GhostAssistantOverlay: React.FC = () => {
   const {
@@ -40,6 +67,7 @@ export const GhostAssistantOverlay: React.FC = () => {
   } = useOS();
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<QuickMessage[]>([]);
+  const [heardCommand, setHeardCommand] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [wakeStatus, setWakeStatus] = useState<'starting' | 'ready' | 'paused' | 'stopped' | 'error'>(
@@ -63,13 +91,13 @@ export const GhostAssistantOverlay: React.FC = () => {
   const pausedRecognitionRef = useRef(false);
   const wakeStateRequestRef = useRef<Promise<void>>(Promise.resolve());
   const pendingCreateRef = useRef<PendingCreateType | undefined>(undefined);
-  const conversationLanguageRef = useRef<GhostSpeechLanguage>('en');
+  const conversationLanguageRef = useRef<'en' | 'hi' | 'mr'>('en');
   const conversationTimerRef = useRef<number | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
+  const activeSpeechRef = useRef<HTMLAudioElement | null>(null);
+  const speechGenerationRef = useRef(0);
   const userRef = useRef(user);
-  const voiceRef = useRef(settings.ghostVoice);
   userRef.current = user;
-  voiceRef.current = settings.ghostVoice;
   const shortcut = settings.ghostShortcut;
 
   const movePanelToSide = (width = panelWidth, height = panelHeight) => {
@@ -296,6 +324,10 @@ export const GhostAssistantOverlay: React.FC = () => {
   }, [showGhostAssistant]);
 
   const closeAssistant = () => {
+    speechGenerationRef.current += 1;
+    activeSpeechRef.current?.pause();
+    activeSpeechRef.current = null;
+    void pauseWakeListener(false);
     activeConversationRef.current = false;
     pendingCreateRef.current = undefined;
     if (conversationTimerRef.current !== null) {
@@ -321,41 +353,87 @@ export const GhostAssistantOverlay: React.FC = () => {
   };
 
   const speak = (text: string, onEnd?: () => void) => {
+    const generation = ++speechGenerationRef.current;
+    let hasResumed = false;
     const resumeRecognition = () => {
+      if (hasResumed || generation !== speechGenerationRef.current) return;
+      hasResumed = true;
+      activeSpeechRef.current = null;
       void pauseWakeListener(false).then(() => onEnd?.());
     };
-    if (!settings.ghostVoiceResponses || !('speechSynthesis' in window)) {
+    if (!settings.ghostVoiceResponses) {
       resumeRecognition();
       return;
     }
-    void pauseWakeListener(true).then(() => {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      configureGhostUtterance(utterance, settings.ghostVoice, conversationLanguageRef.current);
-      utterance.onend = resumeRecognition;
-      utterance.onerror = resumeRecognition;
-      utterance.onstart = () => {
+    let localFallbackStarted = false;
+    const speakLocalFemaleVoice = (reason?: string) => {
+      if (generation !== speechGenerationRef.current || localFallbackStarted) return;
+      localFallbackStarted = true;
+      if (reason) console.info('[Ghost AI] Using local female voice for Lily:', reason);
+      void pauseWakeListener(true).then(() => {
+        if (generation !== speechGenerationRef.current) return;
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        configureGhostUtterance(utterance, conversationLanguageRef.current);
+        utterance.onend = resumeRecognition;
+        utterance.onerror = resumeRecognition;
+        utterance.onstart = () => {
+          if (conversationTimerRef.current !== null) {
+            window.clearTimeout(conversationTimerRef.current);
+            conversationTimerRef.current = null;
+          }
+        };
+        window.speechSynthesis.speak(utterance);
+      }).catch(error => {
+        console.error('[Ghost AI] Could not pause recognition for local Lily speech:', error);
+        resumeRecognition();
+      });
+    };
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      speakLocalFemaleVoice('offline');
+      return;
+    }
+    void pauseWakeListener(true).then(async () => {
+      const synthesize = window.electronAPI?.ghostAISynthesizeSpeech;
+      if (!synthesize) throw new Error('Online voice is only available in the desktop app.');
+      const audioData = await synthesize(text);
+      if (generation !== speechGenerationRef.current) return;
+      const audio = new Audio(`data:audio/wav;base64,${audioData}`);
+      activeSpeechRef.current = audio;
+      audio.onended = resumeRecognition;
+      audio.onerror = () => {
+        console.error('[Ghost AI] Could not play Gemini-generated Lily speech.');
+        speakLocalFemaleVoice('online speech playback failed');
+      };
+      audio.onplay = () => {
         if (conversationTimerRef.current !== null) {
           window.clearTimeout(conversationTimerRef.current);
           conversationTimerRef.current = null;
         }
       };
-      window.speechSynthesis.speak(utterance);
+      await audio.play();
+    }).catch(error => {
+      if (generation !== speechGenerationRef.current) return;
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn('[Ghost AI] Gemini-generated Lily speech failed; using local female voice:', reason);
+      speakLocalFemaleVoice(reason);
     });
   };
 
   const addAssistantMessage = (content: string, onEnd?: () => void) => {
+    setHeardCommand('');
     setMessages(current => [...current, { role: 'assistant', content }]);
     speak(content, onEnd);
   };
 
   const submitPrompt = async (value = prompt, isWakeCommand = false, recognizedLanguage?: string) => {
     const content = value.trim();
-    if (!content || isThinking) return;
+    if (!isMeaningfulGhostTranscript(content) || isThinking) return;
     conversationLanguageRef.current = detectGhostCommandLanguage(content, recognizedLanguage);
     setPrompt('');
     setErrorMessage('');
     setErrorDetails('');
+    if (!isWakeCommand) setHeardCommand('');
     setMessages(current => [...current, { role: 'user', content }]);
     setIsThinking(true);
     const requestId = crypto.randomUUID();
@@ -400,20 +478,26 @@ export const GhostAssistantOverlay: React.FC = () => {
 
       if (settings.ghostWakeEnabled) await pauseWakeListener(true);
       const conversation = [...messages, { role: 'user' as const, content }];
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        throw new GhostChatError('OFFLINE', 'Gemini chat is unavailable while offline.');
+      }
       const answer = await runGhostChat(conversation.slice(-20), user.displayName, ghostToolHost, requestId);
       addAssistantMessage(answer, isWakeCommand ? () => armConversationTimeout() : undefined);
     } catch (error) {
       if (error instanceof GhostChatError) {
         console.error('[Ghost AI] The quick assistant request failed:', error.code);
-        setErrorMessage(error.message);
-        setErrorDetails(error.details ?? '');
-        if (isWakeCommand) addAssistantMessage(error.message, () => armConversationTimeout());
+        const reply = getLocalFallbackReply(conversationLanguageRef.current);
+        setErrorMessage('');
+        setErrorDetails('');
+        addAssistantMessage(reply, isWakeCommand ? () => armConversationTimeout() : undefined);
       } else {
         console.error('[Ghost AI] The quick assistant command failed:', error);
-        const message = error instanceof Error ? error.message : 'Ghost could not complete that request.';
-        setErrorMessage(message);
+        setErrorMessage('');
         setErrorDetails('');
-        if (isWakeCommand) addAssistantMessage(message, () => armConversationTimeout());
+        addAssistantMessage(
+          getLocalFallbackReply(conversationLanguageRef.current),
+          isWakeCommand ? () => armConversationTimeout() : undefined,
+        );
       }
     } finally {
       if (activeRequestIdRef.current === requestId) activeRequestIdRef.current = null;
@@ -446,13 +530,13 @@ export const GhostAssistantOverlay: React.FC = () => {
     const unsubscribeTranscript = api.onGhostAITranscript(transcript => {
       if (!active || pausedRecognitionRef.current) return;
       const heard = transcript.text.trim();
-      if (!heard) return;
+      if (!isMeaningfulGhostTranscript(heard)) return;
       conversationLanguageRef.current = transcript.language === 'hi' || transcript.language === 'mr'
         ? transcript.language
         : 'en';
 
       if (!activeConversationRef.current) {
-        const wakeMatch = matchGhostWakePhrase(heard, voiceRef.current);
+        const wakeMatch = matchGhostWakePhrase(heard);
         if (!wakeMatch) return;
         activeConversationRef.current = true;
         setPanelPosition(null);
@@ -462,21 +546,24 @@ export const GhostAssistantOverlay: React.FC = () => {
         void api.ghostAIWakeDetected().catch(error => {
           console.error('[Ghost AI] Could not focus ARLO OS after wake phrase:', error);
         });
-        const assistantName = voiceRef.current === 'lily' ? 'Lily' : 'Brad';
+        const assistantName = 'Lily';
+        if (wakeMatch.command) {
+          setHeardCommand(wakeMatch.command);
+          void submitPromptRef.current(wakeMatch.command, true, transcript.language);
+          return;
+        }
         const greeting = conversationLanguageRef.current === 'hi'
-          ? `नमस्ते ${userRef.current.displayName}, मैं ${assistantName} हूँ। आप मुझे ${assistantName} कह सकते हैं। बताइए, मैं क्या करूँ?`
+          ? `नमस्ते ${userRef.current.displayName}, मैं ${assistantName} हूँ। बताइए, मैं क्या करूँ?`
           : conversationLanguageRef.current === 'mr'
-            ? `नमस्कार ${userRef.current.displayName}, मी ${assistantName} आहे. तुम्ही मला ${assistantName} म्हणू शकता. मी काय मदत करू?`
-            : `Hi, ${userRef.current.displayName}. I'm ${assistantName}; you can call me ${assistantName}. What can I do for you?`;
+            ? `नमस्कार ${userRef.current.displayName}, मी ${assistantName} आहे. मी काय मदत करू?`
+            : `Hi, ${userRef.current.displayName}. I'm Lily. What can I do for you?`;
         setMessages(current => [...current, { role: 'assistant', content: greeting }]);
-        speak(greeting, () => {
-          armConversationTimeout();
-          const followUp = wakeMatch.command;
-          if (followUp) void submitPromptRef.current(followUp, true, transcript.language);
-        });
+        setHeardCommand('');
+        armConversationTimeout();
         return;
       }
 
+      setHeardCommand(heard);
       if (conversationTimerRef.current !== null) {
         window.clearTimeout(conversationTimerRef.current);
         conversationTimerRef.current = null;
@@ -538,7 +625,8 @@ export const GhostAssistantOverlay: React.FC = () => {
   ]);
 
   useEffect(() => () => {
-    window.speechSynthesis?.cancel();
+    speechGenerationRef.current += 1;
+    activeSpeechRef.current?.pause();
   }, []);
 
   const shortcutLabel = shortcut === 'ctrl-shift-space'
@@ -553,23 +641,21 @@ export const GhostAssistantOverlay: React.FC = () => {
         <button
           type="button"
           role="status"
-          aria-label={wakeStatus === 'ready' ? 'Ghost is listening for Hey Ghost' : `Ghost wake listener ${wakeStatus}`}
+          aria-label={wakeStatus === 'ready' ? 'Lily is listening for Hey Lily or Hey Ghost' : `Lily wake listener ${wakeStatus}`}
           onClick={() => setShowGhostAssistant(true)}
-          title={wakeStatus === 'error' ? 'Ghost voice listener needs attention' : 'Open Ghost assistant'}
-          className="group fixed bottom-6 right-6 z-[99998] flex h-14 w-14 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
+          title={wakeStatus === 'error' ? 'Lily voice listener needs attention' : 'Open Lily · say “Hey Lily” or “Hey Ghost”'}
+          className={`group fixed z-[99998] flex h-14 w-14 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-sky-200 ${
+            settings.dockPosition === 'bottom'
+              ? 'bottom-24 right-6'
+              : settings.dockPosition === 'right'
+                ? 'bottom-6 right-24'
+                : 'bottom-6 right-6'
+          }`}
         >
-          <span className={`absolute inset-0 rounded-full bg-[radial-gradient(circle_at_35%_28%,rgba(255,255,255,.55),transparent_22%),radial-gradient(ellipse_at_30%_40%,rgba(232,87,255,.95),transparent_48%),radial-gradient(ellipse_at_67%_42%,rgba(47,220,255,.9),transparent_51%),radial-gradient(ellipse_at_50%_75%,rgba(73,99,255,.92),transparent_56%),#101026] shadow-[0_0_28px_rgba(117,101,255,.55)] transition-transform duration-300 group-hover:scale-110`} />
-          <motion.span
-            aria-hidden="true"
-            className="absolute inset-[3px] rounded-full border border-white/35"
-            animate={wakeStatus === 'ready' ? { scale: [1, 1.12, 1], opacity: [0.5, 0.12, 0.5] } : { scale: 1, opacity: 0.45 }}
-            transition={{ duration: 2.2, repeat: wakeStatus === 'ready' ? Infinity : 0, ease: 'easeInOut' }}
-          />
-          <span className="relative flex h-7 w-7 items-center justify-center rounded-full bg-slate-950/35 text-white/90 backdrop-blur-sm">
-            {wakeStatus === 'error' ? <Mic size={15} className="text-rose-200" /> : <AudioLines size={17} />}
-          </span>
+          <LilyOrb active={wakeStatus === 'ready'} />
+          {wakeStatus === 'error' && <Mic size={15} className="absolute text-rose-100 drop-shadow-[0_0_8px_rgba(251,113,133,.9)]" />}
           <span className="sr-only">
-            {wakeStatus === 'ready' ? 'Hey Ghost · listening locally' : wakeStatus === 'error' ? 'Wake listener error' : wakeStatus === 'paused' ? 'Ghost is speaking' : wakeStatus === 'stopped' ? 'Wake listener off' : 'Wake listener starting'}
+            {wakeStatus === 'ready' ? 'Hey Lily or Hey Ghost · listening locally' : wakeStatus === 'error' ? 'Wake listener error' : wakeStatus === 'paused' ? 'Lily is speaking' : wakeStatus === 'stopped' ? 'Wake listener off' : 'Wake listener starting'}
           </span>
         </button>
       )}
@@ -591,7 +677,7 @@ export const GhostAssistantOverlay: React.FC = () => {
             ref={panelRef}
             role="dialog"
             aria-modal={!panelPosition}
-            aria-label="Ghost AI assistant"
+            aria-label="Lily AI assistant"
             onPointerDown={beginPanelDrag}
             onPointerMove={movePanelDrag}
             onPointerUp={endPanelDrag}
@@ -627,7 +713,7 @@ export const GhostAssistantOverlay: React.FC = () => {
                 <button
                   type="button"
                   aria-label="Expand Ghost assistant"
-                  title="Open Ghost · drag to move"
+                  title="Open Lily · drag to move"
                   onClick={() => {
                     if (skipOrbClickRef.current) {
                       skipOrbClickRef.current = false;
@@ -635,22 +721,10 @@ export const GhostAssistantOverlay: React.FC = () => {
                     }
                     expandPanel();
                   }}
-                  className="relative flex h-[calc(100%-12px)] w-[calc(100%-12px)] touch-none cursor-grab items-center justify-center rounded-full border border-white/25 bg-[radial-gradient(circle_at_35%_28%,rgba(255,255,255,.58),transparent_21%),radial-gradient(ellipse_at_30%_42%,rgba(232,87,255,.92),transparent_49%),radial-gradient(ellipse_at_67%_42%,rgba(47,220,255,.9),transparent_52%),radial-gradient(ellipse_at_50%_75%,rgba(73,99,255,.95),transparent_58%),#100e2b] shadow-[0_0_34px_rgba(117,101,255,.5),inset_0_0_18px_rgba(255,255,255,.12)] transition hover:scale-105 active:cursor-grabbing"
+                  className="relative flex h-[calc(100%-12px)] w-[calc(100%-12px)] touch-none cursor-grab items-center justify-center rounded-full border border-white/25 transition duration-300 hover:scale-105 hover:shadow-[0_0_48px_rgba(139,92,246,.75)] active:cursor-grabbing"
                 >
-                  <motion.span
-                    aria-hidden="true"
-                    className="absolute inset-[4px] rounded-full border border-white/40"
-                    animate={isListening || isThinking ? { scale: [1, 1.15, 1], opacity: [0.65, 0.16, 0.65], rotate: [0, 45, 90] } : { scale: 1, opacity: 0.45 }}
-                    transition={{ duration: isThinking ? 1.3 : 2.1, repeat: isListening || isThinking ? Infinity : 0, ease: 'easeInOut' }}
-                  />
-                  <motion.span
-                    aria-hidden="true"
-                    className="absolute h-[54%] w-[54%] rounded-full bg-[radial-gradient(circle_at_30%_24%,rgba(255,255,255,.95),rgba(151,225,255,.68)_18%,rgba(127,94,255,.42)_48%,rgba(236,91,255,.38)_68%,transparent_74%)] blur-[1px]"
-                    animate={{ scale: isThinking ? [0.92, 1.1, 0.92] : [0.98, 1.04, 0.98], rotate: [0, 12, 0] }}
-                    transition={{ duration: isThinking ? 1.1 : 3.6, repeat: Infinity, ease: 'easeInOut' }}
-                  />
-                  <AudioLines className="relative h-[24%] w-[24%] text-white/90 drop-shadow-[0_0_10px_rgba(255,255,255,.8)]" />
-                  <span className="sr-only">{isThinking ? 'Ghost is thinking' : isListening ? 'Ghost is listening' : 'Ghost AI'}</span>
+                  <LilyOrb active={isListening || isThinking} />
+                  <span className="sr-only">{isThinking ? 'Lily is thinking' : isListening ? 'Lily is listening' : 'Lily assistant'}</span>
                 </button>
                 <button
                   type="button"
@@ -688,10 +762,12 @@ export const GhostAssistantOverlay: React.FC = () => {
               <div className="min-w-0">
                 <h2 className="text-[13px] font-semibold text-white">Ghost AI</h2>
                 <p className="mt-0.5 text-[10px] text-slate-500">
-                  {wakeStatus === 'error'
+                  {heardCommand
+                    ? <span className="text-violet-200">Heard: “{heardCommand}”</span>
+                    : wakeStatus === 'error'
                     ? <span className="text-rose-300">Local microphone error</span>
                     : isListening
-                      ? <span className="text-rose-300">Microphone active · listening locally</span>
+                      ? <span className="text-rose-300">Listening · speak your command</span>
                       : isThinking
                         ? 'Thinking…'
                         : `Ready · ${shortcutLabel}`}
@@ -770,16 +846,16 @@ export const GhostAssistantOverlay: React.FC = () => {
                 ref={inputRef}
                 value={prompt}
                 onChange={event => setPrompt(event.target.value)}
-                placeholder="Ask Ghost or tell it what to open…"
+                placeholder="Ask Lily or tell her what to open…"
                 className="h-10 min-w-0 flex-1 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3.5 text-[12px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-sky-300/25"
-                aria-label="Ask Ghost AI"
+                aria-label="Ask Lily"
               />
-              <button type="submit" data-no-drag disabled={!prompt.trim() || isThinking} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-300 text-slate-950 transition hover:bg-sky-200 disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-slate-600" aria-label="Send to Ghost">
+              <button type="submit" data-no-drag disabled={!prompt.trim() || isThinking} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-300 text-slate-950 transition hover:bg-sky-200 disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-slate-600" aria-label="Send to Lily">
                 <ArrowUp size={17} />
               </button>
             </form>
             <footer className="px-5 pb-3 text-center text-[9px] text-slate-600">
-              Say “Hey Ghost” or your selected voice name. English, Hindi, and Marathi speech recognition runs locally; recognized text is sent to Gemini only for requests that need AI.
+              Say “Hey Lily” or “Hey Ghost”. English, Hindi, and Marathi recognition runs locally; online Lily voice replies and AI requests use your Gemini API key.
             </footer>
             <button
               type="button"

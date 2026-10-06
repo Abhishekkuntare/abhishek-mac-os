@@ -193,9 +193,9 @@ export const MascotCompanion: React.FC = () => {
     if (!config.visible || !config.announceNotifications || !settings.ghostVoiceResponses || !('speechSynthesis' in window)) return;
 
     const utterance = new SpeechSynthesisUtterance('Hey, you have a new notification. Check your notification center.');
-    configureGhostUtterance(utterance, settings.ghostVoice);
+    configureGhostUtterance(utterance);
     window.speechSynthesis.speak(utterance);
-  }, [config.announceNotifications, config.visible, notifications, settings.ghostVoice, settings.ghostVoiceResponses]);
+  }, [config.announceNotifications, config.visible, notifications, settings.ghostVoiceResponses]);
 
   useEffect(() => {
     const keepOnScreen = () => {

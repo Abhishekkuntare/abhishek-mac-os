@@ -13,11 +13,19 @@ export interface ActivityEntry {
   category: ActivityCategory;
   title: string;
   details?: string;
+  context?: {
+    appId?: string;
+    appName?: string;
+    windowTitle?: string;
+    desktop?: string;
+    itemName?: string;
+    itemType?: string;
+  };
 }
 
 const DATABASE_NAME = 'arlo-os-activity-history';
 const STORE_NAME = 'activity';
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 
 let databasePromise: Promise<IDBDatabase> | null = null;
 const listeners = new Set<() => void>();
@@ -30,11 +38,29 @@ const getDatabase = () => {
   if (!databasePromise) {
     databasePromise = new Promise((resolve, reject) => {
       const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-      request.onupgradeneeded = () => {
+      request.onupgradeneeded = event => {
         const database = request.result;
+        let store: IDBObjectStore;
         if (!database.objectStoreNames.contains(STORE_NAME)) {
-          const store = database.createObjectStore(STORE_NAME, { keyPath: 'id' });
+          store = database.createObjectStore(STORE_NAME, { keyPath: 'id' });
           store.createIndex('timestamp', 'timestamp');
+        } else {
+          const upgradeTransaction = request.transaction;
+          if (!upgradeTransaction) throw new Error('Could not access activity history during upgrade.');
+          store = upgradeTransaction.objectStore(STORE_NAME);
+        }
+
+        if (event.oldVersion < 2) {
+          const cursorRequest = store.openCursor();
+          cursorRequest.onsuccess = () => {
+            const cursor = cursorRequest.result;
+            if (!cursor) return;
+            const entry = cursor.value as ActivityEntry;
+            if (entry.category === 'search' && entry.details !== 'Search submitted') {
+              cursor.update({ ...entry, details: 'Search submitted' });
+            }
+            cursor.continue();
+          };
         }
       };
       request.onsuccess = () => resolve(request.result);

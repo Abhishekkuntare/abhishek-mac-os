@@ -10,6 +10,18 @@ import type {
   GhostToolResult,
 } from '../types/ghostAgent';
 
+export const getLocalFallbackReply = (
+  language: ReturnType<typeof detectGhostCommandLanguage>,
+) => {
+  const localFeatures = [
+    'I can help with desktop tasks like opening or closing apps, creating files and folders, checking the time or battery, and changing Focus Mode.',
+    'मैं ऐप खोलने या बंद करने, फ़ाइलें और फ़ोल्डर बनाने, समय या बैटरी बताने और फ़ोकस मोड बदलने जैसे डेस्कटॉप काम कर सकती हूँ।',
+    'मी apps उघडणे किंवा बंद करणे, files आणि folders तयार करणे, वेळ किंवा battery सांगणे आणि Focus Mode बदलणे अशी desktop कामे करू शकते.',
+  ];
+  const index = language === 'hi' ? 1 : language === 'mr' ? 2 : 0;
+  return localFeatures[index];
+};
+
 export const runGhostChat = async (
   messages: GhostMessage[],
   displayName: string,

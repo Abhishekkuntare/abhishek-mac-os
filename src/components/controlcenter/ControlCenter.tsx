@@ -840,6 +840,7 @@ import {
   X,
   Zap,
   ShieldCheck,
+  Share2,
 } from 'lucide-react';
 
 import { useOS } from '../../context/OSContext';
@@ -2437,7 +2438,7 @@ export const ControlCenter: React.FC = () => {
               ================================================= */}
 
               <div className="px-3.5 pb-3.5 pt-2.5">
-                <div className="grid grid-cols-4 gap-2 border-t border-white/[0.07] pt-3">
+                <div className="grid grid-cols-5 gap-2 border-t border-white/[0.07] pt-3">
                   {/* Capture */}
                   <motion.button
                     type="button"
@@ -2460,6 +2461,30 @@ export const ControlCenter: React.FC = () => {
 
                     <span className="text-[9px]">
                       Capture
+                    </span>
+                  </motion.button>
+
+                  {/* Universal Share */}
+                  <motion.button
+                    type="button"
+                    whileHover={{
+                      y: -2,
+                    }}
+                    whileTap={{
+                      scale: 0.94,
+                    }}
+                    onClick={() => {
+                      openApp('universalshare');
+                      closeControlCenter();
+                    }}
+                    aria-label="Open Universal Share"
+                    title="Universal Share"
+                    className="flex min-h-[58px] flex-col items-center justify-center rounded-2xl border border-cyan-300/10 bg-cyan-500/[0.09] text-cyan-100 hover:bg-cyan-500/[0.16]"
+                  >
+                    <Share2 className="mb-1 h-4 w-4 text-cyan-300" />
+
+                    <span className="whitespace-nowrap text-[8px]">
+                      Universal Share
                     </span>
                   </motion.button>
 
