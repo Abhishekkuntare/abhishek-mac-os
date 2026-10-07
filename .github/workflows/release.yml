@@ -24,10 +24,21 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: voice-requirements.txt
+
+      - name: Install voice build dependencies
+        run: python -m pip install -r voice-requirements.txt
+
       - name: Show environment
         run: |
           node --version
           npm --version
+          python --version
           git --version
 
       - name: Install dependencies
