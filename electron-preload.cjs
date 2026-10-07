@@ -68,6 +68,12 @@ contextBridge.exposeInMainWorld(
         'app:version'
       ),
 
+    updateChannel: () =>
+      ipcRenderer.invoke('app:updateChannel'),
+
+    openStoreUpdates: () =>
+      ipcRenderer.invoke('app:openStoreUpdates'),
+
     getConnectivityState: () =>
       ipcRenderer.invoke(
         'system:getConnectivityState'

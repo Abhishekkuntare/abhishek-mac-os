@@ -1,4 +1,6 @@
 declare global {
+  const __ARLO_APP_VERSION__: string;
+
   interface ConnectivityState {
     supported: boolean;
     wifi: {
@@ -134,6 +136,21 @@ declare global {
       openExternal: (url: string) => Promise<unknown>;
       platform: () => Promise<string>;
       version: () => Promise<string>;
+      updateChannel: () => Promise<'store' | 'direct' | 'development'>;
+      openStoreUpdates: () => Promise<boolean>;
+      checkForUpdates: () => Promise<{
+        success: boolean;
+        reason?: 'store-managed' | 'development';
+        version?: string | null;
+        error?: string;
+      }>;
+      installUpdate: () => Promise<boolean>;
+      onUpdate: (callback: (event: {
+        channel: 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+        version?: string;
+        percent?: number;
+        message?: string;
+      }) => void) => () => void;
       getConnectivityState: () => Promise<ConnectivityState>;
       getBatteryStatus: () => Promise<SystemBatteryStatus>;
       setWifiEnabled: (enabled: boolean) => Promise<ConnectivityState>;

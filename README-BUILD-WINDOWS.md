@@ -30,6 +30,17 @@ release\ARLO-OS-Setup.exe
 release\ARLO-OS-Setup.appx
 ```
 
+The application version comes from `package.json` and is displayed in About and
+Settings. Increase it before each Microsoft Store submission so Partner Center
+receives a package with a new, unique package full name. Microsoft Store builds
+update through the Store; after a submission is published, users can open
+**Settings → About → Software updates → Open Store updates** and choose **Get
+updates** in the Store Library. Store review and rollout must complete before a
+new package is offered.
+
+Set `VITE_ANALYTICS_API_ORIGIN` to the deployed cloud service origin before
+building if the release should include optional cloud profile analytics.
+
 Windows installer icons use `build\icon.ico`; Microsoft Store tile icons use
 the ARLO PNG artwork in `build\appx\`. Keep the existing Partner Center identity
 in `electron-builder-release.cjs` and `electron-builder-store.cjs` when publishing

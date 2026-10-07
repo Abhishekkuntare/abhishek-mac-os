@@ -1,7 +1,7 @@
 {
   "name": "arlo-os-desktop",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.8.0",
   "type": "module",
   "productName": "ARLO OS",
   "description": "ARLO OS — a personal desktop experience built with React and Electron.",

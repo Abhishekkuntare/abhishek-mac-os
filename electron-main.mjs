@@ -2697,6 +2697,20 @@ app.whenReady().then(async () => {
   );
 
   ipcMain.handle(
+    'app:updateChannel',
+    () => !app.isPackaged ? 'development' : isStorePackage ? 'store' : 'direct'
+  );
+
+  ipcMain.handle(
+    'app:openStoreUpdates',
+    async () => {
+      if (!isStorePackage || process.platform !== 'win32') return false;
+      await shell.openExternal('ms-windows-store://downloadsandupdates');
+      return true;
+    }
+  );
+
+  ipcMain.handle(
     'system:getConnectivityState',
       event => {
         assertTrustedFilesFrame(event);

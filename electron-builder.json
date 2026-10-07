@@ -10,7 +10,7 @@
   "publish": {
     "provider": "github",
     "owner": "Abhishekkuntare",
-    "repo": "abhishek-mac-os",
+    "repo": "arlo-os",
     "releaseType": "release"
   },
   "files": [

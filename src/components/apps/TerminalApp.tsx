@@ -56,6 +56,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useOS } from '../../context/OSContext';
 import { vfs } from '../../services/virtualFileSystem';
 import { sound } from '../../services/soundService';
+import { APP_VERSION } from '../../services/appVersion';
 
 interface TerminalLine {
   id: string;
@@ -220,7 +221,7 @@ export const TerminalApp: React.FC = () => {
     ),
     createLine(
       'output',
-      'ARLO OS [Version 1.0.7 Pro (x86_64-apple-darwin26)]'
+      `ARLO OS [Version ${APP_VERSION} Pro]`
     ),
     createLine(
       'output',
@@ -637,7 +638,7 @@ export const TerminalApp: React.FC = () => {
        ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝
 
   ┌─────────────────────────────────────────────┐
-  │ OS        ARLO OS 1.0.0 Pro             │
+  │ OS        ARLO OS ${APP_VERSION} Pro             │
   │ Kernel    Darwin 26.0.0 Pro                 │
   │ Shell     zsh 5.9                           │
   │ Host      Neural Studio Pro                 │

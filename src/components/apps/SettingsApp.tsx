@@ -3005,6 +3005,7 @@ import {
   Wallpaper,
 } from '../../types/desktop';
 import { sound } from '../../services/soundService';
+import { APP_VERSION, getInstalledAppVersion } from '../../services/appVersion';
 import { AppIcon } from '../system/AppIcon';
 import { BatteryStatusIcon } from '../system/BatteryStatusIcon';
 import instagramLogo from '../../assets/doom-scroll/instagram.jpg';
@@ -3774,6 +3775,14 @@ export const SettingsApp: React.FC = () => {
 
   const [activeTab, setActiveTab] =
     useState<SettingsTab>('profile');
+  const [appVersion, setAppVersion] = useState(APP_VERSION);
+  const [updateChannel, setUpdateChannel] = useState<'store' | 'direct' | 'development'>('development');
+  const [updateStatus, setUpdateStatus] = useState<
+    'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error' | 'store-opened'
+  >('idle');
+  const [updateMessage, setUpdateMessage] = useState('');
+  const [updatePercent, setUpdatePercent] = useState(0);
+  const [updateActionBusy, setUpdateActionBusy] = useState(false);
 
   useEffect(() => {
     const openMascotSettings = () => {
@@ -3801,6 +3810,111 @@ export const SettingsApp: React.FC = () => {
     }
     return () => window.removeEventListener('arlo:open-mascot-settings', openMascotSettings);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const api = window.electronAPI;
+    void getInstalledAppVersion().then(version => {
+      if (active) setAppVersion(version);
+    });
+    if (!api) return () => {
+      active = false;
+    };
+
+    void api.updateChannel().then(channel => {
+      if (active) setUpdateChannel(channel);
+    }).catch(error => {
+      console.error('[Settings] Could not detect the app update channel:', error);
+      if (active) {
+        setUpdateStatus('error');
+        setUpdateMessage('Could not determine how this installation receives updates.');
+      }
+    });
+
+    const unsubscribe = api.onUpdate(event => {
+      if (!active) return;
+      switch (event.channel) {
+        case 'checking':
+          setUpdateStatus('checking');
+          setUpdateMessage('Checking for the latest ARLO OS release…');
+          break;
+        case 'available':
+          setUpdateStatus('available');
+          setUpdateMessage(`Version ${event.version || 'new'} is available. Downloading in the background…`);
+          break;
+        case 'not-available':
+          setUpdateStatus('not-available');
+          setUpdateMessage(`You’re up to date${event.version ? ` on version ${event.version}` : ''}.`);
+          break;
+        case 'downloading':
+          setUpdateStatus('downloading');
+          setUpdatePercent(Math.max(0, Math.min(100, Math.round(event.percent || 0))));
+          setUpdateMessage(`Downloading update… ${Math.max(0, Math.min(100, Math.round(event.percent || 0)))}%`);
+          break;
+        case 'downloaded':
+          setUpdateStatus('downloaded');
+          setUpdateMessage(`Version ${event.version || 'update'} is ready to install. Restart ARLO OS to finish.`);
+          break;
+        case 'error':
+          setUpdateStatus('error');
+          setUpdateMessage(event.message || 'Could not check for updates. Check your connection and try again.');
+          break;
+      }
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
+  const handleUpdateAction = async () => {
+    const api = window.electronAPI;
+    if (!api || updateActionBusy) return;
+    setUpdateActionBusy(true);
+    setUpdateMessage('');
+    try {
+      if (updateChannel === 'store') {
+        const opened = await api.openStoreUpdates();
+        if (!opened) throw new Error('Could not open Microsoft Store updates on this device.');
+        setUpdateStatus('store-opened');
+        setUpdateMessage('Microsoft Store opened. Choose Get updates in Library; Store updates arrive after the published submission is approved.');
+      } else if (updateChannel === 'direct') {
+        setUpdateStatus('checking');
+        setUpdateMessage('Checking for the latest ARLO OS release…');
+        const result = await api.checkForUpdates();
+        if (!result.success) {
+          if (result.reason === 'development') {
+            setUpdateStatus('error');
+            setUpdateMessage('Update checks are available in the installed desktop app.');
+          } else {
+            setUpdateStatus('error');
+            setUpdateMessage(result.error || 'Could not check for updates.');
+          }
+        }
+      } else {
+        setUpdateStatus('error');
+        setUpdateMessage('Update checks are available in the installed desktop app.');
+      }
+    } catch (error) {
+      console.error('[Settings] Update action failed:', error);
+      setUpdateStatus('error');
+      setUpdateMessage(error instanceof Error ? error.message : 'Could not open the update service.');
+    } finally {
+      setUpdateActionBusy(false);
+    }
+  };
+
+  const installDownloadedUpdate = async () => {
+    try {
+      const installed = await window.electronAPI?.installUpdate();
+      if (!installed) throw new Error('The downloaded update could not be started.');
+    } catch (error) {
+      console.error('[Settings] Could not install downloaded update:', error);
+      setUpdateStatus('error');
+      setUpdateMessage(error instanceof Error ? error.message : 'Could not install the downloaded update.');
+    }
+  };
 
   const [selectedThemeId, setSelectedThemeId] =
     useState<string | null>(() => getStoredUITheme()?.id ?? null);
@@ -4639,7 +4753,7 @@ export const SettingsApp: React.FC = () => {
         <div className="pt-4 mt-3 border-t border-white/10">
           <div className="flex items-center justify-center gap-1.5 text-[9px] text-slate-600">
             <Sparkles className="w-3 h-3" />
-            ARLO OS 1.0.0 Pro
+            ARLO OS {appVersion} Pro
           </div>
         </div>
       </aside>
@@ -7279,7 +7393,7 @@ export const SettingsApp: React.FC = () => {
                       </h3>
 
                       <div className="text-sm text-slate-400 mt-1">
-                        Version 1.0.7 Pro
+                        Version {appVersion} Pro
                       </div>
 
                       <p className="text-xs text-slate-300 mt-5 max-w-xl leading-relaxed">
@@ -7287,6 +7401,71 @@ export const SettingsApp: React.FC = () => {
                         A full-featured desktop operating system experience built with React, TypeScript, Electron and Tailwind CSS.
                       </p>
                     </div>
+                  </div>
+                </SectionCard>
+
+                <SectionCard className="relative overflow-hidden p-5 sm:p-6">
+                  <div className="pointer-events-none absolute -right-12 -top-16 h-48 w-48 rounded-full bg-sky-400/[0.08] blur-3xl" />
+                  <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-3.5">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-sky-300/20 bg-sky-300/[0.08] text-sky-200">
+                        <RefreshCw className={`h-5 w-5 ${updateStatus === 'checking' || updateStatus === 'downloading' ? 'animate-spin' : ''}`} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-sm font-bold text-white">Software updates</h3>
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400">
+                            {updateChannel === 'store' ? 'Microsoft Store' : updateChannel === 'direct' ? 'Direct install' : 'Desktop app'}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[10px] text-slate-400">Installed version <span className="font-semibold text-slate-200">{appVersion}</span></p>
+                        <p aria-live="polite" className={`mt-2 max-w-2xl text-[10px] leading-4 ${updateStatus === 'error' ? 'text-rose-300' : updateStatus === 'downloaded' || updateStatus === 'not-available' ? 'text-emerald-300' : 'text-slate-400'}`}>
+                          {updateMessage || (updateChannel === 'store'
+                            ? 'Microsoft Store delivers updates after a new Store submission is approved. Check the Store Library for updates.'
+                            : updateChannel === 'direct'
+                              ? 'ARLO OS checks for direct-download releases and can install updates from here.'
+                              : 'Update controls are available in the installed desktop application.')}
+                        </p>
+                        {updateStatus === 'downloading' && (
+                          <div
+                            role="progressbar"
+                            aria-label="Update download progress"
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={updatePercent}
+                            className="mt-2 h-1.5 max-w-sm overflow-hidden rounded-full bg-white/10"
+                          >
+                            <div className="h-full rounded-full bg-gradient-to-r from-sky-400 to-indigo-400 transition-[width]" style={{ width: `${updatePercent}%` }} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {updateChannel === 'development' ? (
+                      <span className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] px-3 text-[10px] font-semibold text-slate-500">
+                        <ShieldCheck className="h-3.5 w-3.5" /> Installed build required
+                      </span>
+                    ) : updateStatus === 'downloaded' && updateChannel === 'direct' ? (
+                      <button
+                        type="button"
+                        onClick={() => void installDownloadedUpdate()}
+                        className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-sky-500 px-4 text-[10px] font-bold text-white transition-colors hover:bg-sky-400"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" /> Restart to update
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void handleUpdateAction()}
+                        disabled={updateActionBusy || updateStatus === 'checking' || updateStatus === 'downloading'}
+                        className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-sky-300/20 bg-sky-300/[0.08] px-4 text-[10px] font-bold text-sky-100 transition-colors hover:bg-sky-300/[0.14] disabled:cursor-wait disabled:opacity-50"
+                      >
+                        {updateChannel === 'store' ? <ExternalLink className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                        {updateActionBusy || updateStatus === 'checking'
+                          ? 'Checking…'
+                          : updateChannel === 'store' ? 'Open Store updates' : 'Check for updates'}
+                      </button>
+                    )}
                   </div>
                 </SectionCard>
 

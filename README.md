@@ -246,8 +246,8 @@ To develop ARLO OS locally, you should have:
 Clone the repository:
 
 ```bash
-git clone https://github.com/Abhishekkuntare/abhishek-mac-os.git
-cd abhishek-mac-os
+git clone https://github.com/Abhishekkuntare/arlo-os.git
+cd arlo-os
 ```
 
 Install dependencies:
@@ -320,11 +320,11 @@ Release artifacts are published through the official GitHub Releases page.
 
 ## 🔄 Automatic Updates
 
-The standalone Windows installer uses the project's GitHub Releases for automatic updates. Microsoft Store installations receive updates through the Microsoft Store; the app's built-in updater is disabled for Store-packaged installs.
+The standalone Windows installer checks the project's `Abhishekkuntare/arlo-os` GitHub Releases for updates. Microsoft Store installations use the Store's update service; in **Settings → About → Software updates**, the Store package opens the Store Library so users can check for updates after a new submission is approved and published.
 
 Users should not need to manually uninstall the application to receive supported application updates.
 
-Updates are downloaded and installed according to the application's update configuration and user interaction.
+The installed version shown in About and Settings is read from the packaged application version. Increase `package.json` before building each release; the same version is embedded in the desktop UI and Microsoft Store package.
 
 ---
 
@@ -334,7 +334,7 @@ Bug reports, feature requests and improvements are welcome.
 
 Please use GitHub Issues:
 
-https://github.com/Abhishekkuntare/abhishek-mac-os/issues
+https://github.com/Abhishekkuntare/arlo-os/issues
 
 When reporting a problem, include:
 
@@ -396,7 +396,7 @@ https://github.com/Abhishekkuntare
 
 Project repository:
 
-https://github.com/Abhishekkuntare/abhishek-mac-os
+https://github.com/Abhishekkuntare/arlo-os
 
 ---
 

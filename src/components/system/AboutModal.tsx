@@ -1,12 +1,24 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { X, Cpu, HardDrive, Monitor, ShieldCheck, Mail, Sparkles } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { sound } from '../../services/soundService';
+import { APP_VERSION, getInstalledAppVersion } from '../../services/appVersion';
 import { ArloLogo } from './ArloLogo';
 
 export const AboutModal: React.FC = () => {
   const { showAboutModal, setShowAboutModal, openApp } = useOS();
+  const [version, setVersion] = useState(APP_VERSION);
+
+  useEffect(() => {
+    let active = true;
+    void getInstalledAppVersion().then(installedVersion => {
+      if (active) setVersion(installedVersion);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   if (!showAboutModal) return null;
 
@@ -44,7 +56,7 @@ export const AboutModal: React.FC = () => {
 
           <div>
             <h2 className="text-xl font-extrabold tracking-tight">ARLO OS</h2>
-            <p className="text-xs text-slate-300 font-medium">Version 1.0.7 Pro (Build 26A382)</p>
+            <p className="text-xs text-slate-300 font-medium">Version {version} Pro</p>
             <div className="flex items-center gap-1.5 mt-1 text-[11px] text-sky-400 font-medium">
               <Sparkles className="w-3 h-3" />
               <span>Crafted by Abhishek Kuntare</span>
