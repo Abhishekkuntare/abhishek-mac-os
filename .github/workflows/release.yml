@@ -35,6 +35,8 @@ jobs:
 
       - name: Build renderer
         run: npm run build:renderer
+        env:
+          VITE_ANALYTICS_API_ORIGIN: https://arlo-os.onrender.com
 
       - name: Build Windows installer
         run: npm run package:exe
