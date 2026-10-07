@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#090d18">
+    <meta name="robots" content="noindex, nofollow">
+    <title>ARLO OS · Private analytics</title>
+    <link rel="stylesheet" href="/admin-assets/dashboard.css">
+    <script src="/admin-assets/dashboard.js" defer></script>
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main id="login-view" class="login-view" hidden>
+      <section class="login-card" aria-labelledby="login-title">
+        <div class="brand-mark" aria-hidden="true">A</div>
+        <p class="eyebrow">PRIVATE ADMIN SPACE</p>
+        <h1 id="login-title">Welcome back.</h1>
+        <p class="login-copy">Sign in with the administrator credentials configured for this service.</p>
+        <form id="login-form">
+          <label for="admin-email">Administrator email</label>
+          <input id="admin-email" name="email" type="email" autocomplete="username" required>
+          <label for="admin-password">Password</label>
+          <input id="admin-password" name="password" type="password" autocomplete="current-password" required>
+          <p id="login-error" class="error-message" role="alert" hidden></p>
+          <button id="login-button" class="primary-button" type="submit">Sign in <span aria-hidden="true">→</span></button>
+        </form>
+        <p class="secure-note"><span class="status-dot"></span> Private analytics · encrypted session</p>
+      </section>
+    </main>
+
+    <div id="dashboard-view" class="app-shell" hidden>
+      <aside class="sidebar">
+        <a class="brand-lockup" href="/admin" aria-label="ARLO OS analytics home">
+          <span class="brand-mark brand-mark-small">A</span>
+          <span><strong>ARLO OS</strong><small>PROJECT STUDIO</small></span>
+        </a>
+        <div class="sidebar-section-label">WORKSPACE</div>
+        <a class="nav-link active" href="#overview">
+          <span class="nav-icon">◫</span> Overview
+        </a>
+        <a class="nav-link" href="#community">
+          <span class="nav-icon">◎</span> Community
+        </a>
+        <div class="sidebar-bottom">
+          <span class="status-dot"></span>
+          <span><strong>Private dashboard</strong><small>Administrator access only</small></span>
+        </div>
+      </aside>
+
+      <section class="main-column">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">ARLO OS / ANALYTICS</p>
+            <h1>Project overview</h1>
+          </div>
+          <div class="topbar-actions">
+            <span id="last-updated" class="updated-label">Loading latest data…</span>
+            <button id="refresh-button" class="icon-button" type="button" aria-label="Refresh dashboard" title="Refresh">↻</button>
+            <button id="logout-button" class="quiet-button" type="button">Sign out</button>
+          </div>
+        </header>
+
+        <main id="overview" class="dashboard-content">
+          <div id="dashboard-error" class="error-banner" role="alert" hidden></div>
+          <section class="hero-panel">
+            <div class="hero-copy">
+              <span class="live-label"><span class="status-dot"></span> PRIVATE ANALYTICS</span>
+              <h2>Your project,<br><span>in focus.</span></h2>
+              <p>Understand your growing community and how people discover ARLO OS.</p>
+            </div>
+            <div class="hero-orbit" aria-hidden="true">
+              <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+              <div class="orbit-core">A</div><span class="orbit-star star-one">✦</span><span class="orbit-star star-two">✧</span>
+            </div>
+            <div class="hero-footnote">COMMUNITY SIGNALS <span>·</span> GITHUB PROJECT METRICS</div>
+          </section>
+
+          <section class="metric-grid" aria-label="Project metrics">
+            <article class="metric-card metric-users">
+              <div class="metric-head"><span class="metric-icon">◉</span><span class="metric-period">ALL TIME</span></div>
+              <p class="metric-label">Opted-in profiles</p>
+              <p id="metric-users" class="metric-value">—</p>
+              <p class="metric-note">People who chose cloud profile sharing</p>
+            </article>
+            <article class="metric-card metric-downloads">
+              <div class="metric-head"><span class="metric-icon">↓</span><span class="metric-period">GITHUB RELEASES</span></div>
+              <p class="metric-label">Downloads</p>
+              <p id="metric-downloads" class="metric-value">—</p>
+              <p id="metric-download-note" class="metric-note">Release asset downloads</p>
+            </article>
+            <article class="metric-card metric-stars">
+              <div class="metric-head"><span class="metric-icon">✦</span><span class="metric-period">GITHUB</span></div>
+              <p class="metric-label">Stars · project likes</p>
+              <p id="metric-stars" class="metric-value">—</p>
+              <p class="metric-note">A public signal of community support</p>
+            </article>
+          </section>
+
+          <section class="insight-grid">
+            <article class="panel country-panel">
+              <div class="panel-heading">
+                <div><p class="eyebrow">COMMUNITY</p><h2>Where users are from</h2></div>
+                <span id="country-total" class="subtle-tag">— countries</span>
+              </div>
+              <p class="panel-description">Approximate country and region, inferred only when a user opts in.</p>
+              <div id="country-list" class="country-list"><p class="empty-state">Loading locations…</p></div>
+            </article>
+            <article class="panel github-panel">
+              <div class="panel-heading">
+                <div><p class="eyebrow">PROJECT MOMENTUM</p><h2>GitHub activity</h2></div>
+                <span class="github-mark" aria-hidden="true">GH</span>
+              </div>
+              <p class="panel-description">Live public metrics from the ARLO OS GitHub repository.</p>
+              <a id="github-link" class="repo-card" href="https://github.com/Abhishekkuntare/arlo-os" target="_blank" rel="noreferrer">
+                <span class="repo-mark">A</span>
+                <span class="repo-copy"><strong>Abhishekkuntare / arlo-os</strong><small>Open repository <span aria-hidden="true">↗</span></small></span>
+                <span class="repo-arrow" aria-hidden="true">→</span>
+              </a>
+              <p id="github-updated" class="github-footnote">GitHub metrics refresh every 10 minutes.</p>
+            </article>
+          </section>
+
+          <section id="community" class="panel users-panel">
+            <div class="panel-heading users-heading">
+              <div><p class="eyebrow">OPTED-IN COMMUNITY</p><h2>Recent profiles</h2></div>
+              <span id="user-count-label" class="subtle-tag">Latest 100</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>USER</th><th>USERNAME</th><th>LOCATION</th><th>JOINED</th></tr></thead>
+                <tbody id="user-rows"><tr><td colspan="4" class="empty-state">Loading profiles…</td></tr></tbody>
+              </table>
+            </div>
+            <p class="privacy-footnote">Personal profile details are shown only in this authenticated administrator dashboard.</p>
+          </section>
+          <footer class="page-footer"><span>ARLO OS · PROJECT STUDIO</span><span>Made with intention <span class="footer-star">✦</span></span></footer>
+        </main>
+      </section>
+    </div>
+    <div id="global-status" class="sr-only" aria-live="polite"></div>
+  </body>
+</html>

@@ -35,6 +35,10 @@ Doom Scroll brings Instagram, Snapchat, WhatsApp, X, Threads, LinkedIn, Discord,
 
 Features may evolve as the project develops.
 
+### Optional cloud profile analytics
+
+Users may opt in during setup to share their profile with the project's private cloud analytics service. The authenticated project administrator dashboard combines those opt-in profiles and approximate locations with public GitHub release-download and repository-star counts. Collection is disabled unless the user consents. See [CLOUD-ANALYTICS.md](./CLOUD-ANALYTICS.md) for deployment configuration and [PRIVACY.md](./PRIVACY.md) for data handling.
+
 ### Desktop themes
 
 The Themes section in Settings offers animated previews for 29 visual themes. ARLO OS's original appearance is the default; selecting a theme applies its colors and surfaces across the desktop, system panels, and built-in applications, and the choice is saved between launches. Use **Original Desktop** to restore the default appearance.

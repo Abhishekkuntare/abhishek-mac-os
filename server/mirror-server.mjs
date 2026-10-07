@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { WebSocket, WebSocketServer } from 'ws';
+import { attachAnalyticsRoutes } from './analytics.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ROOM_TTL_MS = 5 * 60 * 1000;
@@ -24,7 +25,12 @@ const closeRoomSockets = (room, code, message) => {
   }
 };
 
-export const createMirrorServer = ({ port = Number(process.env.PORT) || 4173, publicOrigin = process.env.PUBLIC_ORIGIN || process.env.RENDER_EXTERNAL_URL } = {}) => {
+export const createMirrorServer = ({
+  port = Number(process.env.PORT) || 4173,
+  publicOrigin = process.env.PUBLIC_ORIGIN || process.env.RENDER_EXTERNAL_URL,
+  analyticsEnv = process.env,
+  fetchImpl = fetch,
+} = {}) => {
   const app = express();
   const server = createServer(app);
   const webSocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_SIGNAL_PAYLOAD });
@@ -38,6 +44,7 @@ export const createMirrorServer = ({ port = Number(process.env.PORT) || 4173, pu
 
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
+  app.use('/api/analytics/register', express.json({ limit: '512kb' }));
   app.use(express.json({ limit: '8kb' }));
 
   app.use((request, response, next) => {
@@ -70,6 +77,8 @@ export const createMirrorServer = ({ port = Number(process.env.PORT) || 4173, pu
   app.get('/api/config', (_request, response) => response.json({
     iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }],
   }));
+
+  attachAnalyticsRoutes(app, { env: analyticsEnv, fetchImpl });
 
   app.post('/api/rooms', (request, response) => {
     const now = Date.now();
@@ -229,6 +238,15 @@ export const createMirrorServer = ({ port = Number(process.env.PORT) || 4173, pu
     });
   });
 
+  const adminAssetDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), 'admin');
+  app.get('/admin', (_request, response) => {
+    response.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Referrer-Policy', 'no-referrer');
+    response.setHeader('Cache-Control', 'no-store');
+    response.sendFile(path.join(adminAssetDirectory, 'index.html'));
+  });
+  app.use('/admin-assets', express.static(adminAssetDirectory, { index: false, maxAge: '1h' }));
   app.use(express.static(path.join(projectRoot, 'dist'), { index: false, maxAge: '1h' }));
   app.get('*', (_request, response) => response.sendFile(path.join(projectRoot, 'dist', 'index.html')));
 

@@ -14,7 +14,7 @@
     "build:voice": "node scripts/build-ghost-voice.mjs",
     "preview": "vite preview",
     "start:mirror": "node server/mirror-server.mjs",
-    "test:mirror": "node --test server/mirror-server.test.mjs",
+    "test:mirror": "node --test server/mirror-server.test.mjs server/analytics.test.mjs",
     "test:ghost-agent": "node --import tsx --test tests/ghost-agent.test.mjs",
     "electron:dev": "electron .",
     "electron:dev:voice": "node scripts/electron-dev-voice.mjs",

@@ -1742,11 +1742,12 @@ import {
   ShieldCheck,
   Globe2,
   Languages,
-  MapPin, UserRound, CircleUserRound, Mail,
+  MapPin, UserRound, CircleUserRound, Mail, AtSign,
 } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { UserProfile, SystemSettings, AccentColor, ThemeMode } from '../../types/desktop';
 import { sound } from '../../services/soundService';
+import { saveOptedInProfile } from '../../services/cloudAnalytics';
 import { ArloLogo } from '../system/ArloLogo';
 import { MascotMark } from '../system/MascotMark';
 import sunnyGirlAvatar from '../../assets/profile-characters/sunny-girl.jpg';
@@ -1762,6 +1763,7 @@ import storybookBoyAvatar from '../../assets/profile-characters/storybook-boy.jp
 type AvatarPreset = {
   name: string;
   url: string;
+  fileName: string;
 };
 
 const createAvatarDataUrl = (image: CanvasImageSource, width: number, height: number) => {
@@ -1970,14 +1972,14 @@ const createCartoonAvatar = ({
 };
 
 const PRESET_AVATARS: AvatarPreset[] = [
-  { name: 'Sunny', url: sunnyGirlAvatar },
-  { name: 'Curly', url: curlyGlassesAvatar },
-  { name: 'Frog Girl', url: frogHoodGirlAvatar },
-  { name: 'Bear Hat', url: bearHatBoyAvatar },
-  { name: 'Frog Cap', url: frogCapBoyAvatar },
-  { name: 'Winky', url: winkingBoyAvatar },
-  { name: 'Adventurer', url: adventurerGirlAvatar },
-  { name: 'Storybook', url: storybookBoyAvatar },
+  { name: 'Sunny', url: sunnyGirlAvatar, fileName: 'sunny-girl.jpg' },
+  { name: 'Curly', url: curlyGlassesAvatar, fileName: 'curly-glasses.jpg' },
+  { name: 'Frog Girl', url: frogHoodGirlAvatar, fileName: 'frog-hood-girl.jpg' },
+  { name: 'Bear Hat', url: bearHatBoyAvatar, fileName: 'bear-hat-boy.jpg' },
+  { name: 'Frog Cap', url: frogCapBoyAvatar, fileName: 'frog-cap-boy.jpg' },
+  { name: 'Winky', url: winkingBoyAvatar, fileName: 'winking-boy.jpg' },
+  { name: 'Adventurer', url: adventurerGirlAvatar, fileName: 'adventurer-girl.jpg' },
+  { name: 'Storybook', url: storybookBoyAvatar, fileName: 'storybook-boy.jpg' },
 ];
 
 const ROLES_LIST = [
@@ -2163,6 +2165,10 @@ export const OnboardingModal: React.FC = () => {
   const onboardingModalRef = useRef<HTMLDivElement | null>(null);
   const [step, setStep] = useState(1);
   const [emailError, setEmailError] = useState('');
+  const [usernameError, setUsernameError] = useState('');
+  const [shareCloudAnalytics, setShareCloudAnalytics] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cloudSaveError, setCloudSaveError] = useState('');
 
   useEffect(() => {
     onboardingModalRef.current?.scrollTo({ top: 0, behavior: 'auto' });
@@ -2287,13 +2293,39 @@ export const OnboardingModal: React.FC = () => {
       : '';
   };
 
-  const handleNext = () => {
+  const validateUsername = (username: string) => {
+    const value = username.trim();
+    if (!value) return 'Username is required.';
+    return value.length > 32 || !/^[a-zA-Z0-9._-]+$/.test(value)
+      ? 'Use up to 32 letters, numbers, dots, underscores, or hyphens.'
+      : '';
+  };
+
+  const completeOnboarding = () => {
+    try {
+      confetti({
+        particleCount: 120,
+        spread: 70,
+        origin: { y: 0.6 },
+      });
+    } catch { }
+
+    finishOnboarding(profile, {
+      ...langSettings,
+      ...personalization,
+    });
+  };
+
+  const handleNext = async () => {
+    if (isSubmitting) return;
     sound.playClick();
 
     if (step === 3) {
       const nextEmailError = validateEmail(profile.email);
+      const nextUsernameError = validateUsername(profile.username);
       setEmailError(nextEmailError);
-      if (!profile.fullName.trim() || !profile.displayName.trim() || nextEmailError) {
+      setUsernameError(nextUsernameError);
+      if (!profile.fullName.trim() || !profile.displayName.trim() || nextEmailError || nextUsernameError) {
         return;
       }
     }
@@ -2301,19 +2333,23 @@ export const OnboardingModal: React.FC = () => {
     if (step < 6) {
       setStep(s => s + 1);
     } else {
-      // Complete!
-      try {
-        confetti({
-          particleCount: 120,
-          spread: 70,
-          origin: { y: 0.6 },
-        });
-      } catch { }
+      setCloudSaveError('');
+      if (shareCloudAnalytics) {
+        setIsSubmitting(true);
+        try {
+          const avatarPreset = profile.avatarType === 'preset'
+            ? PRESET_AVATARS.find(avatar => avatar.url === profile.avatarUrl)?.fileName
+            : undefined;
+          await saveOptedInProfile(profile, avatarPreset);
+        } catch (error) {
+          setCloudSaveError(error instanceof Error ? error.message : 'Could not save your profile to cloud analytics.');
+          setIsSubmitting(false);
+          return;
+        }
+        setIsSubmitting(false);
+      }
 
-      finishOnboarding(profile, {
-        ...langSettings,
-        ...personalization,
-      });
+      completeOnboarding();
     }
   };
 
@@ -3538,6 +3574,54 @@ export const OnboardingModal: React.FC = () => {
                       tracking-[0.14em] text-slate-500
                     "
                               >
+                                <AtSign className="h-3 w-3 text-indigo-300" />
+                                Username
+                              </label>
+                              <input
+                                autoComplete="username"
+                                placeholder="your.username"
+                                type="text"
+                                maxLength={32}
+                                value={profile.username}
+                                onBlur={() => setUsernameError(validateUsername(profile.username))}
+                                onChange={event => {
+                                  const username = event.target.value;
+                                  setProfile(profileDraft => ({ ...profileDraft, username }));
+                                  if (usernameError) setUsernameError(validateUsername(username));
+                                }}
+                                aria-invalid={Boolean(usernameError)}
+                                aria-describedby={usernameError ? 'onboarding-username-error' : undefined}
+                                className="
+                      w-full
+                      rounded-2xl
+                      border border-white/[0.08]
+                      bg-white/[0.035]
+                      px-4 py-3.5
+                      text-xs font-semibold
+                      text-white
+                      outline-none
+                      placeholder:text-slate-700
+                      transition-all duration-300
+                      hover:border-white/[0.13]
+                      focus:border-indigo-400/40
+                      focus:bg-indigo-400/[0.035]
+                    "
+                              />
+                              {usernameError && (
+                                <p id="onboarding-username-error" className="mt-1.5 text-[10px] text-rose-400">
+                                  {usernameError}
+                                </p>
+                              )}
+                            </div>
+
+                            <div>
+                              <label
+                                className="
+                      mb-2 flex items-center gap-2
+                      text-[8px] font-black uppercase
+                      tracking-[0.14em] text-slate-500
+                    "
+                              >
                                 <Mail className="h-3 w-3 text-cyan-400" />
                                 Email address
                               </label>
@@ -3577,11 +3661,26 @@ export const OnboardingModal: React.FC = () => {
                                   {emailError}
                                 </p>
                               ) : (
-                                <p className="mt-1.5 text-[9px] text-slate-500">Required for your profile.</p>
+                              <p className="mt-1.5 text-[9px] text-slate-500">Required for your local profile.</p>
                               )}
                             </div>
 
                           </div>
+
+                        <label className="mt-4 flex cursor-pointer gap-3 rounded-2xl border border-sky-300/15 bg-sky-300/[0.045] p-3.5 transition-colors hover:border-sky-300/30">
+                          <input
+                            type="checkbox"
+                            checked={shareCloudAnalytics}
+                            onChange={event => setShareCloudAnalytics(event.target.checked)}
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-sky-400"
+                          />
+                          <span>
+                            <span className="block text-[10px] font-bold text-slate-100">Share my profile to help improve ARLO OS</span>
+                            <span className="mt-1 block text-[9px] leading-4 text-slate-400">
+                              If you opt in, your name, username, email and profile photo are stored in a private cloud database visible only to the project administrator. Your approximate country and region are inferred from your connection IP; GPS and the IP address are not stored. You can leave this off and still use ARLO OS.
+                            </span>
+                          </span>
+                        </label>
 
                         </div>
                       </div>
@@ -3606,7 +3705,7 @@ export const OnboardingModal: React.FC = () => {
             tracking-widest text-emerald-400
           "
                     >
-                      Local profile
+                      {shareCloudAnalytics ? 'Private cloud sync' : 'Local profile only'}
                     </span>
                   </div>
                 </div>
@@ -4329,12 +4428,30 @@ export const OnboardingModal: React.FC = () => {
 
           <button
             onClick={handleNext}
-            disabled={step === 3 && (!profile.fullName.trim() || !profile.displayName.trim() || Boolean(validateEmail(profile.email)))}
+            disabled={isSubmitting || (step === 3 && (!profile.fullName.trim() || !profile.displayName.trim() || Boolean(validateEmail(profile.email)) || Boolean(validateUsername(profile.username))))}
             className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-sky-500/25 flex items-center gap-2 transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span>{step === 6 ? 'Enter ARLO OS →' : 'Continue →'}</span>
+            <span>{isSubmitting ? 'Saving securely…' : step === 6 ? 'Enter ARLO OS →' : 'Continue →'}</span>
           </button>
         </div>
+        {cloudSaveError && (
+          <div className="mt-3 flex items-center justify-end gap-3">
+            <p role="alert" className="text-right text-[10px] leading-4 text-rose-300">
+              {cloudSaveError}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setShareCloudAnalytics(false);
+                setCloudSaveError('');
+                completeOnboarding();
+              }}
+              className="shrink-0 rounded-lg border border-white/15 px-2.5 py-1.5 text-[9px] font-semibold text-slate-200 transition-colors hover:bg-white/10"
+            >
+              Continue locally
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

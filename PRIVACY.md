@@ -1,6 +1,6 @@
 # ARLO OS Privacy Policy
 
-**Effective date:** September 23, 2026
+**Effective date:** October 7, 2026
 
 ARLO OS is an open-source desktop application maintained by Abhishek Kuntare.
 
@@ -14,7 +14,7 @@ ARLO OS is designed primarily as a local desktop application.
 
 The project does not intentionally collect, sell or rent personal information for advertising, profiling or data-broker purposes.
 
-The application does not intentionally create a centralized user profile for advertising purposes.
+ARLO OS does not create a cloud profile unless a user explicitly opts in during setup. It does not use profile data for advertising.
 
 ---
 
@@ -58,6 +58,12 @@ Examples can include:
 
 The application should not be interpreted as completely offline software when an enabled feature requires network access.
 
+During first-time setup, users may optionally share their name, display name, username, email address, and profile photo with the project. If they opt in, these details are stored in the project's private Supabase database and are visible to the project administrator through an authenticated dashboard. Users who decline can continue using ARLO OS; their profile remains local.
+
+For opted-in profiles, the service uses the request's IP address temporarily to infer an approximate country and region using ipwho.is. The raw IP address and precise GPS location are not written to the analytics database. The application host and the location provider may process the IP address to provide this lookup. Location may be unavailable or inaccurate, for example when using a VPN or proxy.
+
+The administrator dashboard also reads public GitHub repository star totals and release-asset download counts from the GitHub API. These are project-level public statistics, not per-user activity.
+
 Phone screen sharing contacts the configured pairing service to create a short-lived session and exchange WebRTC connection setup messages. Pairing tokens and active signaling connections are held in memory and expire after five minutes; restarting the service ends active sessions. The relay does not receive or store screen video. WebRTC sends video peer-to-peer with transport encryption, except when a TURN relay is used. Connection setup can expose network-address candidates to the paired device and signaling service; STUN providers may also see public network addresses. The hosted service and STUN providers may process ordinary connection metadata under their own privacy policies.
 
 ---
@@ -96,9 +102,7 @@ Users should avoid submitting confidential, sensitive or personal information to
 
 ## 7. Personal information
 
-ARLO OS does not intentionally require users to provide personal information merely to install and use the basic desktop application.
-
-If a future feature requires personal information, the project documentation should clearly explain what information is required and why it is needed.
+Cloud profile sharing is optional and requires explicit consent during setup. The information is used for project-level community insights and is not sold or used for advertising. Users can contact the project maintainer to request deletion of an opted-in profile.
 
 ---
 
