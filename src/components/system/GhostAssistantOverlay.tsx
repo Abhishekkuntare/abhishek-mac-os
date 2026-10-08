@@ -73,6 +73,7 @@ export const GhostAssistantOverlay: React.FC = () => {
   const [wakeStatus, setWakeStatus] = useState<'starting' | 'ready' | 'paused' | 'stopped' | 'error'>(
     settings.ghostWakeEnabled ? 'starting' : 'stopped',
   );
+  const [platform, setPlatform] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [errorDetails, setErrorDetails] = useState('');
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
@@ -99,6 +100,18 @@ export const GhostAssistantOverlay: React.FC = () => {
   const userRef = useRef(user);
   userRef.current = user;
   const shortcut = settings.ghostShortcut;
+
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api?.platform) {
+      setPlatform('web');
+      return;
+    }
+    void api.platform().then(setPlatform).catch(error => {
+      console.error('[Ghost AI] Could not detect the desktop platform:', error);
+      setPlatform('unknown');
+    });
+  }, []);
 
   const movePanelToSide = (width = panelWidth, height = panelHeight) => {
     const actualWidth = isCollapsed ? orbSize : Math.min(width, window.innerWidth - 32);
@@ -510,6 +523,12 @@ export const GhostAssistantOverlay: React.FC = () => {
 
   useEffect(() => {
     const api = window.electronAPI;
+    if (platform === null) return;
+    if (platform === 'darwin') {
+      setWakeStatus('stopped');
+      setIsListening(false);
+      return;
+    }
     if (!settings.ghostWakeEnabled || isLocked || isSleeping || isShuttingDown) {
       activeConversationRef.current = false;
       setIsListening(false);
@@ -618,6 +637,7 @@ export const GhostAssistantOverlay: React.FC = () => {
     };
   }, [
     settings.ghostWakeEnabled,
+    platform,
     isLocked,
     isSleeping,
     isShuttingDown,
@@ -637,7 +657,7 @@ export const GhostAssistantOverlay: React.FC = () => {
 
   return (
     <>
-      {settings.ghostWakeEnabled && !showGhostAssistant && !isLocked && !isSleeping && !isShuttingDown && (
+      {platform === 'win32' && settings.ghostWakeEnabled && !showGhostAssistant && !isLocked && !isSleeping && !isShuttingDown && (
         <button
           type="button"
           role="status"

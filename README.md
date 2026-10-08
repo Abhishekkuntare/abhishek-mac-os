@@ -1,8 +1,8 @@
 # ARLO OS
 
-### A modern, open-source desktop environment for Windows.
+### A modern, open-source desktop environment for Windows and macOS.
 
-ARLO OS is an open-source desktop environment designed to provide a modern, customizable and immersive desktop experience for Windows.
+ARLO OS is an open-source desktop environment designed to provide a modern, customizable and immersive desktop experience for Windows and macOS.
 
 The project combines a familiar desktop workflow with a responsive interface, built-in applications, productivity tools, system utilities and a strong focus on visual design and user experience.
 
@@ -160,7 +160,7 @@ features such as Ghost AI, workspace workflows, and productivity experiences.
 
 ## 🚀 Download
 
-The current Windows installer is distributed through GitHub Releases and is not Authenticode-signed. Windows may show an **Unknown publisher** or SmartScreen warning.
+Windows and universal macOS installers are distributed through GitHub Releases. The Windows installer is not Authenticode-signed and may show an **Unknown publisher** or SmartScreen warning. macOS builds are currently unsigned and not notarized, so Gatekeeper may require users to open the app from Finder using **Open**.
 
 **[Download ARLO OS](https://abhishek-operating-system.netlify.app)**
 
@@ -283,6 +283,14 @@ npm run package:win
 ```
 
 This creates the ARLO OS Windows installer and Store package in `release/`. The Store package keeps this app's existing Partner Center identity so updates remain attached to the reserved listing. If Microsoft assigns a different identity, override `APPX_IDENTITY_NAME`, `APPX_PUBLISHER`, and `APPX_PUBLISHER_DISPLAY_NAME` with the exact Partner Center values.
+
+Build the universal macOS installer on a Mac:
+
+```bash
+npm run package:mac
+```
+
+This creates a macOS `.dmg`, `.zip`, and updater metadata in `release/`. The release workflow builds these packages on a macOS runner and publishes them alongside the Windows installer. macOS supports the desktop shell and user-selected Finder folders; Windows-specific system controls, in-app runtime installation, and offline Hey Ghost wake listening are unavailable.
 
 To build only the standalone Windows installer:
 
