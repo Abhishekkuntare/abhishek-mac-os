@@ -10,43 +10,9 @@ permissions:
   contents: write
 
 jobs:
-  build-macos:
-    name: Build macOS Release
-    runs-on: macos-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build macOS universal installer
-        run: npm run package:mac
-        env:
-          VITE_ANALYTICS_API_ORIGIN: https://arlo-os.onrender.com
-
-      - name: Upload macOS release artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: arlo-os-macos-release-${{ github.ref_name }}
-          path: |
-            release/*.dmg
-            release/*.zip
-            release/latest-mac.yml
-          if-no-files-found: error
-          retention-days: 90
-
   release:
     name: Build Windows Release
     runs-on: windows-latest
-    needs: build-macos
 
     steps:
       - name: Checkout repository
@@ -87,12 +53,6 @@ jobs:
         run: npm run package:exe
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download macOS release artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: arlo-os-macos-release-${{ github.ref_name }}
-          path: release
 
       - name: Check Microsoft Store package identity
         id: store-identity
@@ -148,8 +108,5 @@ jobs:
           files: |
             release/ARLO-OS-Setup.exe
             release/latest.yml
-            release/ARLO-OS-*-mac-universal.dmg
-            release/ARLO-OS-*-mac-universal.zip
-            release/latest-mac.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -415,11 +415,11 @@ const getGeminiApiKey = async () => {
     encryptedKey = await fs.readFile(geminiApiKeyFile());
   } catch (error) {
     if (error?.code === 'ENOENT') return '';
-    throw new Error('Could not read the saved Gemini API key from secure storage.', { cause: error });
+    throw new Error('Could not read the saved Gemini API key from this Windows account.', { cause: error });
   }
 
   if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error('Secure storage is unavailable. Restart ARLO OS and try again.');
+    throw new Error('Windows secure storage is unavailable. Restart Windows and try again.');
   }
   try {
     return safeStorage.decryptString(encryptedKey).trim();
@@ -439,7 +439,7 @@ ipcMain.handle('ghost-ai:setApiKey', async (event, apiKey) => {
     throw new Error('Enter a valid Gemini API key (1–512 characters).');
   }
   if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error('Secure credential storage is unavailable. The API key was not saved.');
+    throw new Error('Windows secure credential storage is unavailable. The API key was not saved.');
   }
 
   await fs.writeFile(geminiApiKeyFile(), safeStorage.encryptString(apiKey.trim()));
@@ -957,10 +957,6 @@ async function getAuthorizedFolders() {
 }
 
 async function grantFullFilesystemAccess() {
-  if (process.platform === 'darwin') {
-    const result = await chooseLocalFolders();
-    return result.folders;
-  }
   if (process.platform !== 'win32') {
     throw new Error('All-drive access is currently supported on Windows only.');
   }

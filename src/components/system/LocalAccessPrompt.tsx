@@ -8,16 +8,9 @@ export const LocalAccessPrompt: React.FC = () => {
   const [response, setResponse] = useState(() => localStorage.getItem(RESPONSE_KEY));
   const [isOpen, setIsOpen] = useState(() => !localStorage.getItem(RESPONSE_KEY));
   const [isGranting, setIsGranting] = useState(false);
-  const [platform, setPlatform] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
-    void window.electronAPI?.platform()
-      .then(setPlatform)
-      .catch(loadError => {
-        console.error('[Finder] Could not detect the desktop platform:', loadError);
-      });
-
     const openPrompt = () => {
       setError('');
       setIsOpen(true);
@@ -34,11 +27,9 @@ export const LocalAccessPrompt: React.FC = () => {
     window.dispatchEvent(new Event('local-access-changed'));
   };
 
-  const isMacOS = platform === 'darwin';
-
   const grantAllDrives = async () => {
     if (!window.electronAPI?.grantAllDrives) {
-      setError('Local folder access is available in the installed desktop app.');
+      setError('All-drive access is available in the installed Windows desktop app.');
       return;
     }
 
@@ -47,20 +38,15 @@ export const LocalAccessPrompt: React.FC = () => {
     try {
       const drives = await window.electronAPI.grantAllDrives();
       if (drives.length > 0) {
-        localStorage.setItem(RESPONSE_KEY, isMacOS ? 'selected-folders' : 'all-drives');
+        localStorage.setItem(RESPONSE_KEY, 'all-drives');
         setResponse('granted');
         setIsOpen(false);
         window.dispatchEvent(new Event('local-access-changed'));
       } else {
-        setError(isMacOS
-          ? 'Choose one or more folders to grant access.'
-          : 'Windows did not report any accessible drives.');
+        setError('Windows did not report any accessible drives.');
       }
-    } catch (grantError) {
-      console.error('[Finder] Could not grant local folder access:', grantError);
-      setError(isMacOS
-        ? 'ARLO OS could not grant access to the selected folders. Try again.'
-        : 'ARLO OS could not enable drive access. Try again.');
+    } catch {
+      setError('ARLO OS could not enable drive access. Try again.');
     } finally {
       setIsGranting(false);
     }
@@ -91,24 +77,16 @@ export const LocalAccessPrompt: React.FC = () => {
                 <FileLock2 className="h-5 w-5" />
               </div>
               <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-300">Your files, your choice</p>
-              <h2 id="local-access-title" className="mt-2 text-xl font-semibold">
-                {isMacOS ? 'Let Finder browse selected folders?' : 'Let Finder browse this PC?'}
-              </h2>
+              <h2 id="local-access-title" className="mt-2 text-xl font-semibold">Let Finder browse this PC?</h2>
               <p className="mt-2 max-w-md text-sm leading-6 text-slate-300">
-                {isMacOS
-                  ? 'Choose the folders ARLO OS can browse. You can change this selection later.'
-                  : 'Allow ARLO OS to browse files and folders on every accessible drive, including Downloads, Documents, Pictures, Videos, and connected drives.'}
+                Allow ARLO OS to browse files and folders on every accessible drive, including Downloads, Documents, Pictures, Videos, and connected drives.
               </p>
             </div>
 
             <div className="space-y-3 px-6 py-5 text-xs text-slate-300">
               <div className="flex items-start gap-2.5">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
-                <span>
-                  {isMacOS
-                    ? 'ARLO OS can access only the folders you choose in the macOS folder picker.'
-                    : 'This grants broad local file access. Windows does not show a separate all-files picker for desktop apps, so this consent is what enables Finder to browse every drive.'}
-                </span>
+                <span>This grants broad local file access. Windows does not show a separate all-files picker for desktop apps, so this consent is what enables Finder to browse every drive.</span>
               </div>
               <div className="flex items-start gap-2.5">
                 <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
@@ -132,9 +110,7 @@ export const LocalAccessPrompt: React.FC = () => {
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-sky-400 px-4 py-2.5 text-xs font-semibold text-slate-950 transition-colors hover:bg-sky-300 disabled:cursor-wait disabled:opacity-70"
               >
                 <HardDrive className="h-3.5 w-3.5" />
-                {isGranting
-                  ? (isMacOS ? 'Choosing folders...' : 'Enabling access...')
-                  : (isMacOS ? 'Choose folders' : 'Allow access to all drives')}
+                {isGranting ? 'Enabling access...' : 'Allow access to all drives'}
               </button>
             </div>
           </motion.section>

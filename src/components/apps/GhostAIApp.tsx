@@ -446,7 +446,7 @@ export const GhostAIApp: React.FC = () => {
               </button>
               <div className="flex items-start gap-2 px-2.5 pb-1 text-[9px] leading-4 text-slate-600">
                 <ShieldCheck size={12} className="mt-0.5 shrink-0" />
-                API key is encrypted using this device's secure storage.
+                API key is encrypted for this Windows account.
               </div>
             </div>
           </motion.aside>
@@ -661,7 +661,7 @@ export const GhostAIApp: React.FC = () => {
                   <div className="min-w-0 flex-1">
                     <h2 id="ghost-ai-key-title" className="text-sm font-semibold text-white">Configure Gemini</h2>
                     <p className="mt-1 text-[10px] leading-4 text-slate-400">
-                      Paste your Gemini API key. It is encrypted and stored on this device; it is not included in the app installer.
+                      Paste your Gemini API key. It is encrypted and stored on this Windows account; it is not included in the app installer.
                     </p>
                   </div>
                   <button
