@@ -1,6 +1,6 @@
 const baseConfig = require('./electron-builder.json');
 
-module.exports = {
+const config = {
   ...baseConfig,
   extraResources: [],
   mac: {
@@ -14,3 +14,7 @@ module.exports = {
   },
   artifactName: 'ARLO-OS-${version}-mac-${arch}.${ext}',
 };
+
+delete config.publish;
+
+module.exports = config;
