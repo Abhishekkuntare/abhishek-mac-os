@@ -1742,12 +1742,11 @@ import {
   ShieldCheck,
   Globe2,
   Languages,
-  MapPin, UserRound, CircleUserRound, Mail, AtSign,
+  MapPin, UserRound, CircleUserRound, Mail, KeyRound, EyeOff,
 } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { UserProfile, SystemSettings, AccentColor, ThemeMode } from '../../types/desktop';
 import { sound } from '../../services/soundService';
-import { saveOptedInProfile } from '../../services/cloudAnalytics';
 import { ArloLogo } from '../system/ArloLogo';
 import { MascotMark } from '../system/MascotMark';
 import sunnyGirlAvatar from '../../assets/profile-characters/sunny-girl.jpg';
@@ -2165,10 +2164,8 @@ export const OnboardingModal: React.FC = () => {
   const onboardingModalRef = useRef<HTMLDivElement | null>(null);
   const [step, setStep] = useState(1);
   const [emailError, setEmailError] = useState('');
-  const [usernameError, setUsernameError] = useState('');
-  const [shareCloudAnalytics, setShareCloudAnalytics] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [cloudSaveError, setCloudSaveError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     onboardingModalRef.current?.scrollTo({ top: 0, behavior: 'auto' });
@@ -2293,12 +2290,9 @@ export const OnboardingModal: React.FC = () => {
       : '';
   };
 
-  const validateUsername = (username: string) => {
-    const value = username.trim();
-    if (!value) return 'Username is required.';
-    return value.length > 32 || !/^[a-zA-Z0-9._-]+$/.test(value)
-      ? 'Use up to 32 letters, numbers, dots, underscores, or hyphens.'
-      : '';
+  const validatePassword = (password: string) => {
+    if (password.length < 4) return 'Use at least 4 characters for your lock screen password.';
+    return password.length > 64 ? 'Password must be 64 characters or fewer.' : '';
   };
 
   const completeOnboarding = () => {
@@ -2316,16 +2310,15 @@ export const OnboardingModal: React.FC = () => {
     });
   };
 
-  const handleNext = async () => {
-    if (isSubmitting) return;
+  const handleNext = () => {
     sound.playClick();
 
     if (step === 3) {
       const nextEmailError = validateEmail(profile.email);
-      const nextUsernameError = validateUsername(profile.username);
+      const nextPasswordError = validatePassword(profile.pin);
       setEmailError(nextEmailError);
-      setUsernameError(nextUsernameError);
-      if (!profile.fullName.trim() || !profile.displayName.trim() || nextEmailError || nextUsernameError) {
+      setPasswordError(nextPasswordError);
+      if (!profile.fullName.trim() || !profile.displayName.trim() || nextEmailError || nextPasswordError) {
         return;
       }
     }
@@ -2333,22 +2326,6 @@ export const OnboardingModal: React.FC = () => {
     if (step < 6) {
       setStep(s => s + 1);
     } else {
-      setCloudSaveError('');
-      if (shareCloudAnalytics) {
-        setIsSubmitting(true);
-        try {
-          const avatarPreset = profile.avatarType === 'preset'
-            ? PRESET_AVATARS.find(avatar => avatar.url === profile.avatarUrl)?.fileName
-            : undefined;
-          await saveOptedInProfile(profile, avatarPreset);
-        } catch (error) {
-          setCloudSaveError(error instanceof Error ? error.message : 'Could not save your profile to cloud analytics.');
-          setIsSubmitting(false);
-          return;
-        }
-        setIsSubmitting(false);
-      }
-
       completeOnboarding();
     }
   };
@@ -3574,54 +3551,6 @@ export const OnboardingModal: React.FC = () => {
                       tracking-[0.14em] text-slate-500
                     "
                               >
-                                <AtSign className="h-3 w-3 text-indigo-300" />
-                                Username
-                              </label>
-                              <input
-                                autoComplete="username"
-                                placeholder="your.username"
-                                type="text"
-                                maxLength={32}
-                                value={profile.username}
-                                onBlur={() => setUsernameError(validateUsername(profile.username))}
-                                onChange={event => {
-                                  const username = event.target.value;
-                                  setProfile(profileDraft => ({ ...profileDraft, username }));
-                                  if (usernameError) setUsernameError(validateUsername(username));
-                                }}
-                                aria-invalid={Boolean(usernameError)}
-                                aria-describedby={usernameError ? 'onboarding-username-error' : undefined}
-                                className="
-                      w-full
-                      rounded-2xl
-                      border border-white/[0.08]
-                      bg-white/[0.035]
-                      px-4 py-3.5
-                      text-xs font-semibold
-                      text-white
-                      outline-none
-                      placeholder:text-slate-700
-                      transition-all duration-300
-                      hover:border-white/[0.13]
-                      focus:border-indigo-400/40
-                      focus:bg-indigo-400/[0.035]
-                    "
-                              />
-                              {usernameError && (
-                                <p id="onboarding-username-error" className="mt-1.5 text-[10px] text-rose-400">
-                                  {usernameError}
-                                </p>
-                              )}
-                            </div>
-
-                            <div>
-                              <label
-                                className="
-                      mb-2 flex items-center gap-2
-                      text-[8px] font-black uppercase
-                      tracking-[0.14em] text-slate-500
-                    "
-                              >
                                 <Mail className="h-3 w-3 text-cyan-400" />
                                 Email address
                               </label>
@@ -3665,22 +3594,82 @@ export const OnboardingModal: React.FC = () => {
                               )}
                             </div>
 
+                            <div>
+                              <label
+                                htmlFor="onboarding-password"
+                                className="
+                      mb-2 flex items-center gap-2
+                      text-[8px] font-black uppercase
+                      tracking-[0.14em] text-slate-500
+                    "
+                              >
+                                <KeyRound className="h-3 w-3 text-indigo-300" />
+                                Password
+                              </label>
+                              <div className="relative">
+                                <input
+                                  id="onboarding-password"
+                                  autoComplete="new-password"
+                                  placeholder="Create a lock screen password"
+                                  type={showPassword ? 'text' : 'password'}
+                                  maxLength={64}
+                                  value={profile.pin}
+                                  onBlur={() => setPasswordError(validatePassword(profile.pin))}
+                                  onChange={event => {
+                                    const pin = event.target.value;
+                                    setProfile(profileDraft => ({ ...profileDraft, pin }));
+                                    if (passwordError) setPasswordError(validatePassword(pin));
+                                  }}
+                                  aria-invalid={Boolean(passwordError)}
+                                  aria-describedby={passwordError ? 'onboarding-password-error' : 'onboarding-password-hint'}
+                                  className="
+                        w-full
+                        rounded-2xl
+                        border border-white/[0.08]
+                        bg-white/[0.035]
+                        px-4 py-3.5 pr-12
+                        text-xs font-semibold
+                        text-white
+                        outline-none
+                        placeholder:text-slate-700
+                        transition-all duration-300
+                        hover:border-white/[0.13]
+                        focus:border-indigo-400/40
+                        focus:bg-indigo-400/[0.035]
+                      "
+                                />
+                                <button
+                                  type="button"
+                                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                  aria-pressed={showPassword}
+                                  onClick={() => setShowPassword(visible => !visible)}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                                >
+                                  {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                </button>
+                              </div>
+                              {passwordError ? (
+                                <p id="onboarding-password-error" className="mt-1.5 text-[10px] text-rose-400">
+                                  {passwordError}
+                                </p>
+                              ) : (
+                                <p id="onboarding-password-hint" className="mt-1.5 text-[9px] text-slate-500">
+                                  At least 4 characters. Use it to unlock your screen.
+                                </p>
+                              )}
+                            </div>
+
                           </div>
 
-                        <label className="mt-4 flex cursor-pointer gap-3 rounded-2xl border border-sky-300/15 bg-sky-300/[0.045] p-3.5 transition-colors hover:border-sky-300/30">
-                          <input
-                            type="checkbox"
-                            checked={shareCloudAnalytics}
-                            onChange={event => setShareCloudAnalytics(event.target.checked)}
-                            className="mt-0.5 h-4 w-4 shrink-0 accent-sky-400"
-                          />
-                          <span>
-                            <span className="block text-[10px] font-bold text-slate-100">Share my profile to help improve ARLO OS</span>
-                            <span className="mt-1 block text-[9px] leading-4 text-slate-400">
-                              If you opt in, your name, username, email and profile photo are stored in a private cloud database visible only to the project administrator. Your approximate country and region are inferred from your connection IP; GPS and the IP address are not stored. You can leave this off and still use ARLO OS.
-                            </span>
-                          </span>
-                        </label>
+                          {/* <div className="mt-4 flex items-start gap-3 rounded-2xl border border-emerald-300/15 bg-emerald-300/[0.04] p-3.5">
+                            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" /> */}
+                            {/* <div>
+                              <p className="text-[10px] font-bold text-slate-100">Your profile stays on this device</p>
+                              <p className="mt-1 text-[9px] leading-4 text-slate-400">
+                                Your profile details are saved locally. Your password is used to unlock your screen.
+                              </p>
+                            </div> */}
+                          {/* </div> */}
 
                         </div>
                       </div>
@@ -3705,7 +3694,7 @@ export const OnboardingModal: React.FC = () => {
             tracking-widest text-emerald-400
           "
                     >
-                      {shareCloudAnalytics ? 'Private cloud sync' : 'Local profile only'}
+                      Private profile
                     </span>
                   </div>
                 </div>
@@ -4428,30 +4417,12 @@ export const OnboardingModal: React.FC = () => {
 
           <button
             onClick={handleNext}
-            disabled={isSubmitting || (step === 3 && (!profile.fullName.trim() || !profile.displayName.trim() || Boolean(validateEmail(profile.email)) || Boolean(validateUsername(profile.username))))}
+            disabled={step === 3 && (!profile.fullName.trim() || !profile.displayName.trim() || Boolean(validateEmail(profile.email)) || Boolean(validatePassword(profile.pin)))}
             className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-sky-500/25 flex items-center gap-2 transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span>{isSubmitting ? 'Saving securely…' : step === 6 ? 'Enter ARLO OS →' : 'Continue →'}</span>
+            <span>{step === 6 ? 'Enter ARLO OS →' : 'Continue →'}</span>
           </button>
         </div>
-        {cloudSaveError && (
-          <div className="mt-3 flex items-center justify-end gap-3">
-            <p role="alert" className="text-right text-[10px] leading-4 text-rose-300">
-              {cloudSaveError}
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setShareCloudAnalytics(false);
-                setCloudSaveError('');
-                completeOnboarding();
-              }}
-              className="shrink-0 rounded-lg border border-white/15 px-2.5 py-1.5 text-[9px] font-semibold text-slate-200 transition-colors hover:bg-white/10"
-            >
-              Continue locally
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

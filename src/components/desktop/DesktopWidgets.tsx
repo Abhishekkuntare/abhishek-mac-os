@@ -73,7 +73,7 @@ const DEFAULT_POSITIONS: WidgetPositions = {
 
   music: {
     x: 0,
-    y: 350,
+    y: 415,
   },
 
   system: {
@@ -81,8 +81,8 @@ const DEFAULT_POSITIONS: WidgetPositions = {
     y: 575,
   },
   clock: {
-    x: 24,
-    y: 500,
+    x: 0,
+    y: 730,
   },
 };
 
@@ -627,7 +627,7 @@ const DesktopWeatherMini: React.FC<{
           rounded-[24px]
           border
           border-white/10
-          bg-black/35
+          desktop-widget-glass
           backdrop-blur-2xl
           shadow-[0_20px_70px_rgba(0,0,0,0.35)]
         "
@@ -699,7 +699,7 @@ const DesktopWeatherMini: React.FC<{
           rounded-[24px]
           border
           border-white/10
-          bg-black/35
+          desktop-widget-glass
           backdrop-blur-2xl
           shadow-[0_20px_70px_rgba(0,0,0,0.35)]
         "
@@ -768,7 +768,7 @@ const DesktopWeatherMini: React.FC<{
         rounded-[24px]
         border
         border-white/10
-        bg-black/35
+        desktop-widget-glass
         backdrop-blur-2xl
         shadow-[0_20px_70px_rgba(0,0,0,0.35)]
       "
@@ -1205,7 +1205,7 @@ const MinimizedWidget: React.FC<{
         rounded-2xl
         border
         border-white/10
-        bg-black/45
+        desktop-widget-glass
         backdrop-blur-2xl
         shadow-[0_15px_50px_rgba(0,0,0,0.35)]
       "
@@ -1336,8 +1336,8 @@ const useWidgetManager = (visibility: WidgetVisibility) => {
         },
         clock: {
           ...current.clock,
-          x: 24,
-          y: Math.max(8, window.innerHeight - 190),
+          x: rightX(320),
+          y: 730,
         },
       }));
     };
@@ -1770,8 +1770,8 @@ export const DesktopWidgets: React.FC = () => {
             shadow-xl
             ${
               isLight
-                ? 'glass-panel-light text-slate-800'
-                : 'glass-panel text-white'
+                ? 'glass-panel-light desktop-widget-glass-light text-slate-800'
+                : 'glass-panel desktop-widget-glass text-white'
             }
             ${
               dragging === 'music'
@@ -2017,8 +2017,8 @@ export const DesktopWidgets: React.FC = () => {
             shadow-xl
             ${
               isLight
-                ? 'glass-panel-light text-slate-800'
-                : 'glass-panel text-white'
+                ? 'glass-panel-light desktop-widget-glass-light text-slate-800'
+                : 'glass-panel desktop-widget-glass text-white'
             }
             ${
               dragging === 'system'
@@ -2207,7 +2207,7 @@ export const DesktopWidgets: React.FC = () => {
             absolute pointer-events-auto w-[min(320px,calc(100vw-32px))]
             rounded-[24px] border border-white/10 p-4 backdrop-blur-2xl
             shadow-xl
-            ${isLight ? 'glass-panel-light text-slate-800' : 'glass-panel text-white'}
+            ${isLight ? 'glass-panel-light desktop-widget-glass-light text-slate-800' : 'glass-panel desktop-widget-glass text-white'}
             ${dragging === 'clock' ? 'z-[100] cursor-grabbing' : 'z-10'}
           `}
           style={{

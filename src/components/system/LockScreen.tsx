@@ -72,7 +72,7 @@ export const LockScreen: React.FC = () => {
           <input
             type="password"
             autoFocus
-            placeholder="Enter PIN (Default: 1234)"
+            placeholder="Enter your password"
             value={pin}
             onChange={e => setPin(e.target.value)}
             className="w-full py-2.5 px-4 rounded-2xl glass-panel text-white placeholder:text-slate-400 text-center text-sm outline-none border border-white/20 focus:border-sky-400 transition-colors shadow-lg"
@@ -86,7 +86,7 @@ export const LockScreen: React.FC = () => {
         </form>
 
         {error && (
-          <p className="text-xs text-rose-400 mt-2 font-medium">Incorrect PIN. Try 1234.</p>
+          <p className="text-xs text-rose-400 mt-2 font-medium">Incorrect password. Try again.</p>
         )}
       </motion.div>
 

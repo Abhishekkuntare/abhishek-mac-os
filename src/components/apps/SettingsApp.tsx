@@ -2949,6 +2949,8 @@ import {
   SlidersHorizontal,
   Sun,
   Lock,
+  Eye,
+  EyeOff,
   UserRound,
   CheckCircle2,
   Circle,
@@ -3776,6 +3778,7 @@ export const SettingsApp: React.FC = () => {
   const [activeTab, setActiveTab] =
     useState<SettingsTab>('profile');
   const [appVersion, setAppVersion] = useState(APP_VERSION);
+  const [showLockPassword, setShowLockPassword] = useState(false);
   const [updateChannel, setUpdateChannel] = useState<'store' | 'direct' | 'development'>('development');
   const [updateStatus, setUpdateStatus] = useState<
     'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error' | 'store-opened'
@@ -5126,25 +5129,27 @@ export const SettingsApp: React.FC = () => {
 
                     <div>
                       <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                        Screen Lock PIN
+                        Screen Lock Password
                       </label>
 
                       <div className="relative mt-2">
                         <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
 
                         <input
-                          type="password"
+                          type={showLockPassword ? 'text' : 'password'}
                           value={user.pin}
                           onChange={e =>
                             updateUser({
                               pin: e.target.value,
                             })
                           }
-                          maxLength={6}
+                          maxLength={64}
+                          autoComplete="new-password"
                           className="
                             w-full
                             p-3
                             pl-10
+                            pr-11
                             rounded-xl
                             bg-black/20
                             border border-white/10
@@ -5156,6 +5161,15 @@ export const SettingsApp: React.FC = () => {
                             tracking-widest
                           "
                         />
+                        <button
+                          type="button"
+                          aria-label={showLockPassword ? 'Hide screen lock password' : 'Show screen lock password'}
+                          aria-pressed={showLockPassword}
+                          onClick={() => setShowLockPassword(visible => !visible)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/70"
+                        >
+                          {showLockPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
                       </div>
                     </div>
                   </div>

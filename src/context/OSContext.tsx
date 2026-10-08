@@ -21,6 +21,7 @@ import {
 import { vfs } from '../services/virtualFileSystem';
 import { musicEngine } from '../services/musicEngine';
 import { activityLog, type ActivityEntry } from '../services/activityLog';
+import { APP_VERSION } from '../services/appVersion';
 
 const STORAGE_KEYS = {
   USER: 'abhishek_os_user_v1',
@@ -108,7 +109,7 @@ const INITIAL_SPACES: DesktopSpace[] = [
 const INITIAL_NOTIFICATIONS: NotificationItem[] = [
   {
     id: 'notif-1',
-    title: 'ARLO OS 1.0 Ready',
+    title: `ARLO OS ${APP_VERSION} Ready`,
     message: 'Welcome to your tailored desktop environment. All native applications loaded.',
     appName: 'System',
     timestamp: 'Just now',
@@ -881,7 +882,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, []);
 
   const unlockSystem = useCallback((enteredPin?: string) => {
-    if (!enteredPin || enteredPin === user.pin || enteredPin === '1234') {
+    if (enteredPin && enteredPin === user.pin) {
       sound.playStartup();
       setIsLocked(false);
       return true;
