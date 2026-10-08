@@ -18,6 +18,23 @@ const PROFILE_AVATAR_PRESETS = new Set([
   'adventurer-girl.jpg',
   'storybook-boy.jpg',
 ]);
+const PROFILE_ROLES = new Set([
+  'Developer',
+  'Designer',
+  'Engineer',
+  'Artist',
+  'Creator',
+  'Student',
+  'Entrepreneur',
+  'Photographer',
+  'Video Editor',
+  'Musician',
+  'Writer',
+  'Researcher',
+  'Gamer',
+  'Freelancer',
+  'Business Owner',
+]);
 
 const jsonError = (response, status, message) => response.status(status).json({ error: message });
 
@@ -53,6 +70,12 @@ const validateRegistration = body => {
   }
   if (!/^[a-zA-Z0-9._-]{1,32}$/.test(body.username.trim())) return 'Invalid username.';
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email.trim())) return 'Invalid email address.';
+  if (body.roles !== undefined &&
+      (!Array.isArray(body.roles) || body.roles.length > PROFILE_ROLES.size ||
+       body.roles.some(role => typeof role !== 'string' || !PROFILE_ROLES.has(role)) ||
+       new Set(body.roles).size !== body.roles.length)) {
+    return 'Invalid profile role selection.';
+  }
 
   if (body.avatarData !== undefined && body.avatarData !== null) {
     if (typeof body.avatarData !== 'string' || body.avatarData.length > 400_000 ||
@@ -230,6 +253,7 @@ export const attachAnalyticsRoutes = (app, { env = process.env, fetchImpl = fetc
         display_name: request.body.displayName.trim(),
         username: request.body.username.trim(),
         email: request.body.email.trim().toLowerCase(),
+        roles: request.body.roles || [],
         avatar_path: avatarPath,
         country: location.country,
         country_code: location.countryCode,
@@ -294,7 +318,7 @@ export const attachAnalyticsRoutes = (app, { env = process.env, fetchImpl = fetc
   app.get('/api/admin/dashboard', requireAdmin, async (_request, response) => {
     try {
       const [usersResult, summaryResult, githubResult] = await Promise.allSettled([
-        supabaseRequest('/rest/v1/analytics_users?select=id,full_name,display_name,username,email,country,country_code,region,avatar_path,created_at&order=created_at.desc&limit=100'),
+        supabaseRequest('/rest/v1/analytics_users?select=id,full_name,display_name,username,email,roles,country,country_code,region,avatar_path,created_at&order=created_at.desc&limit=100'),
         supabaseRequest('/rest/v1/rpc/analytics_dashboard_summary', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

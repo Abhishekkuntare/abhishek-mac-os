@@ -53,5 +53,7 @@ npm run electron:dev
 For a production Windows installer:
 
 ```powershell
+npm run lint
+npm run test:mirror
 npm run dist:win
 ```

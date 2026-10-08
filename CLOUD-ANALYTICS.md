@@ -28,13 +28,16 @@ The free Render service may sleep while idle, so the first request after a quiet
 
 ## 3. Configure desktop builds
 
-Set `VITE_ANALYTICS_API_ORIGIN` to the HTTPS origin of the deployed Render service in the environment used to build ARLO OS. This is a public API origin, not a secret. For a local production build, it can be placed in an untracked `.env.production` file. Rebuild and distribute the desktop application after configuring it; previously built installers cannot send opted-in profiles to the new service.
+The desktop app uses `https://arlo-os.onrender.com` by default. To point a build at another service, set `VITE_ANALYTICS_API_ORIGIN` to that service's HTTPS origin in the build environment. This is a public API origin, not a secret. For a local production build, it can be placed in an untracked `.env.production` file. Rebuild and distribute the desktop application after changing the origin; previously built installers keep their original setting.
 
-If the cloud service is unavailable or not configured, users who opted in see an explicit save error and can choose **Continue locally**. Users who do not opt in do not send their profile to the service.
+Onboarding keeps profile details on the device until the user explicitly chooses **Share profile & enter ARLO OS** on the final setup screen. The same action is available later in **Settings → User Profile → Share and sync my profile**. It shares the name, display name, username, selected roles, email, and profile photo with the administrator. Different email addresses on the same browser/device get separate dashboard rows; syncing the same email again updates its existing row. If cloud saving fails during onboarding, the user can retry or continue locally; Settings reports the error so the user can retry. The screen-unlock password is never included in a cloud request.
+
+For an existing Supabase project, rerun [`supabase/analytics.sql`](./supabase/analytics.sql) to add the `roles` column before deploying a server version that reads and writes it. The SQL is safe to rerun.
 
 ## Data and metrics
 
-- A random installation identifier is used only to update the same opted-in profile rather than create duplicates.
+- A random profile identifier is stored locally per normalized email address, so different profile emails on the same browser/device are saved separately and repeated syncs update the matching profile.
+- The user's selected “What do you do?” roles are saved as a list in `analytics_users.roles` and displayed in the administrator dashboard.
 - Profile photos are stored in a private Supabase Storage bucket and served to the dashboard with short-lived signed URLs. User-uploaded images are resized in the app and limited to JPEG under 256 KB; bundled illustrations are selected from a fixed allowlist and capped at 512 KB.
 - The service does not record app activity, individual downloads, or in-app likes.
 - Download counts are summed from downloadable assets in the 100 most recent GitHub releases; stars are the repository's public star count.

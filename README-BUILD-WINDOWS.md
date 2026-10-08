@@ -38,8 +38,9 @@ update through the Store; after a submission is published, users can open
 updates** in the Store Library. Store review and rollout must complete before a
 new package is offered.
 
-Set `VITE_ANALYTICS_API_ORIGIN` to the deployed cloud service origin before
-building if the release should include optional cloud profile analytics.
+The desktop app defaults to `https://arlo-os.onrender.com` for optional cloud
+profile analytics. Set `VITE_ANALYTICS_API_ORIGIN` before building only if the
+release should use a different HTTPS service origin.
 
 Windows installer icons use `build\icon.ico`; Microsoft Store tile icons use
 the ARLO PNG artwork in `build\appx\`. Keep the existing Partner Center identity

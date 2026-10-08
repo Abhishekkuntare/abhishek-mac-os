@@ -90,15 +90,26 @@ const createUserRow = user => {
   personCopy.className = 'person-copy';
   const name = document.createElement('strong');
   name.textContent = user.display_name || user.full_name || 'Unnamed user';
+  personCopy.append(name);
+  if (user.full_name && user.full_name !== user.display_name) {
+    const fullName = document.createElement('small');
+    fullName.textContent = `Full name: ${user.full_name}`;
+    personCopy.append(fullName);
+  }
   const email = document.createElement('small');
   email.textContent = user.email || '';
-  personCopy.append(name, email);
+  personCopy.append(email);
   person.append(avatar, personCopy);
   personCell.append(person);
 
   const usernameCell = document.createElement('td');
   usernameCell.className = 'username';
   usernameCell.textContent = user.username ? `@${user.username}` : '—';
+
+  const rolesCell = document.createElement('td');
+  rolesCell.textContent = Array.isArray(user.roles) && user.roles.length
+    ? user.roles.join(', ')
+    : '—';
 
   const locationCell = document.createElement('td');
   const location = document.createElement('span');
@@ -116,7 +127,7 @@ const createUserRow = user => {
 
   const joinedCell = document.createElement('td');
   joinedCell.textContent = formatDate(user.created_at);
-  row.append(personCell, usernameCell, locationCell, joinedCell);
+  row.append(personCell, usernameCell, rolesCell, locationCell, joinedCell);
   return row;
 };
 
@@ -157,7 +168,7 @@ const renderDashboard = data => {
   else {
     const emptyRow = document.createElement('tr');
     const empty = document.createElement('td');
-    empty.colSpan = 4;
+    empty.colSpan = 5;
     empty.className = 'empty-state';
     empty.textContent = 'No opted-in profiles yet.';
     emptyRow.append(empty);

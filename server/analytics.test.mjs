@@ -56,6 +56,8 @@ test('profile registration requires explicit consent and stores only opted-in pr
       displayName: 'A',
       username: 'a-user',
       email: 'a@example.com',
+      roles: ['Developer', 'Student'],
+      pin: 'do-not-send-this',
     }),
   });
   assert.equal(response.status, 201);
@@ -65,9 +67,38 @@ test('profile registration requires explicit consent and stores only opted-in pr
   const savedProfile = JSON.parse(databaseRequests[0].options.body);
   assert.equal(savedProfile.id, installationId);
   assert.equal(savedProfile.email, 'a@example.com');
+  assert.deepEqual(savedProfile.roles, ['Developer', 'Student']);
+  assert.equal(Object.hasOwn(savedProfile, 'pin'), false);
   assert.equal(savedProfile.country, null);
   assert.equal(Object.hasOwn(savedProfile, 'ip'), false);
   assert.equal(databaseRequests[0].options.headers.apikey, analyticsEnv.SUPABASE_SERVICE_ROLE_KEY);
+});
+
+test('profile registration rejects role values that are not offered by onboarding', async () => {
+  let databaseWriteCount = 0;
+  const { origin } = await startService({
+    analyticsEnv,
+    fetchImpl: async () => {
+      databaseWriteCount += 1;
+      return new Response(null, { status: 204 });
+    },
+  });
+  const response = await fetch(`${origin}/api/analytics/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      consent: true,
+      installationId: '6dd07f29-7a6b-4aed-b217-e08e78f4a9d0',
+      fullName: 'A User',
+      displayName: 'A',
+      username: 'a-user',
+      email: 'a@example.com',
+      roles: ['Administrator'],
+    }),
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(databaseWriteCount, 0);
 });
 
 test('location enrichment stores country and region without persisting the request IP', async () => {
@@ -95,6 +126,7 @@ test('location enrichment stores country and region without persisting the reque
       displayName: 'A',
       username: 'a-user',
       email: 'a@example.com',
+      roles: ['Developer'],
     }),
   });
   assert.equal(response.status, 201);
@@ -129,6 +161,7 @@ test('preset portraits are resolved from the server allowlist and uploaded priva
       displayName: 'A',
       username: 'a-user',
       email: 'a@example.com',
+      roles: ['Developer'],
       avatarPreset: 'sunny-girl.jpg',
     }),
   });
@@ -148,7 +181,7 @@ test('dashboard APIs reject anonymous requests and return metrics only after adm
         return Response.json({ total_users: 1, countries: [{ country: 'India', countryCode: 'IN', total: 1 }] });
       }
       if (parsed.hostname === 'arlo-test.supabase.co') {
-        return Response.json([{ id: '6dd07f29-7a6b-4aed-b217-e08e78f4a9d0', display_name: 'A', email: 'a@example.com' }]);
+        return Response.json([{ id: '6dd07f29-7a6b-4aed-b217-e08e78f4a9d0', display_name: 'A', email: 'a@example.com', roles: ['Developer'] }]);
       }
       if (parsed.hostname === 'api.github.com' && parsed.pathname.endsWith('/releases')) {
         return Response.json([{ assets: [{ download_count: 12 }] }]);
@@ -184,6 +217,7 @@ test('dashboard APIs reject anonymous requests and return metrics only after adm
   const data = await dashboard.json();
   assert.equal(data.summary.total_users, 1);
   assert.equal(data.users[0].email, 'a@example.com');
+  assert.deepEqual(data.users[0].roles, ['Developer']);
   assert.equal(data.github.stars, 7);
   assert.equal(data.github.releaseDownloads, 12);
 });

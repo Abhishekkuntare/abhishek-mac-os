@@ -15,6 +15,7 @@ export interface UserProfile {
   email: string;
   avatarUrl: string;
   avatarType: 'preset' | 'upload' | 'initials';
+  avatarPreset?: string;
   roles: string[];
   bio: string;
   pin: string;

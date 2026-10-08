@@ -4,6 +4,7 @@ create table if not exists public.analytics_users (
   display_name text not null check (char_length(display_name) between 1 and 100),
   username text not null check (char_length(username) between 1 and 32),
   email text not null check (char_length(email) between 3 and 254),
+  roles text[] not null default '{}'::text[],
   avatar_path text,
   country text,
   country_code text,
@@ -12,6 +13,9 @@ create table if not exists public.analytics_users (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.analytics_users
+  add column if not exists roles text[] not null default '{}'::text[];
 
 alter table public.analytics_users enable row level security;
 revoke all on table public.analytics_users from anon, authenticated;

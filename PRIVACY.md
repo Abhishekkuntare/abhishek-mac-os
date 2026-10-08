@@ -58,7 +58,9 @@ Examples can include:
 
 The application should not be interpreted as completely offline software when an enabled feature requires network access.
 
-During first-time setup, users may optionally share their name, display name, username, email address, and profile photo with the project. If they opt in, these details are stored in the project's private Supabase database and are visible to the project administrator through an authenticated dashboard. Users who decline can continue using ARLO OS; their profile remains local.
+During first-time setup, users may choose **Share profile & enter ARLO OS** to share their name, display name, username, selected roles, email address, and profile photo with the project. This explicit choice sends these details to the project's private Supabase database, where they are visible through the authenticated administrator dashboard. Users who choose **Continue locally** keep their profile on their device.
+
+Users can also choose **Share and sync my profile** from **Settings → User Profile**. This explicit action shares the selected “What do you do?” roles along with their profile details. Neither action sends the screen-lock password.
 
 For opted-in profiles, the service uses the request's IP address temporarily to infer an approximate country and region using ipwho.is. The raw IP address and precise GPS location are not written to the analytics database. The application host and the location provider may process the IP address to provide this lookup. Location may be unavailable or inaccurate, for example when using a VPN or proxy.
 

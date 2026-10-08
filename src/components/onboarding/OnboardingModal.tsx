@@ -1747,6 +1747,7 @@ import {
 import { useOS } from '../../context/OSContext';
 import { UserProfile, SystemSettings, AccentColor, ThemeMode } from '../../types/desktop';
 import { sound } from '../../services/soundService';
+import { syncProfileToCloud } from '../../services/profileSync';
 import { ArloLogo } from '../system/ArloLogo';
 import { MascotMark } from '../system/MascotMark';
 import sunnyGirlAvatar from '../../assets/profile-characters/sunny-girl.jpg';
@@ -2166,6 +2167,8 @@ export const OnboardingModal: React.FC = () => {
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [cloudSyncError, setCloudSyncError] = useState('');
+  const [isCompleting, setIsCompleting] = useState(false);
 
   useEffect(() => {
     onboardingModalRef.current?.scrollTo({ top: 0, behavior: 'auto' });
@@ -2234,7 +2237,7 @@ export const OnboardingModal: React.FC = () => {
         videoRef.current.videoWidth || 320,
         videoRef.current.videoHeight || 320,
       );
-      setProfile(p => ({ ...p, avatarUrl: dataUrl, avatarType: 'upload' }));
+      setProfile(p => ({ ...p, avatarUrl: dataUrl, avatarType: 'upload', avatarPreset: undefined }));
       sound.playShutter();
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Could not capture the profile photo.');
@@ -2257,7 +2260,7 @@ export const OnboardingModal: React.FC = () => {
     image.onload = () => {
       try {
         const dataUrl = createAvatarDataUrl(image, image.naturalWidth, image.naturalHeight);
-        setProfile(p => ({ ...p, avatarUrl: dataUrl, avatarType: 'upload' }));
+        setProfile(p => ({ ...p, avatarUrl: dataUrl, avatarType: 'upload', avatarPreset: undefined }));
         sound.playClick();
       } catch (error) {
         alert(error instanceof Error ? error.message : 'Could not prepare the profile image.');
@@ -2296,6 +2299,10 @@ export const OnboardingModal: React.FC = () => {
   };
 
   const completeOnboarding = () => {
+    finishOnboarding(profile, {
+      ...langSettings,
+      ...personalization,
+    });
     try {
       confetti({
         particleCount: 120,
@@ -2303,11 +2310,20 @@ export const OnboardingModal: React.FC = () => {
         origin: { y: 0.6 },
       });
     } catch { }
+  };
 
-    finishOnboarding(profile, {
-      ...langSettings,
-      ...personalization,
-    });
+  const shareProfileAndComplete = async () => {
+    if (isCompleting) return;
+    setCloudSyncError('');
+    setIsCompleting(true);
+    try {
+      await syncProfileToCloud(profile);
+      completeOnboarding();
+    } catch (error) {
+      setCloudSyncError(error instanceof Error ? error.message : 'Could not save your profile to the cloud.');
+    } finally {
+      setIsCompleting(false);
+    }
   };
 
   const handleNext = () => {
@@ -2326,7 +2342,7 @@ export const OnboardingModal: React.FC = () => {
     if (step < 6) {
       setStep(s => s + 1);
     } else {
-      completeOnboarding();
+      void shareProfileAndComplete();
     }
   };
 
@@ -3267,6 +3283,7 @@ export const OnboardingModal: React.FC = () => {
                                       ...p,
                                       avatarUrl: avatar.url,
                                       avatarType: "preset",
+                                      avatarPreset: avatar.fileName,
                                     }));
 
                                     sound.playClick();
@@ -4340,6 +4357,24 @@ export const OnboardingModal: React.FC = () => {
                     </p>
                   </motion.div>
 
+                  {/* <div className="mx-auto mt-4 max-w-lg rounded-2xl border border-sky-300/15 bg-sky-400/[0.05] p-3 text-left">
+                    <p className="text-[10px] leading-4 text-slate-300">
+                      Choosing <strong>Share profile &amp; enter ARLO OS</strong> sends your name, display name, username, email, selected roles, and profile photo to private project storage and the authenticated project admin dashboard. Approximate location may be inferred from your connection. Your screen-lock password is never sent.
+                    </p>
+                    {cloudSyncError && (
+                      <div className="mt-2 rounded-xl border border-rose-400/20 bg-rose-400/[0.07] p-2.5" role="alert">
+                        <p className="text-[10px] leading-4 text-rose-200">{cloudSyncError}</p>
+                        <button
+                          type="button"
+                          onClick={completeOnboarding}
+                          className="mt-2 text-[10px] font-bold text-slate-200 underline underline-offset-2"
+                        >
+                          Continue locally without sharing
+                        </button>
+                      </div>
+                    )}
+                  </div> */}
+
                   <div className="mt-6 grid grid-cols-1 gap-3 text-left sm:grid-cols-3">
                     {[
                       {
@@ -4404,7 +4439,16 @@ export const OnboardingModal: React.FC = () => {
 
         {/* Bottom Buttons */}
         <div className="flex items-center justify-between pt-6 border-t border-white/10 mt-6">
-          {step > 1 ? (
+          {step === 6 ? (
+            <button
+              type="button"
+              onClick={completeOnboarding}
+              disabled={isCompleting}
+              className="rounded-xl px-4 py-2 text-xs font-semibold text-slate-300 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Continue locally
+            </button>
+          ) : step > 1 ? (
             <button
               onClick={() => setStep(s => s - 1)}
               className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
@@ -4417,10 +4461,16 @@ export const OnboardingModal: React.FC = () => {
 
           <button
             onClick={handleNext}
-            disabled={step === 3 && (!profile.fullName.trim() || !profile.displayName.trim() || Boolean(validateEmail(profile.email)) || Boolean(validatePassword(profile.pin)))}
+            disabled={isCompleting || (step === 3 && (!profile.fullName.trim() || !profile.displayName.trim() || Boolean(validateEmail(profile.email)) || Boolean(validatePassword(profile.pin))))}
             className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-sky-500/25 flex items-center gap-2 transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span>{step === 6 ? 'Enter ARLO OS →' : 'Continue →'}</span>
+            <span>
+              {isCompleting
+                ? 'Saving profile…'
+                : step === 6
+                  ? 'Share profile & enter ARLO OS →'
+                  : 'Continue →'}
+            </span>
           </button>
         </div>
       </div>

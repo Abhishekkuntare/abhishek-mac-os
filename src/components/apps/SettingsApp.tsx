@@ -3007,6 +3007,7 @@ import {
   Wallpaper,
 } from '../../types/desktop';
 import { sound } from '../../services/soundService';
+import { syncProfileToCloud } from '../../services/profileSync';
 import { APP_VERSION, getInstalledAppVersion } from '../../services/appVersion';
 import { AppIcon } from '../system/AppIcon';
 import { BatteryStatusIcon } from '../system/BatteryStatusIcon';
@@ -3777,6 +3778,8 @@ export const SettingsApp: React.FC = () => {
 
   const [activeTab, setActiveTab] =
     useState<SettingsTab>('profile');
+  const [cloudProfileBusy, setCloudProfileBusy] = useState(false);
+  const [cloudProfileMessage, setCloudProfileMessage] = useState('');
   const [appVersion, setAppVersion] = useState(APP_VERSION);
   const [showLockPassword, setShowLockPassword] = useState(false);
   const [updateChannel, setUpdateChannel] = useState<'store' | 'direct' | 'development'>('development');
@@ -4238,6 +4241,8 @@ export const SettingsApp: React.FC = () => {
       if (typeof reader.result === 'string') {
         updateUser({
           avatarUrl: reader.result,
+          avatarType: 'upload',
+          avatarPreset: undefined,
         });
 
         sound.playClick();
@@ -4256,9 +4261,25 @@ export const SettingsApp: React.FC = () => {
   const handleRemoveAvatar = () => {
     updateUser({
       avatarUrl: '',
+      avatarType: 'initials',
+      avatarPreset: undefined,
     });
 
     sound.playClick();
+  };
+
+  const syncCurrentProfileToCloud = async () => {
+    if (cloudProfileBusy) return;
+    setCloudProfileBusy(true);
+    setCloudProfileMessage('');
+    try {
+      await syncProfileToCloud(user);
+      setCloudProfileMessage('Your profile was shared with the project and saved to private storage.');
+    } catch (error) {
+      setCloudProfileMessage(error instanceof Error ? error.message : 'Could not save your profile to the cloud.');
+    } finally {
+      setCloudProfileBusy(false);
+    }
   };
 
   /* ==========================================================
@@ -5098,6 +5119,35 @@ export const SettingsApp: React.FC = () => {
                       />
                     </div>
 
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        Email Address
+                      </label>
+
+                      <input
+                        type="email"
+                        value={user.email}
+                        onChange={e =>
+                          updateUser({
+                            email: e.target.value,
+                          })
+                        }
+                        autoComplete="email"
+                        className="
+                          mt-2
+                          w-full
+                          p-3
+                          rounded-xl
+                          bg-black/20
+                          border border-white/10
+                          outline-none
+                          focus:border-sky-400/60
+                          text-sm
+                          text-white
+                        "
+                      />
+                    </div>
+
                     <div className="md:col-span-2">
                       <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                         Bio / Status
@@ -5172,6 +5222,30 @@ export const SettingsApp: React.FC = () => {
                         </button>
                       </div>
                     </div>
+                  </div>
+                </SectionCard>
+
+                <SectionCard className="p-6">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="max-w-2xl">
+                      <h3 className="text-sm font-bold text-white">Optional cloud profile</h3>
+                      <p className="mt-1 text-[10px] leading-4 text-slate-400">
+                        Choosing this button shares your name, display name, selected roles, email, and profile photo with the ARLO OS project administrator. Your screen-lock password is never sent. A different email gets its own dashboard entry; syncing the same email updates that entry. Approximate location may be inferred from your connection.
+                      </p>
+                      {cloudProfileMessage && (
+                        <p className="mt-2 text-[10px] leading-4 text-slate-300" role="status">
+                          {cloudProfileMessage}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void syncCurrentProfileToCloud()}
+                      disabled={cloudProfileBusy}
+                      className="shrink-0 rounded-xl bg-sky-500 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {cloudProfileBusy ? 'Saving profile…' : 'Share and sync my profile'}
+                    </button>
                   </div>
                 </SectionCard>
               </motion.div>
