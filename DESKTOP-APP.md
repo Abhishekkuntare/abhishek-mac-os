@@ -56,4 +56,5 @@ For a production Windows installer:
 npm run lint
 npm run test:mirror
 npm run dist:win
+npm run dist:store
 ```

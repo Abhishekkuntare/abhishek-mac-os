@@ -368,8 +368,8 @@ export const APP_FEATURE_DETAILS: Record<string, AppFeatureDetail> = {
   },
   tv: {
     id: 'tv',
-    name: 'Abhishek TV',
-    tagline: 'Cinematic Media & Video Streaming Hub',
+    name: 'Videos',
+    tagline: 'Your saved videos and camera recordings',
     category: 'Media',
     version: '2.0.0',
     developer: 'Abhishek Media Group',
@@ -379,14 +379,14 @@ export const APP_FEATURE_DETAILS: Record<string, AppFeatureDetail> = {
     offlineCapable: false,
     features: [
       {
-        title: 'Hero Showcase Player',
-        description: 'High-definition video playback with trailer preview cards and category rows.',
+        title: 'Saved Video Library',
+        description: 'Browse and play camera recordings and videos saved on this device.',
         icon: 'Tv',
       },
       {
-        title: 'Watchlist & History',
-        description: 'Save favorite shows, movies, and video clips to your local watchlist.',
-        icon: 'Bookmark',
+        title: 'Camera & Imported Media',
+        description: 'Videos captured with Camera or added from Wallpaper settings appear in your library.',
+        icon: 'Film',
       },
     ],
     permissions: [
@@ -480,6 +480,40 @@ export const APP_FEATURE_DETAILS: Record<string, AppFeatureDetail> = {
       { name: 'Local storage', description: 'Stores conversation history on this device, not the API key.', status: 'granted' },
     ],
     systemIntegration: ['Dock Launcher', 'Spotlight Search', 'Mission Control'],
+  },
+  ghostdetectives: {
+    id: 'ghostdetectives',
+    name: 'Ghost Detectives',
+    tagline: 'A specialist for every desktop mystery',
+    category: 'Productivity',
+    version: '1.0.0',
+    developer: 'ARLO OS',
+    bundleSize: 'Included',
+    memoryEstimate: '~24 MB',
+    cacheSize: 'Minimal',
+    offlineCapable: true,
+    features: [
+      {
+        title: 'Meet your detective team',
+        description: 'Explore specialist roles, skills, and permitted desktop capabilities.',
+        icon: 'Users',
+      },
+      {
+        title: 'Shared detective selection',
+        description: 'Your chosen detective is saved and used by the Ghost AI assistant.',
+        icon: 'UserRoundCheck',
+      },
+      {
+        title: 'Quick app access',
+        description: 'Launch installed ARLO apps directly from the detective workspace.',
+        icon: 'Grid2X2',
+      },
+    ],
+    permissions: [
+      { name: 'Detective preferences', description: 'Save your selected detective on this device.', status: 'granted' },
+      { name: 'Open apps', description: 'Launch apps you choose from the quick-access list.', status: 'optional' },
+    ],
+    systemIntegration: ['Ghost AI', 'ARLO app launcher'],
   },
 };
 

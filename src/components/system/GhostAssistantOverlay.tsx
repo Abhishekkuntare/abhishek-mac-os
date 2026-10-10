@@ -1,17 +1,38 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowDownRight, ArrowUp, AudioLines, Bot, Grip, Mic, X } from 'lucide-react';
+import { ArrowDownRight, ArrowUp, Grip, Mic, X } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { detectGhostCommandLanguage, executeGhostCommand, PendingCreateType } from '../../services/ghostCommands';
-import { getLocalFallbackReply, runGhostChat } from '../../services/ghostChatClient';
+import { runGhostChat } from '../../services/ghostChatClient';
 import { configureGhostUtterance } from '../../services/ghostVoice';
 import { GhostChatError } from '../../types/ghostAgent';
 import type { GhostToolHost } from '../../types/ghostAgent';
+import { requestNotchCameraCapture } from '../../services/notchCameraBridge';
 import { isMeaningfulGhostTranscript, matchGhostWakePhrase } from '../../services/ghostWakePhrases';
-import { createGhostDesktopItem, getGhostLocalTime } from '../../services/ghostDesktopActions';
+import {
+  createGhostDesktopItem,
+  deleteGhostDesktopItem,
+  getGhostLocalTime,
+  renameGhostDesktopItem,
+  searchGhostAuthorizedFiles,
+} from '../../services/ghostDesktopActions';
 import { APP_REGISTRY } from '../../data/defaultApps';
+import { routeGhostRequest } from '../../services/ghostOrchestrator';
 import { AppIcon } from './AppIcon';
-import { vfs } from '../../services/virtualFileSystem';
+import { DetectiveAvatar } from './DetectiveAvatar';
+import { GhostActivityFeed } from './GhostActivityFeed';
+import {
+  DETECTIVES,
+  DETECTIVE_CONFIG_UPDATED_EVENT,
+  getDetective,
+  loadDetectiveConfig,
+  saveDetectiveConfig,
+  type DetectiveConfig,
+} from './detectiveModel';
+
+const DETECTIVE_APPS = Object.values(APP_REGISTRY)
+  .filter(app => app.installed && app.id !== 'trash')
+  .sort((left, right) => left.name.localeCompare(right.name));
 
 interface QuickMessage {
   role: 'user' | 'assistant';
@@ -64,6 +85,7 @@ export const GhostAssistantOverlay: React.FC = () => {
     updateSettings,
     windows,
     closeWindow,
+    snapWindow,
   } = useOS();
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<QuickMessage[]>([]);
@@ -82,6 +104,9 @@ export const GhostAssistantOverlay: React.FC = () => {
   const [panelHeight, setPanelHeight] = useState(520);
   const [orbSize, setOrbSize] = useState(88);
   const [isResizing, setIsResizing] = useState(false);
+  const [detectiveConfig, setDetectiveConfig] = useState<DetectiveConfig>(loadDetectiveConfig);
+  const selectedDetective = getDetective(detectiveConfig);
+  const selectedDetectiveAvatarId = 'avatarId' in selectedDetective ? selectedDetective.avatarId : selectedDetective.id;
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const dragRef = useRef<{ pointerId: number; x: number; y: number; left: number; top: number; moved: boolean } | null>(null);
@@ -99,6 +124,21 @@ export const GhostAssistantOverlay: React.FC = () => {
   const userRef = useRef(user);
   userRef.current = user;
   const shortcut = settings.ghostShortcut;
+
+  useEffect(() => {
+    const receiveDetectiveConfig = (event: Event) => {
+      const next = (event as CustomEvent<DetectiveConfig>).detail;
+      if (next) setDetectiveConfig(next);
+    };
+    window.addEventListener(DETECTIVE_CONFIG_UPDATED_EVENT, receiveDetectiveConfig);
+    return () => window.removeEventListener(DETECTIVE_CONFIG_UPDATED_EVENT, receiveDetectiveConfig);
+  }, []);
+
+  const updateDetective = (patch: Partial<DetectiveConfig>) => {
+    const next = { ...detectiveConfig, ...patch };
+    setDetectiveConfig(next);
+    saveDetectiveConfig(next);
+  };
 
   const movePanelToSide = (width = panelWidth, height = panelHeight) => {
     const actualWidth = isCollapsed ? orbSize : Math.min(width, window.innerWidth - 32);
@@ -130,6 +170,8 @@ export const GhostAssistantOverlay: React.FC = () => {
     openApp: openAppFromGhost,
     closeApp: closeAppFromGhost,
     createDesktopItem: createGhostDesktopItem,
+    renameDesktopItem: renameGhostDesktopItem,
+    deleteDesktopItem: deleteGhostDesktopItem,
     showDesktop,
     getLocalTime: getGhostLocalTime,
     getBatteryStatus: () => ({
@@ -139,6 +181,32 @@ export const GhostAssistantOverlay: React.FC = () => {
       plugged: settings.batteryPlugged,
     }),
     setFocusMode: enabled => updateSettings({ doNotDisturb: enabled }),
+    requestCameraCapture: requestNotchCameraCapture,
+    searchAuthorizedFiles: searchGhostAuthorizedFiles,
+    getSystemInfo: async () => {
+      if (!window.electronAPI?.getResourceUsage) throw new Error('System resource information is unavailable.');
+      const usage = await window.electronAPI.getResourceUsage();
+      const cpu = usage.cpuPercent === null ? 'unavailable' : `${Math.round(usage.cpuPercent)}%`;
+      const memory = usage.memoryUsedBytes === null || usage.memoryTotalBytes === null
+        ? 'unavailable'
+        : `${(usage.memoryUsedBytes / 1024 ** 3).toFixed(1)} GB of ${(usage.memoryTotalBytes / 1024 ** 3).toFixed(1)} GB`;
+      return `CPU usage: ${cpu}. Memory: ${memory}.`;
+    },
+    arrangeWindow: (appId, position) => {
+      const candidates = windows.filter(win => win.appId === appId && !win.isMinimized);
+      const focused = candidates.filter(win => win.isFocused);
+      const target = focused.length === 1 ? focused[0] : candidates.length === 1 ? candidates[0] : null;
+      if (!target) {
+        return {
+          success: false,
+          result: candidates.length
+            ? `There are multiple open ${APP_REGISTRY[appId as keyof typeof APP_REGISTRY]?.name ?? 'app'} windows. Specify which one to arrange.`
+            : 'That app does not have an open window.',
+        };
+      }
+      snapWindow(target.id, position);
+      return { success: true, result: `${APP_REGISTRY[appId as keyof typeof APP_REGISTRY].name} moved to ${position}.` };
+    },
   };
 
   const beginPanelDrag = (event: React.PointerEvent<HTMLElement>) => {
@@ -429,6 +497,7 @@ export const GhostAssistantOverlay: React.FC = () => {
   const submitPrompt = async (value = prompt, isWakeCommand = false, recognizedLanguage?: string) => {
     const content = value.trim();
     if (!isMeaningfulGhostTranscript(content) || isThinking) return;
+    const requestDetective = routeGhostRequest(content, selectedDetective);
     conversationLanguageRef.current = detectGhostCommandLanguage(content, recognizedLanguage);
     setPrompt('');
     setErrorMessage('');
@@ -446,30 +515,15 @@ export const GhostAssistantOverlay: React.FC = () => {
         showDesktop,
         createDesktopItem: createGhostDesktopItem,
         updateSettings,
-        renameDesktopItem: (name, newName) => {
-          const target = vfs.getFiles('/Users/abhishek/Desktop')
-            .find(file => file.name.toLocaleLowerCase() === name.toLocaleLowerCase());
-          if (!target) return null;
-          if (!newName.trim() || newName.length > 100 || /[\\/]/.test(newName)) {
-            throw new Error('Desktop names must be 1–100 characters and cannot contain slashes.');
-          }
-          if (!vfs.rename(target.id, newName)) throw new Error(`Could not rename "${name}".`);
-          return `Renamed "${name}" to "${newName}".`;
-        },
-        deleteDesktopItem: name => {
-          const target = vfs.getFiles('/Users/abhishek/Desktop')
-            .find(file => file.name.toLocaleLowerCase() === name.toLocaleLowerCase());
-          if (!target) return null;
-          if (!vfs.moveToTrash(target.id)) throw new Error(`Could not move "${name}" to Trash.`);
-          return `Moved "${name}" to Trash. You can restore it from Trash or undo with Ctrl+Z.`;
-        },
+        renameDesktopItem: renameGhostDesktopItem,
+        deleteDesktopItem: deleteGhostDesktopItem,
         getBatteryStatus: () => ({
           available: settings.batteryAvailable,
           level: settings.batteryLevel,
           charging: settings.batteryCharging,
           plugged: settings.batteryPlugged,
         }),
-      }, pendingCreateRef.current, recognizedLanguage);
+      }, pendingCreateRef.current, recognizedLanguage, requestDetective.permittedTools);
       if (commandReply) {
         pendingCreateRef.current = commandReply.pendingCreate;
         addAssistantMessage(commandReply.reply, isWakeCommand ? () => armConversationTimeout() : undefined);
@@ -481,21 +535,31 @@ export const GhostAssistantOverlay: React.FC = () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         throw new GhostChatError('OFFLINE', 'Gemini chat is unavailable while offline.');
       }
-      const answer = await runGhostChat(conversation.slice(-20), user.displayName, ghostToolHost, requestId);
+      const answer = await runGhostChat(conversation.slice(-20), user.displayName, ghostToolHost, {
+        name: requestDetective.name,
+        role: requestDetective.role,
+        personality: requestDetective.personality,
+        description: requestDetective.description,
+        skills: [...requestDetective.skills],
+        instructions: 'instructions' in requestDetective ? requestDetective.instructions : '',
+        permittedTools: [...requestDetective.permittedTools],
+      }, requestId);
       addAssistantMessage(answer, isWakeCommand ? () => armConversationTimeout() : undefined);
     } catch (error) {
       if (error instanceof GhostChatError) {
         console.error('[Ghost AI] The quick assistant request failed:', error.code);
-        const reply = getLocalFallbackReply(conversationLanguageRef.current);
         setErrorMessage('');
         setErrorDetails('');
-        addAssistantMessage(reply, isWakeCommand ? () => armConversationTimeout() : undefined);
+        addAssistantMessage(
+          error.details ? `${error.message}\n${error.details}` : error.message,
+          isWakeCommand ? () => armConversationTimeout() : undefined,
+        );
       } else {
         console.error('[Ghost AI] The quick assistant command failed:', error);
         setErrorMessage('');
         setErrorDetails('');
         addAssistantMessage(
-          getLocalFallbackReply(conversationLanguageRef.current),
+          error instanceof Error ? error.message : 'That action could not be completed.',
           isWakeCommand ? () => armConversationTimeout() : undefined,
         );
       }
@@ -536,7 +600,7 @@ export const GhostAssistantOverlay: React.FC = () => {
         : 'en';
 
       if (!activeConversationRef.current) {
-        const wakeMatch = matchGhostWakePhrase(heard);
+        const wakeMatch = matchGhostWakePhrase(heard, [selectedDetective.name]);
         if (!wakeMatch) return;
         activeConversationRef.current = true;
         setPanelPosition(null);
@@ -677,7 +741,7 @@ export const GhostAssistantOverlay: React.FC = () => {
             ref={panelRef}
             role="dialog"
             aria-modal={!panelPosition}
-            aria-label="Lily AI assistant"
+            aria-label="Detective desktop assistant"
             onPointerDown={beginPanelDrag}
             onPointerMove={movePanelDrag}
             onPointerUp={endPanelDrag}
@@ -713,7 +777,7 @@ export const GhostAssistantOverlay: React.FC = () => {
                 <button
                   type="button"
                   aria-label="Expand Ghost assistant"
-                  title="Open Lily · drag to move"
+                  title={`Open ${selectedDetective.name} · drag to move`}
                   onClick={() => {
                     if (skipOrbClickRef.current) {
                       skipOrbClickRef.current = false;
@@ -723,8 +787,21 @@ export const GhostAssistantOverlay: React.FC = () => {
                   }}
                   className="relative flex h-[calc(100%-12px)] w-[calc(100%-12px)] touch-none cursor-grab items-center justify-center rounded-full border border-white/25 transition duration-300 hover:scale-105 hover:shadow-[0_0_48px_rgba(139,92,246,.75)] active:cursor-grabbing"
                 >
-                  <LilyOrb active={isListening || isThinking} />
-                  <span className="sr-only">{isThinking ? 'Lily is thinking' : isListening ? 'Lily is listening' : 'Lily assistant'}</span>
+                  <DetectiveAvatar
+                    shape={selectedDetective.shape}
+                    color={selectedDetective.color}
+                    className="h-full w-full rounded-full border border-white/25 p-2 shadow-[0_0_30px_rgba(56,189,248,.24)]"
+                    detectiveId={selectedDetectiveAvatarId}
+                    scoutColor={detectiveConfig.scoutColor}
+                    emberColor={detectiveConfig.emberColor}
+                    mintColor={detectiveConfig.mintColor}
+                    rubyColor={detectiveConfig.rubyColor}
+                    petalColor={detectiveConfig.petalColor}
+                    violetColor={detectiveConfig.violetColor}
+                    sunnyColor={detectiveConfig.sunnyColor}
+                    mochaColor={detectiveConfig.mochaColor}
+                  />
+                  <span className="sr-only">{isThinking ? `${selectedDetective.name} is thinking` : isListening ? `${selectedDetective.name} is listening` : `${selectedDetective.name} Detective`}</span>
                 </button>
                 <button
                   type="button"
@@ -753,14 +830,27 @@ export const GhostAssistantOverlay: React.FC = () => {
             <>
             <header
               className="flex h-[68px] shrink-0 touch-none cursor-grab items-center gap-3 border-b border-white/[0.07] px-5 active:cursor-grabbing"
-              title="Drag Ghost to move it"
+              title="Drag Detective to move it"
             >
-              <div className={`relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-sky-200/25 bg-sky-300/10 shadow-[0_0_24px_rgba(56,189,248,.18)] ${isListening ? 'animate-pulse' : ''}`}>
-                <AppIcon appId="ghostai" className="h-full w-full object-contain" />
+              <div className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[0.04] shadow-[0_0_24px_rgba(56,189,248,.18)] ${isListening ? 'animate-pulse' : ''}`}>
+                <DetectiveAvatar
+                  shape={selectedDetective.shape}
+                  color={selectedDetective.color}
+                  className="h-8 w-8"
+                  detectiveId={selectedDetectiveAvatarId}
+                  scoutColor={detectiveConfig.scoutColor}
+                  emberColor={detectiveConfig.emberColor}
+                  mintColor={detectiveConfig.mintColor}
+                  rubyColor={detectiveConfig.rubyColor}
+                  petalColor={detectiveConfig.petalColor}
+                  violetColor={detectiveConfig.violetColor}
+                  sunnyColor={detectiveConfig.sunnyColor}
+                  mochaColor={detectiveConfig.mochaColor}
+                />
                 {isListening && <span className="absolute inset-0 rounded-full border-2 border-sky-300/70 animate-ping" />}
               </div>
               <div className="min-w-0">
-                <h2 className="text-[13px] font-semibold text-white">Ghost AI</h2>
+                <h2 className="text-[13px] font-semibold text-white">{selectedDetective.name} · Detective</h2>
                 <p className="mt-0.5 text-[10px] text-slate-500">
                   {heardCommand
                     ? <span className="text-violet-200">Heard: “{heardCommand}”</span>
@@ -776,7 +866,7 @@ export const GhostAssistantOverlay: React.FC = () => {
               <button
                 type="button"
                 data-no-drag
-                aria-label="Minimize Ghost to orb"
+                aria-label="Minimize Detective to orb"
                 onClick={() => {
                   setIsCollapsed(true);
                   window.setTimeout(() => movePanelToSide(orbSize, orbSize), 0);
@@ -798,24 +888,160 @@ export const GhostAssistantOverlay: React.FC = () => {
               </button>
             </header>
 
+            <section className="shrink-0 border-b border-white/[0.06] px-4 py-2.5" aria-label="Choose detective and open an app">
+              <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[.12em] text-slate-500">Detectives</span>
+                  <div className="flex min-w-0 items-center gap-1 overflow-x-auto scrollbar-none">
+                    {DETECTIVES.map(detective => (
+                      <button
+                        key={detective.id}
+                        type="button"
+                        data-no-drag
+                        aria-label={`Select ${detective.name} detective`}
+                        aria-pressed={detective.id === selectedDetective.id}
+                        title={detective.name}
+                        onClick={() => updateDetective({ selectedId: detective.id })}
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition duration-150 hover:scale-105 ${
+                          detective.id === selectedDetective.id
+                            ? 'border-sky-200/30 bg-sky-200/[0.1] shadow-[0_0_14px_rgba(56,189,248,.12)]'
+                            : 'border-transparent bg-white/[0.025] hover:border-white/10 hover:bg-white/[0.06]'
+                        }`}
+                      >
+                        <DetectiveAvatar
+                          shape={detective.shape}
+                          color={detectiveConfig.colors[detective.id]}
+                          className="h-6 w-6"
+                          detectiveId={detective.id}
+                          scoutColor={detectiveConfig.scoutColor}
+                          emberColor={detectiveConfig.emberColor}
+                          mintColor={detectiveConfig.mintColor}
+                          rubyColor={detectiveConfig.rubyColor}
+                          petalColor={detectiveConfig.petalColor}
+                          violetColor={detectiveConfig.violetColor}
+                          sunnyColor={detectiveConfig.sunnyColor}
+                          mochaColor={detectiveConfig.mochaColor}
+                        />
+                      </button>
+                    ))}
+                    {detectiveConfig.customDetectives.map(profile => {
+                      const avatar = DETECTIVES.find(detective => detective.id === profile.avatarId) ?? DETECTIVES[0];
+                      return (
+                        <button
+                          key={profile.id}
+                          type="button"
+                          data-no-drag
+                          aria-label={`Select ${profile.name} detective`}
+                          aria-pressed={profile.id === selectedDetective.id}
+                          title={`${profile.name} · Custom detective`}
+                          onClick={() => updateDetective({ selectedId: profile.id })}
+                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition duration-150 hover:scale-105 ${
+                            profile.id === selectedDetective.id
+                              ? 'border-sky-200/30 bg-sky-200/[0.1] shadow-[0_0_14px_rgba(56,189,248,.12)]'
+                              : 'border-transparent bg-white/[0.025] hover:border-white/10 hover:bg-white/[0.06]'
+                          }`}
+                        >
+                          <DetectiveAvatar
+                            shape={avatar.shape}
+                            color={detectiveConfig.colors[avatar.id]}
+                            className="h-6 w-6"
+                            detectiveId={avatar.id}
+                            scoutColor={detectiveConfig.scoutColor}
+                            emberColor={detectiveConfig.emberColor}
+                            mintColor={detectiveConfig.mintColor}
+                            rubyColor={detectiveConfig.rubyColor}
+                            petalColor={detectiveConfig.petalColor}
+                            violetColor={detectiveConfig.violetColor}
+                            sunnyColor={detectiveConfig.sunnyColor}
+                            mochaColor={detectiveConfig.mochaColor}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-2 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2" role="status" aria-live="polite">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold text-slate-200">{selectedDetective.name} · {selectedDetective.role}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[8px] ${isThinking ? 'bg-sky-300/10 text-sky-200' : 'bg-emerald-300/10 text-emerald-200'}`}>
+                    {isThinking ? 'Working' : 'Available'}
+                  </span>
+                </div>
+                <p className="mt-1 text-[9px] leading-relaxed text-slate-400">{selectedDetective.description}</p>
+                <p className="mt-1 truncate text-[8px] text-slate-500">Current task: {isThinking
+                  ? [...messages].reverse().find(message => message.role === 'user')?.content ?? 'Working on your request'
+                  : 'None'}</p>
+                <p className="mt-1 text-[8px] leading-relaxed text-slate-500">Capabilities: {selectedDetective.permittedTools.map(tool => tool.replaceAll('_', ' ')).join(' · ') || 'Chat only'}</p>
+              </div>
+              <div className="mt-2 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                <span className="mr-1 shrink-0 text-[9px] font-semibold uppercase tracking-[.12em] text-slate-500">Apps</span>
+                {DETECTIVE_APPS.map(app => (
+                  <button
+                    key={app.id}
+                    type="button"
+                    data-no-drag
+                    title={`Open ${app.name}`}
+                    aria-label={`Open ${app.name}`}
+                    onClick={() => openAppFromGhost(app.id)}
+                    className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-white/[0.06] bg-white/[0.025] px-2 text-[9px] text-slate-300 transition hover:-translate-y-0.5 hover:border-sky-200/20 hover:bg-sky-200/[0.06] hover:text-white"
+                  >
+                    <AppIcon appId={app.id} className="h-4 w-4 object-contain" />
+                    {app.name}
+                  </button>
+                ))}
+              </div>
+            </section>
+
             <div className="min-h-[130px] flex-1 space-y-3 overflow-y-auto px-5 py-4">
+              <GhostActivityFeed />
               {messages.length === 0 ? (
                 <div className="flex min-h-[150px] flex-col items-center justify-center text-center">
                   <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full border border-sky-200/15 bg-[radial-gradient(circle_at_35%_30%,rgba(125,211,252,.3),rgba(14,116,144,.14)_45%,rgba(8,47,73,.28))] shadow-[0_0_36px_rgba(14,165,233,.14)]">
-                    <AudioLines size={22} className="text-sky-200" />
+                    <DetectiveAvatar
+                      shape={selectedDetective.shape}
+                      color={selectedDetective.color}
+                      className="h-10 w-10"
+                      detectiveId={selectedDetectiveAvatarId}
+                      scoutColor={detectiveConfig.scoutColor}
+                      emberColor={detectiveConfig.emberColor}
+                      mintColor={detectiveConfig.mintColor}
+                      rubyColor={detectiveConfig.rubyColor}
+                      petalColor={detectiveConfig.petalColor}
+                      violetColor={detectiveConfig.violetColor}
+                      sunnyColor={detectiveConfig.sunnyColor}
+                      mochaColor={detectiveConfig.mochaColor}
+                    />
                   </div>
-                  <p className="text-[14px] font-medium text-slate-100">What can I help you with?</p>
-                  <p className="mt-1 text-[11px] text-slate-500">Try “Open Music”, “Create a folder named Projects”, or “What’s my battery?”.</p>
+                  <p className="text-[14px] font-medium text-slate-100">{selectedDetective.name} is ready to help</p>
+                  <p className="mt-1 max-w-md text-[11px] text-slate-500">Choose an app above or describe a desktop task. Your detective can open apps, organize desktop files, and change Focus Mode.</p>
                 </div>
               ) : messages.slice(-8).map((message, index) => (
                 <div key={`${index}-${message.role}-${message.content.slice(0, 12)}`} className={`flex gap-2.5 ${message.role === 'user' ? 'justify-end' : ''}`}>
-                  {message.role === 'assistant' && <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-300/10 text-sky-200"><Bot size={13} /></span>}
+                  {message.role === 'assistant' && (
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center">
+                      <DetectiveAvatar
+                        shape={selectedDetective.shape}
+                        color={selectedDetective.color}
+                        className="h-6 w-6"
+                        detectiveId={selectedDetectiveAvatarId}
+                        scoutColor={detectiveConfig.scoutColor}
+                        emberColor={detectiveConfig.emberColor}
+                        mintColor={detectiveConfig.mintColor}
+                        rubyColor={detectiveConfig.rubyColor}
+                        petalColor={detectiveConfig.petalColor}
+                        violetColor={detectiveConfig.violetColor}
+                        sunnyColor={detectiveConfig.sunnyColor}
+                        mochaColor={detectiveConfig.mochaColor}
+                      />
+                    </span>
+                  )}
                   <p className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-[12px] leading-5 ${message.role === 'user' ? 'rounded-br-md bg-sky-300/15 text-slate-100' : 'rounded-bl-md border border-white/[0.06] bg-white/[0.04] text-slate-300'}`}>
                     {message.content}
                   </p>
                 </div>
               ))}
-              {isThinking && <p className="pl-9 text-[11px] text-sky-200/70">Ghost is working…</p>}
+              {isThinking && <p className="pl-9 text-[11px] text-sky-200/70">{selectedDetective.name} is working…</p>}
             </div>
 
             {errorMessage && (
@@ -846,11 +1072,11 @@ export const GhostAssistantOverlay: React.FC = () => {
                 ref={inputRef}
                 value={prompt}
                 onChange={event => setPrompt(event.target.value)}
-                placeholder="Ask Lily or tell her what to open…"
+                placeholder="Describe a desktop task or ask your detective…"
                 className="h-10 min-w-0 flex-1 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3.5 text-[12px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-sky-300/25"
                 aria-label="Ask Lily"
               />
-              <button type="submit" data-no-drag disabled={!prompt.trim() || isThinking} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-300 text-slate-950 transition hover:bg-sky-200 disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-slate-600" aria-label="Send to Lily">
+              <button type="submit" data-no-drag disabled={!prompt.trim() || isThinking} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-300 text-slate-950 transition hover:bg-sky-200 disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-slate-600" aria-label="Send to Detective">
                 <ArrowUp size={17} />
               </button>
             </form>

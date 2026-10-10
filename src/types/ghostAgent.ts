@@ -1,3 +1,5 @@
+import type { WindowSnapType } from './desktop';
+
 export type GhostActionRisk = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export type GhostTask = 'CHAT' | 'EXECUTE_TOOL';
@@ -10,12 +12,22 @@ export interface GhostPermission {
 export interface GhostContext {
   displayName: string;
   availableApps: Array<{ id: string; name: string }>;
+  detective: {
+    name: string;
+    role: string;
+    personality: string;
+    description: string;
+    skills: string[];
+    instructions: string;
+    permittedTools: string[];
+  };
 }
 
 export interface GhostToolCall {
   id: string;
   name: string;
   args: Record<string, unknown>;
+  thoughtSignature?: string;
 }
 
 export interface GhostToolResult {
@@ -60,6 +72,8 @@ export interface GhostToolHost {
   openApp: (appId: string) => boolean;
   closeApp?: (appId: string) => boolean;
   createDesktopItem?: (type: 'folder' | 'file', name: string) => string;
+  renameDesktopItem?: (name: string, newName: string) => string | null;
+  deleteDesktopItem?: (name: string) => string | null;
   showDesktop?: () => Promise<void>;
   getLocalTime?: () => string;
   getBatteryStatus?: () => {
@@ -69,6 +83,13 @@ export interface GhostToolHost {
     plugged: boolean;
   };
   setFocusMode?: (enabled: boolean) => void;
+  requestCameraCapture?: (
+    kind: 'photo' | 'video',
+    durationSeconds?: number,
+  ) => Promise<{ success: boolean; result: string }>;
+  searchAuthorizedFiles?: (query: string) => Promise<string[]>;
+  getSystemInfo?: () => Promise<string>;
+  arrangeWindow?: (appId: string, position: WindowSnapType) => { success: boolean; result: string };
 }
 
 export class GhostChatError extends Error {

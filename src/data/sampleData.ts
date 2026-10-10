@@ -152,7 +152,7 @@ export const AUDIO_TRACKS: AudioTrack[] = [
     artist: 'Abhishek Sound Labs',
     album: 'Atmospheres Vol. 1',
     duration: 184,
-    coverUrl: 'https://images.unsplash.com/photo-1518495973542-4542c06a5843?q=80&w=400&auto=format&fit=crop',
+    coverUrl: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSkvyl_ISRkcHTy6o2bkzIUf8rLJeqXa_jNEft0LpTk_A&s=10',
     synthesizerPreset: 'ambient',
   },
   {
@@ -170,7 +170,7 @@ export const AUDIO_TRACKS: AudioTrack[] = [
     artist: 'Cortex Echoes',
     album: 'Coding Session IV',
     duration: 240,
-    coverUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=400&auto=format&fit=crop',
+    coverUrl: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSPbo2DfTgJpX7kndtvOEEhqOonJR0tCZMvgViBB5makg&s=10',
     synthesizerPreset: 'chillhop',
   },
   {

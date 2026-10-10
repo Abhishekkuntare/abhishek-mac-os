@@ -71,6 +71,29 @@ const MENU_BAR_HEIGHT = 32;
 
 const MIN_WINDOW_WIDTH = 320;
 const MIN_WINDOW_HEIGHT = 220;
+const WINDOW_CLIP_PATH = 'polygon(0% 0%, 50% 0%, 100% 0%, 100% 50%, 100% 100%, 50% 100%, 0% 100%, 0% 50%)';
+
+interface DockAnimationOrigin {
+  opacity: number;
+  scale: number;
+  x: number;
+  y: number;
+  clipPath: string;
+}
+
+const createDockClipPath = (
+  x: number,
+  y: number,
+  radiusX: number,
+  radiusY: number,
+) => {
+  const left = Math.max(0, x - radiusX);
+  const right = Math.min(100, x + radiusX);
+  const top = Math.max(0, y - radiusY);
+  const bottom = Math.min(100, y + radiusY);
+
+  return `polygon(${left}% ${top}%, ${x}% ${top}%, ${right}% ${top}%, ${right}% ${y}%, ${right}% ${bottom}%, ${x}% ${bottom}%, ${left}% ${bottom}%, ${left}% ${y}%)`;
+};
 
 export const WindowFrame: React.FC<WindowFrameProps> = ({
   window: win,
@@ -847,7 +870,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
   const isWindowVisible =
     (!win.desktopSpaceId || win.desktopSpaceId === activeSpaceId);
 
-  const getDockAnimationOrigin = useCallback(() => {
+  const getDockAnimationOrigin = useCallback((): DockAnimationOrigin | null => {
     const element = windowElementRef.current;
     if (!element) return null;
 
@@ -864,20 +887,40 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
     const dockBounds = dockIcon.getBoundingClientRect();
     if (!dockBounds.width || !dockBounds.height) return null;
 
+    const scale = Math.max(dockBounds.width / width, dockBounds.height / height);
+    const dockX = dockBounds.left + dockBounds.width / 2;
+    const dockY = dockBounds.top + dockBounds.height / 2;
+    const localX = Math.max(0, Math.min(100, ((dockX - left) / width) * 100));
+    const localY = Math.max(0, Math.min(100, ((dockY - top) / height) * 100));
+    const radiusX = Math.min(50, (dockBounds.width / scale / width) * 50);
+    const radiusY = Math.min(50, (dockBounds.height / scale / height) * 50);
+
     return {
       opacity: 0.12,
-      scale: Math.max(dockBounds.width / width, dockBounds.height / height),
-      x: dockBounds.left + dockBounds.width / 2 - (left + width / 2),
-      y: dockBounds.top + dockBounds.height / 2 - (top + height / 2),
+      scale,
+      x: dockX - (left + width / 2 + scale * (width * (localX / 100) - width / 2)),
+      y: dockY - (top + height / 2 + scale * (height * (localY / 100) - height / 2)),
+      clipPath: createDockClipPath(localX, localY, radiusX, radiusY),
     };
   }, [win.appId, win.height, win.width, win.x, win.y]);
 
   const animateFromDock = useCallback(() => {
     const origin = getDockAnimationOrigin();
     if (origin) {
-      animationControls.set(origin);
+      animationControls.set({
+        opacity: origin.opacity,
+        scale: origin.scale,
+        x: origin.x,
+        y: origin.y,
+        clipPath: origin.clipPath,
+      });
     } else {
-      animationControls.set({ opacity: 0, scale: 0.96, y: 14 });
+      animationControls.set({
+        opacity: 0,
+        scale: 0.96,
+        y: 14,
+        clipPath: WINDOW_CLIP_PATH,
+      });
     }
 
     void animationControls.start({
@@ -885,8 +928,9 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
       scale: 1,
       x: 0,
       y: 0,
+      clipPath: WINDOW_CLIP_PATH,
       transition: {
-        duration: settings.animationLevel === 'full' ? 0.46 : 0.18,
+        duration: settings.animationLevel === 'full' ? 0.52 : 0.2,
         ease: [0.16, 1, 0.3, 1],
       },
     });
@@ -909,6 +953,7 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
           opacity: 0,
           scale: settings.animationLevel === 'full' ? 0.88 : 0.96,
           y: settings.animationLevel === 'full' ? 18 : 0,
+          clipPath: WINDOW_CLIP_PATH,
           transition: {
             duration: settings.animationLevel === 'full' ? 0.28 : 0.12,
             ease: [0.4, 0, 1, 1],
@@ -922,9 +967,13 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
       }
 
       void animationControls.start({
-        ...origin,
+        opacity: origin.opacity,
+        scale: origin.scale,
+        x: origin.x,
+        y: origin.y,
+        clipPath: origin.clipPath,
         transition: {
-          duration: settings.animationLevel === 'full' ? 0.38 : 0.16,
+          duration: settings.animationLevel === 'full' ? 0.52 : 0.2,
           ease: [0.4, 0, 1, 1],
         },
       }).then(() => {
@@ -1047,9 +1096,10 @@ export const WindowFrame: React.FC<WindowFrameProps> = ({
               opacity: 0,
               scale: 0.92,
               y: 12,
+              clipPath: WINDOW_CLIP_PATH,
             }),
             transition: {
-              duration: settings.animationLevel === 'full' ? 0.36 : 0.12,
+              duration: settings.animationLevel === 'full' ? 0.48 : 0.16,
               ease: [0.4, 0, 1, 1],
             },
           }),

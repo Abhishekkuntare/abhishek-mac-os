@@ -29,3 +29,38 @@ export const getGhostLocalTime = () =>
     dateStyle: 'full',
     timeStyle: 'short',
   }).format(new Date());
+
+export const renameGhostDesktopItem = (name: string, newName: string): string | null => {
+  const target = vfs.getFiles('/Users/abhishek/Desktop')
+    .find(file => file.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+  if (!target) return null;
+  if (!newName.trim() || newName.length > 100 || /[\\/]/.test(newName)) {
+    throw new Error('Desktop names must be 1–100 characters and cannot contain slashes.');
+  }
+  if (!vfs.rename(target.id, newName)) throw new Error(`Could not rename "${name}".`);
+  return `Renamed "${name}" to "${newName}".`;
+};
+
+export const deleteGhostDesktopItem = (name: string): string | null => {
+  const target = vfs.getFiles('/Users/abhishek/Desktop')
+    .find(file => file.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+  if (!target) return null;
+  if (!vfs.moveToTrash(target.id)) throw new Error(`Could not move "${name}" to Trash.`);
+  return `Moved "${name}" to Trash.`;
+};
+
+export const searchGhostAuthorizedFiles = async (query: string): Promise<string[]> => {
+  if (!window.electronAPI?.getLocalFolders || !window.electronAPI.searchAuthorizedFiles) {
+    throw new Error('Authorized file search is unavailable in this ARLO OS build.');
+  }
+  const folders = await window.electronAPI.getLocalFolders();
+  if (folders.length === 0) {
+    throw new Error('Add an authorized folder in Finder settings before searching local files.');
+  }
+  const terms = query.split(/\s+/).filter(Boolean).slice(0, 8);
+  if (terms.length === 0) throw new Error('A search term is required.');
+  const results = await window.electronAPI.searchAuthorizedFiles(terms);
+  return results.slice(0, 5).map(result =>
+    `${result.name} — ${result.path}${result.snippet ? `\n${result.snippet.slice(0, 240)}` : ''}`,
+  );
+};

@@ -1,14 +1,23 @@
 import { useEffect, useState } from 'react';
-import { getPhotoLibraryItems, PhotoLibraryItem } from './photoLibrary';
+import { getPhotoLibraryItems, type PhotoLibraryItem } from './photoLibrary';
 
 /**
- * Shared hook for the Photos app.
+ * Shared media hook for Photos and Videos.
  * It automatically refreshes when Camera saves a new photo/video.
  */
 export const useOSPhotoLibrary = () => {
   const [items, setItems] = useState<PhotoLibraryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const refresh = async () => setItems(await getPhotoLibraryItems());
+  const refresh = async () => {
+    try {
+      setItems(await getPhotoLibraryItems());
+    } catch (error) {
+      console.error('[Media Library] Could not load saved media:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     refresh();
@@ -17,5 +26,5 @@ export const useOSPhotoLibrary = () => {
     return () => window.removeEventListener('abhishek-os-photo-added', handler);
   }, []);
 
-  return { items, refresh };
+  return { items, isLoading, refresh };
 };

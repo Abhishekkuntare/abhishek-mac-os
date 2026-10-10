@@ -1,6 +1,22 @@
 import { AppMetadata } from '../types/desktop';
 
 export const APP_REGISTRY: Record<string, AppMetadata> = {
+  mascot: {
+    id: 'mascot',
+    name: 'Arlo Mascot',
+    category: 'utility',
+    description: 'Open your Arlo mascot companion controls and appearance.',
+    iconName: 'Smile',
+    iconColor: '#7dd3fc',
+    iconBg: 'linear-gradient(135deg, #075985 0%, #38bdf8 55%, #a78bfa 100%)',
+    defaultWidth: 420,
+    defaultHeight: 560,
+    minWidth: 360,
+    minHeight: 420,
+    inDock: true,
+    installed: true,
+    version: '1.0.0',
+  },
   mobile: {
     id: 'mobile',
     name: 'iPhone Mirroring',
@@ -98,6 +114,22 @@ export const APP_REGISTRY: Record<string, AppMetadata> = {
     installed: true,
     version: '1.0.0',
   },
+  ghostdetectives: {
+    id: 'ghostdetectives',
+    name: 'Ghost Detectives',
+    category: 'productivity',
+    description: 'Choose a specialist detective and launch ARLO desktop tools.',
+    iconName: 'GhostDetectives',
+    iconColor: '#a78bfa',
+    iconBg: 'linear-gradient(135deg, #101827 0%, #34205f 100%)',
+    defaultWidth: 1080,
+    defaultHeight: 760,
+    minWidth: 760,
+    minHeight: 560,
+    inDock: true,
+    installed: true,
+    version: '1.0.0',
+  },
   universalshare: {
     id: 'universalshare',
     name: 'Universal Share',
@@ -164,9 +196,9 @@ export const APP_REGISTRY: Record<string, AppMetadata> = {
   },
   tv: {
     id: 'tv',
-    name: 'Abhishek TV',
+    name: 'Videos',
     category: 'media',
-    description: 'Media center with hero showcase and video streams.',
+    description: 'Browse and play saved camera recordings and videos.',
     iconName: 'Tv',
     iconColor: '#a855f7',
     iconBg: 'linear-gradient(135deg, #7e22ce 0%, #c084fc 100%)',

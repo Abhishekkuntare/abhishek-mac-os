@@ -15,7 +15,9 @@ import { Dock } from './components/dock/Dock';
 
 import { ControlCenter } from './components/controlcenter/ControlCenter';
 import Spotlight  from './components/spotlight/Spotlight';
+import { AppLauncher } from './components/spotlight/AppLauncher';
 import { NotificationCenter } from './components/notifications/NotificationCenter';
+import { NotificationToasts } from './components/notifications/NotificationToasts';
 import { MissionControl } from './components/desktop/MissionControl';
 
 import { BootScreen } from './components/system/BootScreen';
@@ -27,6 +29,7 @@ import { ActivityHistoryModal } from './components/system/ActivityHistoryModal';
 import { MascotCompanion } from './components/system/MascotCompanion';
 import { QuickLookModal } from './components/system/QuickLookModal';
 import { ShutdownScreen } from './components/system/ShutdownScreen';
+import { JellyNotch } from './components/system/JellyNotch';
 
 import { OnboardingModal } from './components/onboarding/OnboardingModal';
 import { LocalAccessPrompt } from './components/system/LocalAccessPrompt';
@@ -115,6 +118,8 @@ function OSWorkspace() {
         {/* Top System Menu Bar */}
         {hasCompletedSetup && !isSleeping && <MenuBar />}
 
+        {hasCompletedSetup && !isSleeping && <JellyNotch />}
+
         {/* Bottom Floating Glass Dock */}
         <Dock />
 
@@ -122,8 +127,10 @@ function OSWorkspace() {
         <ControlCenter />
 
         <Spotlight />
+        <AppLauncher />
 
         <NotificationCenter />
+        <NotificationToasts />
 
         <MissionControl />
 

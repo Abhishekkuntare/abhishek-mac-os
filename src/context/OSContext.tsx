@@ -8,6 +8,7 @@ import {
   NotificationItem,
   VirtualFile,
   AudioTrack,
+  WindowSnapType,
 } from '../types/desktop';
 import { WALLPAPERS, DEFAULT_WALLPAPER } from '../data/wallpapers';
 import { APP_REGISTRY } from '../data/defaultApps';
@@ -49,6 +50,68 @@ const DEFAULT_USER: UserProfile = {
 const DEFAULT_SETTINGS: SystemSettings = {
   theme: 'dark',
   accent: 'blue',
+  jellyNotchEnabled: true,
+  jellyNotchDashboard: false,
+  jellyNotchAnimation: 'spring',
+  jellyNotchShape: 'superellipse',
+  jellyNotchWidth: 340,
+  jellyNotchHeight: 54,
+  jellyNotchStyle: 'transparent',
+  jellyNotchOpacity: 100,
+  jellyNotchBlur: 28,
+  notchMusicHoverControls: false,
+  notchMusicVisualizer: 'bars',
+  notchMusicArtworkShape: 'rounded',
+  jamendoClientId: '',
+  jellyNotchWidgets: {
+    fileTray: true,
+    music: true,
+    calendar: false,
+    notifications: false,
+    timer: false,
+    pomodoro: true,
+    health: true,
+    stopwatch: false,
+    todos: true,
+    notes: true,
+    screenTime: true,
+    lowBattery: false,
+    translation: true,
+    windowSnap: false,
+    clipboard: true,
+    deviceActivity: true,
+    weather: false,
+    workspaces: false,
+    systemStatus: false,
+    camera: false,
+    dayProgress: false,
+    ghostAI: true,
+  },
+  dayProgress: {
+    sources: {
+      calendar: true,
+      reminders: true,
+      tasks: true,
+    },
+    bedtimeMarkerEnabled: false,
+    bedtimeTime: '22:00',
+    showSummaryColumn: true,
+  },
+  health: {
+    waterGoalGlasses: 8,
+    breakGoal: 4,
+    mindfulGoalMinutes: 10,
+    breakIntervalMinutes: 60,
+    movementBreakMinutes: 3,
+    breathingPattern: 'box',
+    windDownEnabled: false,
+    windDownTime: '22:00',
+    hearingWarningsEnabled: false,
+    hearingWarningThresholdPercent: 75,
+    eyeBreakRemindersEnabled: false,
+    eyeBreakIntervalMinutes: 20,
+    eyeBreakDurationSeconds: 20,
+  },
   uiStyle: 'balanced',
   animationLevel: 'full',
   soundEffects: true,
@@ -56,6 +119,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
   glassEffects: true,
   glassIntensity: 0.8,
   liveWallpapers: true,
+  liveWallpaperAudio: false,
   dockPosition: 'bottom',
   dockSize: 'medium',
   dockAutoHide: false,
@@ -75,6 +139,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
   bluetoothConnected: false,
   bluetoothDeviceName: '',
   doNotDisturb: false,
+  notificationStyle: 'glass',
   airDropEnabled: true,
   batteryLevel: 0,
   batteryCharging: false,
@@ -86,15 +151,15 @@ const DEFAULT_SETTINGS: SystemSettings = {
   region: 'India',
   clock24h: false,
   desktopWidgets: {
-    weather: true,
-    music: true,
-    system: true,
+    weather: false,
+    music: false,
+    system: false,
     clock: false,
   },
   developerMode: false,
   performanceMode: 'balanced',
   ghostShortcut: 'ctrl-shift-space',
-  ghostWakeEnabled: true,
+  ghostWakeEnabled: false,
   ghostVoiceResponses: true,
   ghostVoice: 'lily',
 };
@@ -218,7 +283,7 @@ interface OSContextType {
   focusWindow: (id: string) => void;
   moveWindow: (id: string, x: number, y: number) => void;
   resizeWindow: (id: string, width: number, height: number, x?: number, y?: number) => void;
-  snapWindow: (id: string, snapType: 'left' | 'right' | 'top' | 'maximize' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right') => void;
+  snapWindow: (id: string, snapType: WindowSnapType) => void;
   moveWindowToSpace: (windowId: string, spaceId: string) => void;
 
   // Dock
@@ -238,6 +303,7 @@ interface OSContextType {
   connectLocalDirectory: (targetPath?: string) => Promise<number>;
   userTracks: AudioTrack[];
   addCustomTrack: (track: AudioTrack) => void;
+  playCustomTrack: (track: AudioTrack) => void;
 
   // Notifications
   notifications: NotificationItem[];
@@ -266,12 +332,25 @@ const OSContext = createContext<OSContextType | undefined>(undefined);
 const TRACKED_SETTING_LABELS: Partial<Record<keyof SystemSettings, string>> = {
   theme: 'Appearance',
   accent: 'Accent color',
+  jellyNotchEnabled: 'Jelly Notch',
+  jellyNotchShape: 'Jelly Notch shape',
+  jellyNotchWidth: 'Jelly Notch width',
+  jellyNotchHeight: 'Jelly Notch height',
+  jellyNotchStyle: 'Jelly Notch material',
+  jellyNotchOpacity: 'Jelly Notch opacity',
+  jellyNotchBlur: 'Jelly Notch blur',
+  notchMusicHoverControls: 'Notch music hover controls',
+  notchMusicVisualizer: 'Notch music visualizer',
+  notchMusicArtworkShape: 'Notch music artwork shape',
+  jellyNotchWidgets: 'Jelly Notch widgets',
+  notificationStyle: 'Notification style',
   uiStyle: 'Interface density',
   animationLevel: 'Animation level',
   soundEffects: 'Sound effects',
   glassEffects: 'Glass effects',
   glassIntensity: 'Glass intensity',
   liveWallpapers: 'Live wallpapers',
+  liveWallpaperAudio: 'Live wallpaper audio',
   dockPosition: 'Dock position',
   dockSize: 'Dock size',
   dockAutoHide: 'Dock auto-hide',
@@ -520,15 +599,69 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [settings, setSettings] = useState<SystemSettings>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+      const storedSettings = stored ? JSON.parse(stored) as Partial<SystemSettings> : null;
+      const isLegacyDefaultNotchStyle =
+        (storedSettings?.jellyNotchStyle === 'glass' && storedSettings.jellyNotchOpacity === 82) ||
+        (storedSettings?.jellyNotchStyle === 'solid' && storedSettings.jellyNotchOpacity === 100);
+      const isLegacyDefaultNotchSize = storedSettings?.jellyNotchShape === 'capsule' && (
+        (storedSettings.jellyNotchWidth === 284 && storedSettings.jellyNotchHeight === 40) ||
+        (storedSettings.jellyNotchWidth === 340 && storedSettings.jellyNotchHeight === 54)
+      );
+      const oldDesktopWidgets = storedSettings?.desktopWidgets;
+      const isLegacyDefaultDesktopWidgets = oldDesktopWidgets?.weather === true
+        && oldDesktopWidgets.music === true
+        && oldDesktopWidgets.system === true
+        && oldDesktopWidgets.clock === false;
       return stored
         ? {
             ...DEFAULT_SETTINGS,
-            ...JSON.parse(stored),
+            ...storedSettings,
+            ...(isLegacyDefaultNotchStyle ? { jellyNotchStyle: 'transparent' as const, jellyNotchOpacity: 100 } : {}),
+            ...(isLegacyDefaultNotchSize ? {
+              jellyNotchShape: 'superellipse' as const,
+              jellyNotchWidth: 340,
+              jellyNotchHeight: 54,
+            } : {}),
             ghostVoice: 'lily',
-            ghostWakeEnabled: localStorage.getItem(STORAGE_KEYS.GHOST_WAKE_ENABLED) !== 'false',
+            ghostWakeEnabled: localStorage.getItem(STORAGE_KEYS.GHOST_WAKE_ENABLED) === 'true',
             desktopWidgets: {
               ...DEFAULT_SETTINGS.desktopWidgets,
-              ...JSON.parse(stored).desktopWidgets,
+              ...storedSettings?.desktopWidgets,
+              ...(isLegacyDefaultDesktopWidgets ? {
+                weather: false,
+                music: false,
+                system: false,
+                clock: false,
+              } : {}),
+            },
+            jellyNotchWidgets: {
+              ...DEFAULT_SETTINGS.jellyNotchWidgets,
+              ...storedSettings?.jellyNotchWidgets,
+              ...(storedSettings?.jellyNotchWidgets?.ghostAI === undefined ? {
+                screenTime: true,
+                music: true,
+                pomodoro: true,
+                todos: true,
+                notes: true,
+                fileTray: true,
+                deviceActivity: true,
+                clipboard: true,
+                health: true,
+                translation: true,
+                ghostAI: true,
+              } : {}),
+            },
+            dayProgress: {
+              ...DEFAULT_SETTINGS.dayProgress,
+              ...storedSettings?.dayProgress,
+              sources: {
+                ...DEFAULT_SETTINGS.dayProgress.sources,
+                ...storedSettings?.dayProgress?.sources,
+              },
+            },
+            health: {
+              ...DEFAULT_SETTINGS.health,
+              ...storedSettings?.health,
             },
             wifiEnabled: false,
             wifiConnected: false,
@@ -539,7 +672,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }
         : {
             ...DEFAULT_SETTINGS,
-            ghostWakeEnabled: localStorage.getItem(STORAGE_KEYS.GHOST_WAKE_ENABLED) !== 'false',
+            ghostWakeEnabled: localStorage.getItem(STORAGE_KEYS.GHOST_WAKE_ENABLED) === 'true',
           };
     } catch {
       return DEFAULT_SETTINGS;
@@ -623,6 +756,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const stored = localStorage.getItem(STORAGE_KEYS.WALLPAPER);
       if (stored) {
         const parsed = JSON.parse(stored);
+        if (parsed.id === 'abhishek-canyon') return DEFAULT_WALLPAPER;
         const match = WALLPAPERS.find(w => w.id === parsed.id);
         return match || parsed;
       }
@@ -682,8 +816,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               ...(JSON.parse(stored) as string[]).map(appId =>
                 appId === 'mail' ? 'nextpad' : appId === 'messages' ? 'ghostai' : appId,
               ),
+              'mascot',
               'clock',
               'doomscroll',
+              'ghostdetectives',
             ],
           )].filter(appId => appId !== 'mobile' && Boolean(APP_REGISTRY[appId]))
         : Object.values(APP_REGISTRY)
@@ -1131,15 +1267,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const snapWindow = useCallback(
     (
       id: string,
-      snapType:
-        | 'left'
-        | 'right'
-        | 'top'
-        | 'maximize'
-        | 'top-left'
-        | 'top-right'
-        | 'bottom-left'
-        | 'bottom-right'
+      snapType: WindowSnapType
     ) => {
       sound.playClick();
       const screenW = typeof window !== 'undefined' ? window.innerWidth : 1440;
@@ -1148,6 +1276,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const usableH = screenH - 32 - 76;
       const halfW = Math.floor(screenW / 2);
       const halfH = Math.floor(usableH / 2);
+      const thirdW = Math.floor(screenW / 3);
 
       setWindows(prev =>
         prev.map(w => {
@@ -1176,6 +1305,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               break;
             case 'bottom-right':
               newBounds = { x: halfW, y: topY + halfH, width: halfW, height: halfH };
+              break;
+            case 'left-third':
+              newBounds = { x: 0, y: topY, width: thirdW, height: usableH };
+              break;
+            case 'center-third':
+              newBounds = { x: thirdW, y: topY, width: thirdW, height: usableH };
+              break;
+            case 'right-third':
+              newBounds = { x: thirdW * 2, y: topY, width: screenW - thirdW * 2, height: usableH };
               break;
           }
 
@@ -1340,6 +1478,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     sound.playNotification();
   }, []);
 
+  const playCustomTrack = useCallback((track: AudioTrack) => {
+    const existingIndex = userTracks.findIndex(existing => existing.id === track.id);
+    const userTrackIndex = existingIndex >= 0 ? existingIndex : userTracks.length;
+    if (existingIndex < 0) setUserTracks(prev => [...prev, track]);
+    setCurrentTrackIndex(AUDIO_TRACKS.length + userTrackIndex);
+    setMusicProgress(0);
+    musicEngine.playTrack(track, 0);
+    setIsPlayingMusic(true);
+    sound.playClick();
+  }, [userTracks]);
+
   // Sync volume with sound settings
   useEffect(() => {
     musicEngine.setVolume(settings.soundEffects ? settings.soundVolume : 0);
@@ -1418,6 +1567,58 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setMusicProgress(pct);
     musicEngine.seek(pct);
   }, []);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !currentTrack) return;
+    const session = navigator.mediaSession;
+    session.playbackState = isPlayingMusic ? 'playing' : 'paused';
+    session.metadata = new MediaMetadata({
+      title: currentTrack.title,
+      artist: currentTrack.artist,
+      album: currentTrack.album,
+      artwork: currentTrack.coverUrl
+        ? [{ src: currentTrack.coverUrl, sizes: '512x512' }]
+        : [],
+    });
+    const handlers: Partial<Record<MediaSessionAction, MediaSessionActionHandler>> = {
+      play: () => {
+        if (!isPlayingMusic) togglePlayMusic();
+      },
+      pause: () => {
+        if (isPlayingMusic) togglePlayMusic();
+      },
+      nexttrack: nextTrack,
+      previoustrack: prevTrack,
+      seekto: details => {
+        if (details.seekTime !== undefined && currentTrack.duration > 0) {
+          handleSetMusicProgress((details.seekTime / currentTrack.duration) * 100);
+        }
+      },
+    };
+    const registeredActions: MediaSessionAction[] = [];
+    for (const [action, handler] of Object.entries(handlers) as [MediaSessionAction, MediaSessionActionHandler][]) {
+      try {
+        session.setActionHandler(action, handler);
+        registeredActions.push(action);
+      } catch (error) {
+        console.debug(`[Media Session] ${action} control is not supported:`, error);
+      }
+    }
+    if (currentTrack.duration > 0) {
+      try {
+        session.setPositionState({
+          duration: currentTrack.duration,
+          playbackRate: 1,
+          position: (musicProgress / 100) * currentTrack.duration,
+        });
+      } catch (error) {
+        console.debug('[Media Session] Playback position is unavailable:', error);
+      }
+    }
+    return () => {
+      for (const action of registeredActions) session.setActionHandler(action, null);
+    };
+  }, [currentTrack, handleSetMusicProgress, isPlayingMusic, musicProgress, nextTrack, prevTrack, togglePlayMusic]);
 
   // Local Computer File Access
   const importLocalFiles = useCallback(
@@ -1732,6 +1933,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         connectLocalDirectory,
         userTracks,
         addCustomTrack,
+        playCustomTrack,
 
         notifications,
         addNotification,

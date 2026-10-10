@@ -3,7 +3,6 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Activity, Move, Palette, Pause, Pencil, Play, Power, Ruler, X } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { sound } from '../../services/soundService';
-import { configureGhostUtterance } from '../../services/ghostVoice';
 import { MascotMark } from './MascotMark';
 import {
   loadMascotCompanionConfig,
@@ -147,7 +146,6 @@ export const MascotCompanion: React.FC = () => {
     setActivityTrackingEnabled,
     setShowActivityHistory,
     openApp,
-    notifications,
   } = useOS();
   const [config, setConfig] = useState<MascotCompanionConfig>(() => {
     const loaded = loadMascotCompanionConfig();
@@ -157,7 +155,6 @@ export const MascotCompanion: React.FC = () => {
   const [editingName, setEditingName] = useState(false);
   const shouldReduceMotion = useReducedMotion();
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const latestNotificationRef = useRef(notifications[0]?.id);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const suppressClickRef = useRef(false);
   const selectedAction = MASCOT_ACTIONS.find(action => action.id === config.actionId) ?? MASCOT_ACTIONS[0];
@@ -187,17 +184,6 @@ export const MascotCompanion: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const latest = notifications[0];
-    if (!latest || latestNotificationRef.current === latest.id) return;
-    latestNotificationRef.current = latest.id;
-    if (!config.visible || !config.announceNotifications || !settings.ghostVoiceResponses || !('speechSynthesis' in window)) return;
-
-    const utterance = new SpeechSynthesisUtterance('Hey, you have a new notification. Check your notification center.');
-    configureGhostUtterance(utterance);
-    window.speechSynthesis.speak(utterance);
-  }, [config.announceNotifications, config.visible, notifications, settings.ghostVoiceResponses]);
-
-  useEffect(() => {
     const keepOnScreen = () => {
       setConfig(current => ({
         ...current,
@@ -215,6 +201,14 @@ export const MascotCompanion: React.FC = () => {
       return { ...next, ...position };
     });
   }, []);
+
+  const notchWasEnabled = useRef(settings.jellyNotchEnabled);
+  useEffect(() => {
+    if (notchWasEnabled.current && !settings.jellyNotchEnabled) {
+      updateConfig({ visible: true });
+    }
+    notchWasEnabled.current = settings.jellyNotchEnabled;
+  }, [settings.jellyNotchEnabled, updateConfig]);
 
   const openMenuAt = useCallback((x: number, y: number) => {
     const menuWidth = 292;
@@ -311,7 +305,7 @@ export const MascotCompanion: React.FC = () => {
   return (
     <>
       <AnimatePresence>
-        {config.visible && (
+        {config.visible && !settings.jellyNotchEnabled && (
           <motion.div
             key="arlo-mascot-companion"
             initial={{ opacity: 0, scale: 0.6, y: 14 }}
@@ -464,15 +458,6 @@ export const MascotCompanion: React.FC = () => {
                 {config.paused ? <Play className="h-4 w-4 text-emerald-300" /> : <Pause className="h-4 w-4 text-amber-300" />}
                 {config.paused ? 'Resume action' : 'Pause action'}
               </button>
-              <label className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[11px] font-semibold text-slate-200 hover:bg-white/[0.055]">
-                <span className="flex-1">Speak notification reminders</span>
-                <input
-                  type="checkbox"
-                  checked={config.announceNotifications}
-                  onChange={event => updateConfig({ announceNotifications: event.target.checked })}
-                  className="accent-sky-400"
-                />
-              </label>
             </div>
 
             <div className="mt-2 rounded-xl border border-white/[0.07] bg-black/10 p-2.5">

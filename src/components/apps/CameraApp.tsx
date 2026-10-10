@@ -42,6 +42,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { sound } from '../../services/soundService';
 import { useOS } from '../../context/OSContext';
 import { vfs } from '../../services/virtualFileSystem';
+import { addPhotoToLibrary, addVideoToLibrary } from '../../services/photoLibrary';
 
 type CameraMode = 'photo' | 'video';
 type CaptureType = 'image' | 'video';
@@ -207,6 +208,7 @@ const CameraApp: React.FC = () => {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<number | null>(null);
+  const recordingStartedAtRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
 
   const [mode, setMode] = useState<CameraMode>('photo');
@@ -371,6 +373,7 @@ const CameraApp: React.FC = () => {
   const saveCapture = useCallback(
     (blob: Blob, type: CaptureType) => {
       const url = URL.createObjectURL(blob);
+      const createdAt = Date.now();
 
       setLastCapture((previous) => {
         if (previous) {
@@ -380,11 +383,45 @@ const CameraApp: React.FC = () => {
         return {
           url,
           type,
-          createdAt: Date.now(),
+          createdAt,
         };
       });
+
+      const saveToLibrary = type === 'image'
+        ? addPhotoToLibrary(blob, {
+            width: videoRef.current?.videoWidth,
+            height: videoRef.current?.videoHeight,
+            facingMode,
+            source: 'Camera app',
+          })
+        : addVideoToLibrary(blob, {
+            duration: recordingStartedAtRef.current
+              ? Math.max(0, Math.round((createdAt - recordingStartedAtRef.current) / 1000))
+              : recordingSeconds,
+            facingMode,
+            source: 'Camera app',
+          });
+
+      void saveToLibrary.then(() => {
+        addNotification({
+          appId: 'camera',
+          title: type === 'image' ? 'Photo saved to Photos' : 'Video saved to Videos',
+          message: 'Your capture is stored in the app library on this device.',
+          type: 'system',
+        });
+      }).catch(error => {
+        console.error('[Camera] Could not save capture to the media library:', error);
+        addNotification({
+          appId: 'camera',
+          title: 'Could not save capture',
+          message: error instanceof Error
+            ? error.message
+            : 'Your capture could not be saved to the Photos and Videos libraries.',
+          type: 'system',
+        });
+      });
     },
-    [],
+    [addNotification, facingMode, recordingSeconds],
   );
 
   const capturePhoto = useCallback(() => {
@@ -451,6 +488,7 @@ const CameraApp: React.FC = () => {
     if (!stream || typeof MediaRecorder === 'undefined') return;
 
     chunksRef.current = [];
+    recordingStartedAtRef.current = Date.now();
 
     const mimeType = MediaRecorder.isTypeSupported(
       'video/webm;codecs=vp9,opus',
@@ -474,6 +512,7 @@ const CameraApp: React.FC = () => {
       });
 
       saveCapture(blob, 'video');
+      recordingStartedAtRef.current = null;
 
       chunksRef.current = [];
 
@@ -1805,7 +1844,9 @@ const CameraApp: React.FC = () => {
               onClick={event => event.stopPropagation()}
             >
               <h2 id="camera-save-title" className="text-base font-bold">Save in ARLO OS</h2>
-              <p className="mt-1 text-xs text-slate-400">Choose where to store this capture inside the app.</p>
+              <p className="mt-1 text-xs leading-5 text-slate-400">
+                This capture is already saved in the Photos library{lastCapture.type === 'video' ? ' and Videos library' : ''}. You can also save a copy to an ARLO folder below.
+              </p>
               <div className="mt-4 grid grid-cols-2 gap-2">
                 {[
                   ['/Users/abhishek/Desktop', 'Desktop'],

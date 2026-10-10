@@ -13,6 +13,7 @@ import finderIcon from '../../assets/app-icons/finder.png';
 import folderIcon from '../../assets/app-icons/folder.png';
 import gamesIcon from '../../assets/app-icons/gamecenter.jpg';
 import ghostAiIcon from '../../assets/app-icons/ghostai.png';
+import ghostDetectivesIcon from '../../assets/app-icons/ghost-detectives.png';
 import mobileIcon from '../../assets/app-icons/iphonemirriong.png';
 import nextpadIcon from '../../assets/app-icons/nextpad.png';
 import notesIcon from '../../assets/app-icons/notes.png';
@@ -38,6 +39,7 @@ const APP_ICON_ASSETS: Record<string, string> = {
   finder: finderIcon,
   gamecenter: gamesIcon,
   ghostai: ghostAiIcon,
+  ghostdetectives: ghostDetectivesIcon,
   mobile: mobileIcon,
   nextpad: nextpadIcon,
   notes: notesIcon,

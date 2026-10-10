@@ -52,6 +52,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 import { sound } from '../../services/soundService';
+import { vfs } from '../../services/virtualFileSystem';
 
 /* =========================================================
    TYPES
@@ -77,6 +78,7 @@ interface ProjectFile {
   code: string;
   path: string;
   saved: boolean;
+  vfsFileId?: string;
 }
 
 interface ContextMenuItem {
@@ -552,7 +554,7 @@ export const CodeStudioApp: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    type OpenFileRequest = { name: string; content: string; path: string };
+    type OpenFileRequest = { name: string; content: string; path: string; vfsFileId?: string };
     const openRequestedFile = (request?: OpenFileRequest) => {
       if (!filesLoaded) return;
       let pending = request;
@@ -576,6 +578,7 @@ export const CodeStudioApp: React.FC = () => {
         path: pending.path || `/Photos/Code Studio/${pending.name}`,
         code: pending.content,
         saved: true,
+        vfsFileId: pending.vfsFileId,
       };
       setFiles(current => [...current.filter(item => item.path !== file.path), file]);
       setOpenFileIds(current => [...new Set([...current, fileId])]);
@@ -647,6 +650,22 @@ export const CodeStudioApp: React.FC = () => {
       )
     );
   };
+
+  useEffect(() => {
+    const linkedFiles = files.filter(file => file.vfsFileId);
+    if (!linkedFiles.length) return;
+    const timer = window.setTimeout(() => {
+      linkedFiles.forEach(file => {
+        const original = vfs.getFileById(file.vfsFileId!);
+        if (!original) {
+          console.error(`[Code Studio] Could not sync "${file.name}" because its original VFS file is unavailable.`);
+        } else if (original.content !== file.code) {
+          vfs.updateFileContent(file.vfsFileId!, file.code);
+        }
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [files]);
 
   /* =====================================================
      SELECT FILE

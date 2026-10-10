@@ -82,6 +82,36 @@ contextBridge.exposeInMainWorld(
     getBatteryStatus: () =>
       ipcRenderer.invoke('system:getBatteryStatus'),
 
+    getSystemMediaState: () =>
+      ipcRenderer.invoke('system:getMediaState'),
+
+    sendWindowsMediaCommand: (command) =>
+      ipcRenderer.invoke('system:sendWindowsMediaCommand', command),
+
+    onSystemMediaState: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on('system:media-state', listener);
+      return () => ipcRenderer.removeListener('system:media-state', listener);
+    },
+
+    setNotchClipboardMonitoring: (enabled) =>
+      ipcRenderer.invoke('system:setNotchClipboardMonitoring', enabled),
+
+    setNotchDeviceMonitoring: (enabled) =>
+      ipcRenderer.invoke('system:setNotchDeviceMonitoring', enabled),
+
+    onNotchClipboardActivity: (callback) => {
+      const listener = (_event, activity) => callback(activity);
+      ipcRenderer.on('system:notch-clipboard-activity', listener);
+      return () => ipcRenderer.removeListener('system:notch-clipboard-activity', listener);
+    },
+
+    onNotchDeviceActivity: (callback) => {
+      const listener = (_event, activity) => callback(activity);
+      ipcRenderer.on('system:notch-device-activity', listener);
+      return () => ipcRenderer.removeListener('system:notch-device-activity', listener);
+    },
+
     setWifiEnabled: (enabled) =>
       ipcRenderer.invoke('system:setWifiEnabled', enabled),
 
@@ -117,6 +147,9 @@ contextBridge.exposeInMainWorld(
 
     chooseLocalFolders: () =>
       ipcRenderer.invoke('files:chooseFolders'),
+
+    chooseLocalApplication: () =>
+      ipcRenderer.invoke('files:chooseApplication'),
 
     getLocalFolders: () =>
       ipcRenderer.invoke('files:getFolders'),

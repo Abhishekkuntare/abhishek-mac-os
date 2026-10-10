@@ -81,12 +81,14 @@ import {
 import { useOS } from '../../context/OSContext';
 
 import { LiveWallpaper } from './LiveWallpaper';
+import { VideoWallpaper } from './VideoWallpaper';
 
 import { DesktopWidgets } from './DesktopWidgets';
 
 import { vfs } from '../../services/virtualFileSystem';
 
 import { sound } from '../../services/soundService';
+import { openVirtualFile } from '../../services/fileAssociations';
 
 import { VirtualFile } from '../../types/desktop';
 import { APP_REGISTRY } from '../../data/defaultApps';
@@ -174,6 +176,7 @@ const DESKTOP_APP_COPIES_KEY = 'abhishek_os_desktop_app_copies_v1';
 const DESKTOP_SHORTCUTS_STATE_KEY = 'abhishek_os_desktop_shortcuts_v1';
 const DOCK_FILE_SHORTCUTS_KEY = 'abhishek_os_dock_file_shortcuts_v1';
 const DOCK_APP_DRAG_TYPE = 'application/x-abhishek-os-dock-app';
+const NOTCH_TRAY_PATH = '/Users/abhishek/Files Tray';
 
 const isPointInsideDock = (x: number, y: number): boolean => {
   const dock = document.querySelector<HTMLElement>('[data-dock-drop-zone="true"]');
@@ -271,6 +274,7 @@ export const Desktop: React.FC = () => {
     addNotification,
 
     toggleDockPin,
+    updateSettings,
 
     dockAppIds,
     setShowAppSwitcher,
@@ -483,6 +487,8 @@ export const Desktop: React.FC = () => {
   // Drag state tracker
 
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+  const [absorbingItemId, setAbsorbingItemId] = useState<string | null>(null);
+  const notchDropTimeoutRef = useRef<number | null>(null);
 
   const dragTrackerRef = useRef<{
 
@@ -497,6 +503,10 @@ export const Desktop: React.FC = () => {
     hasMoved: boolean;
 
   } | null>(null);
+
+  useEffect(() => () => {
+    if (notchDropTimeoutRef.current !== null) window.clearTimeout(notchDropTimeoutRef.current);
+  }, []);
 
   const selectionBoxRef = useRef<{
     startX: number;
@@ -828,7 +838,7 @@ export const Desktop: React.FC = () => {
 
         id: 'icon-tv',
 
-        label: 'Abhishek TV',
+        label: 'Videos',
 
         type: 'app',
 
@@ -1145,8 +1155,26 @@ export const Desktop: React.FC = () => {
 
     if (tracker.hasMoved) {
       const isOverDock = isPointInsideDock(e.clientX, e.clientY);
+      const isOverNotch = settings.jellyNotchEnabled &&
+        settings.jellyNotchWidgets.fileTray &&
+        e.clientY <= 132 &&
+        Math.abs(e.clientX - window.innerWidth / 2) <= 270;
+      const draggedItem = allDesktopItems.find(candidate => candidate.id === tracker.itemId);
+      const notchItem = draggedItem
+        ? {
+            id: draggedItem.id,
+            name: draggedItem.name,
+            type: draggedItem.type,
+            isDirectory: draggedItem.type === 'folder',
+            size: draggedItem.isSystem ? 0 : draggedItem.file.size,
+            appId: draggedItem.isSystem ? draggedItem.appId : undefined,
+          }
+        : undefined;
       window.dispatchEvent(new CustomEvent('desktop:item-drag-state', {
-        detail: { overDock: isOverDock },
+        detail: { overDock: isOverDock, overNotch: isOverNotch },
+      }));
+      window.dispatchEvent(new CustomEvent('desktop:item-drag-over-notch', {
+        detail: { overNotch: isOverNotch, item: notchItem, clientX: e.clientX, clientY: e.clientY },
       }));
 
       const maxX = Math.max(16, window.innerWidth - 108);
@@ -1185,6 +1213,10 @@ export const Desktop: React.FC = () => {
     if (tracker.hasMoved) {
       const item = allDesktopItems.find(candidate => candidate.id === tracker.itemId);
       const droppedOnDock = isPointInsideDock(e.clientX, e.clientY);
+      const droppedOnNotch = settings.jellyNotchEnabled &&
+        settings.jellyNotchWidgets.fileTray &&
+        e.clientY <= 132 &&
+        Math.abs(e.clientX - window.innerWidth / 2) <= 270;
       if (droppedOnDock && item) {
         window.dispatchEvent(new CustomEvent('desktop:item-drop-to-dock', {
           detail: item.isSystem
@@ -1192,9 +1224,61 @@ export const Desktop: React.FC = () => {
             : { fileId: item.id },
         }));
       }
+      if (droppedOnNotch && item) {
+        setAbsorbingItemId(item.id);
+        notchDropTimeoutRef.current = window.setTimeout(() => {
+          let error: string | undefined;
+          try {
+            if (item.isSystem) {
+              removeDesktopShortcut(item);
+            } else {
+              const result = vfs.moveFiles([item.file.id], NOTCH_TRAY_PATH);
+              if (result.error) {
+                error = result.error;
+              } else {
+                refreshFiles();
+              }
+            }
+          } catch (dropError) {
+            error = dropError instanceof Error ? dropError.message : `Could not move "${item.name}" to the Files Tray.`;
+          }
+          if (error) {
+            setCustomPositions(previous => {
+              const next = { ...previous, [item.id]: tracker.startPos };
+              savePositions(next);
+              return next;
+            });
+          } else {
+            setSelectedIconIds(previous => previous.filter(id => id !== item.id));
+          }
+          window.dispatchEvent(new CustomEvent('desktop:item-drop-to-notch', {
+            detail: {
+              id: item.id,
+              name: item.name,
+              type: item.type,
+              isDirectory: item.type === 'folder',
+              size: item.isSystem ? 0 : item.file.size,
+              appId: item.isSystem ? item.appId : undefined,
+              virtualFileId: item.isSystem ? undefined : item.file.id,
+              success: !error,
+              error,
+            },
+          }));
+          window.dispatchEvent(new CustomEvent('desktop:item-drag-over-notch', {
+            detail: { overNotch: false },
+          }));
+          setAbsorbingItemId(null);
+          notchDropTimeoutRef.current = null;
+        }, 210);
+      }
       window.dispatchEvent(new CustomEvent('desktop:item-drag-state', {
-        detail: { overDock: false },
+        detail: { overDock: false, overNotch: false },
       }));
+      if (!droppedOnNotch) {
+        window.dispatchEvent(new CustomEvent('desktop:item-drag-over-notch', {
+          detail: { overNotch: false },
+        }));
+      }
 
       if (droppedOnDock) {
         setCustomPositions(previous => {
@@ -1202,7 +1286,7 @@ export const Desktop: React.FC = () => {
           savePositions(next);
           return next;
         });
-      } else {
+      } else if (!droppedOnNotch) {
         const finalPosition = customPositions[tracker.itemId] ?? tracker.startPos;
         const previousPositions = {
           ...customPositions,
@@ -1216,7 +1300,10 @@ export const Desktop: React.FC = () => {
       }
     } else {
       window.dispatchEvent(new CustomEvent('desktop:item-drag-state', {
-        detail: { overDock: false },
+        detail: { overDock: false, overNotch: false },
+      }));
+      window.dispatchEvent(new CustomEvent('desktop:item-drag-over-notch', {
+        detail: { overNotch: false },
       }));
     }
 
@@ -1486,6 +1573,28 @@ export const Desktop: React.FC = () => {
       type: 'system',
     });
   };
+
+  useEffect(() => {
+    const restoreAppShortcut = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: string; appId?: string; name?: string }>).detail;
+      if (!detail?.id || !detail.appId) return;
+      if (detail.id.startsWith('copied-app-')) {
+        setDesktopAppCopies(previous => previous.some(copy => copy.id === detail.id)
+          ? previous
+          : [...previous, { id: detail.id!, appId: detail.appId! }]);
+      } else if (detail.id.startsWith('dock-app-')) {
+        const appId = detail.id.slice('dock-app-'.length);
+        setDesktopDockShortcuts(previous => previous.includes(appId) ? previous : [...previous, appId]);
+      } else {
+        setRemovedDesktopShortcutIds(previous => previous.filter(id => id !== detail.id));
+      }
+      if (detail.name) {
+        setDesktopShortcutNames(previous => ({ ...previous, [detail.id!]: detail.name! }));
+      }
+    };
+    window.addEventListener('desktop:restore-app-shortcut', restoreAppShortcut);
+    return () => window.removeEventListener('desktop:restore-app-shortcut', restoreAppShortcut);
+  }, []);
 
 
   const crc32 = (bytes: Uint8Array) => {
@@ -2189,6 +2298,12 @@ export const Desktop: React.FC = () => {
         return;
       }
 
+      if (file.extension?.toLowerCase() === 'pdf' && window.electronAPI?.getMediaUrl) {
+        const previewUrl = await window.electronAPI.getMediaUrl(file.hostPath);
+        setQuickLookFile({ ...file, previewUrl });
+        return;
+      }
+
       if (file.type === 'code' && window.electronAPI?.openLocalCodeFile) {
         const result = await window.electronAPI.openLocalCodeFile(file.hostPath);
         if (result.opened) return;
@@ -2272,23 +2387,7 @@ export const Desktop: React.FC = () => {
 
     } else if (file) {
 
-      if (file.extension === 'txt' || file.type === 'code' || file.type === 'document') {
-
-        openApp('codestudio');
-
-      } else if (file.type === 'audio') {
-
-        openApp('music');
-
-      } else if (file.type === 'video') {
-
-        openApp('tv');
-
-      } else {
-
-        setQuickLookFile(file);
-
-      }
+      openVirtualFile(file, openApp, setQuickLookFile);
 
     }
 
@@ -2734,7 +2833,12 @@ export const Desktop: React.FC = () => {
 
       {/* Wallpaper Layer */}
 
-      {settings.liveWallpapers && currentWallpaper.isLive && currentWallpaper.liveType ? (
+      {settings.liveWallpapers && currentWallpaper.liveVideoId ? (
+        <VideoWallpaper
+          mediaId={currentWallpaper.liveVideoId}
+          audioEnabled={settings.liveWallpaperAudio}
+        />
+      ) : settings.liveWallpapers && currentWallpaper.isLive && currentWallpaper.liveType ? (
 
         <LiveWallpaper
           type={currentWallpaper.liveType}
@@ -2875,7 +2979,7 @@ export const Desktop: React.FC = () => {
 
                 isDraggingThis ? 'z-50 scale-105 shadow-2xl opacity-90' : 'z-10'
 
-              } ${
+              } ${absorbingItemId === item.id ? 'scale-50 opacity-0 blur-sm pointer-events-none' : ''} ${
 
                 isSelected
 
@@ -2883,7 +2987,7 @@ export const Desktop: React.FC = () => {
 
                   : 'hover:bg-white/15'
 
-              }`}
+              } transition-all duration-200 ease-out`}
 
               title={
                 item.isSystem
@@ -3521,6 +3625,16 @@ export const Desktop: React.FC = () => {
                             accent={showDesktopIcons ? 'text-sky-300' : 'text-white/70'}
                             onClick={() => { setShowDesktopIcons(prev => !prev); setOpenDesktopSubmenu(null); sound.playClick(); }}
                           />
+                          <ContextMenuItem
+                            icon={settings.dockAutoHide ? Monitor : X}
+                            label={settings.dockAutoHide ? 'Show Dock' : 'Hide Dock'}
+                            accent={settings.dockAutoHide ? 'text-white/70' : 'text-sky-300'}
+                            onClick={() => {
+                              updateSettings({ dockAutoHide: !settings.dockAutoHide });
+                              setOpenDesktopSubmenu(null);
+                              sound.playClick();
+                            }}
+                          />
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -3691,6 +3805,18 @@ export const Desktop: React.FC = () => {
                       await captureWindowPreviews(windows);
                       setShowAppSwitcher(false);
                       setShowMissionControl(true);
+                      sound.playClick();
+                    }}
+                  />
+
+                  <ContextMenuItem
+                    icon={Grid}
+                    label="All Apps"
+                    shortcut="Alt+Enter"
+                    accent="text-sky-300"
+                    onClick={() => {
+                      closeMenu();
+                      window.dispatchEvent(new Event('arlo:open-app-launcher'));
                       sound.playClick();
                     }}
                   />

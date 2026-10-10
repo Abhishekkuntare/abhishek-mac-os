@@ -2970,6 +2970,7 @@ import {
   BluetoothOff,
   X,
   Save,
+  Video,
   Grid3X3,
   Layers3,
   SearchX,
@@ -2978,12 +2979,20 @@ import {
   CloudSun,
   Music,
   Clock3,
+  CalendarDays,
+  Heart,
+  Droplets,
+  Ear,
+  Timer,
+  Wind,
   Pin,
   PinOff,
   Bot,
   Mic,
   Share2,
   ArrowUpRight,
+  SkipForward,
+  Waves,
 } from 'lucide-react';
 
 import { motion, AnimatePresence } from 'motion/react';
@@ -3005,8 +3014,13 @@ import {
   GhostShortcut,
   ThemeMode,
   Wallpaper,
+  JellyNotchShape,
+  JellyNotchStyle,
+  NotificationStyle,
 } from '../../types/desktop';
 import { sound } from '../../services/soundService';
+import { addVideoToLibrary } from '../../services/photoLibrary';
+import { VideoWallpaper } from '../desktop/VideoWallpaper';
 import { syncProfileToCloud } from '../../services/profileSync';
 import { APP_VERSION, getInstalledAppVersion } from '../../services/appVersion';
 import { AppIcon } from '../system/AppIcon';
@@ -3041,9 +3055,12 @@ type SettingsTab =
   | 'dock'
   | 'displays'
   | 'sound'
+  | 'media'
   | 'wifi'
   | 'bluetooth'
   | 'focus'
+  | 'health'
+  | 'dayProgress'
   | 'ghost'
   | 'battery'
   | 'about';
@@ -3075,6 +3092,27 @@ const MASCOT_COLOR_SWATCHES = [
   '#64748b',
   '#f8fafc',
   '#111827',
+];
+
+const JELLY_NOTCH_SHAPES: { id: JellyNotchShape; label: string; radius: string; width: number; height: number }[] = [
+  { id: 'capsule', label: 'Capsule', radius: '999px', width: 66, height: 22 },
+  { id: 'rounded', label: 'Rounded', radius: '9px', width: 66, height: 25 },
+  { id: 'square', label: 'Square', radius: '4px', width: 27, height: 27 },
+  { id: 'circle', label: 'Circle', radius: '50%', width: 27, height: 27 },
+  { id: 'oval', label: 'Oval', radius: '50%', width: 66, height: 25 },
+  { id: 'superellipse', label: 'Superellipse', radius: '38%', width: 66, height: 25 },
+  { id: 'compact', label: 'Compact pill', radius: '999px', width: 48, height: 20 },
+  { id: 'wide', label: 'Wide pill', radius: '999px', width: 76, height: 22 },
+  { id: 'orb', label: 'Floating orb', radius: '50%', width: 27, height: 27 },
+  { id: 'split', label: 'Split capsule', radius: '999px', width: 66, height: 22 },
+  { id: 'double', label: 'Double capsule', radius: '999px', width: 66, height: 25 },
+  { id: 'custom', label: 'Custom', radius: '18px', width: 66, height: 25 },
+];
+const JELLY_NOTCH_STYLES: { id: JellyNotchStyle; label: string; description: string; background: string }[] = [
+  { id: 'glass', label: 'Liquid glass', description: 'Soft blur with a polished rim', background: 'linear-gradient(145deg, rgba(55,65,81,.88), rgba(5,7,12,.76))' },
+  { id: 'solid', label: 'Midnight', description: 'Deep, solid black', background: 'linear-gradient(145deg, #16181e, #030406)' },
+  { id: 'transparent', label: 'Clear glass', description: 'Wallpaper shines through', background: 'linear-gradient(145deg, rgba(255,255,255,.24), rgba(15,20,30,.28))' },
+  { id: 'aurora', label: 'Aurora', description: 'Subtle Arlo color glow', background: 'linear-gradient(135deg, rgba(14,165,233,.44), rgba(91,33,182,.38), rgba(3,4,8,.86))' },
 ];
 
 
@@ -3335,6 +3373,12 @@ const NAV_ITEMS: {
     description: 'Volume and system sounds',
   },
   {
+    id: 'media',
+    label: 'Media',
+    icon: Music,
+    description: 'Music catalog and notch playback controls',
+  },
+  {
     id: 'wifi',
     label: 'Wi-Fi & Network',
     icon: Wifi,
@@ -3351,6 +3395,18 @@ const NAV_ITEMS: {
     label: 'Focus & Notifications',
     icon: Moon,
     description: 'Focus and alerts',
+  },
+  {
+    id: 'health',
+    label: 'Health',
+    icon: Heart,
+    description: 'Desk breaks, hydration, mindful minutes and eye rest',
+  },
+  {
+    id: 'dayProgress',
+    label: 'Day Progress',
+    icon: CalendarDays,
+    description: 'Choose timeline sources, bedtime marker, and summary layout',
   },
   {
     id: 'ghost',
@@ -3775,6 +3831,7 @@ export const SettingsApp: React.FC = () => {
 
   const wallpaperInputRef =
     useRef<HTMLInputElement | null>(null);
+  const liveWallpaperInputRef = useRef<HTMLInputElement | null>(null);
 
   const [activeTab, setActiveTab] =
     useState<SettingsTab>('profile');
@@ -3815,6 +3872,57 @@ export const SettingsApp: React.FC = () => {
       console.warn('[Settings] Could not read the mascot settings destination:', error);
     }
     return () => window.removeEventListener('arlo:open-mascot-settings', openMascotSettings);
+  }, []);
+
+  useEffect(() => {
+    const openHealthSettings = () => {
+      setActiveTab('health');
+      setShowMobileNav(false);
+    };
+    window.addEventListener('arlo:open-health-settings', openHealthSettings);
+    return () => window.removeEventListener('arlo:open-health-settings', openHealthSettings);
+  }, []);
+
+  useEffect(() => {
+    const validTabs = new Set<SettingsTab>([
+      'profile', 'connections', 'appearance', 'themes', 'wallpaper', 'dock',
+      'displays', 'sound', 'media', 'wifi', 'bluetooth', 'focus', 'health',
+      'dayProgress', 'ghost', 'battery', 'about',
+    ]);
+    let scrollTimer = 0;
+    const openSettingsSection = (event: Event) => {
+      const detail = (event as CustomEvent<{ tab?: string; anchor?: string }>).detail;
+      if (!detail || !detail.tab || !validTabs.has(detail.tab as SettingsTab)) return;
+      try {
+        sessionStorage.removeItem('arlo-pending-settings-section');
+      } catch (error) {
+        console.warn('[Settings] Could not clear the pending Settings destination:', error);
+      }
+      setActiveTab(detail.tab as SettingsTab);
+      setShowMobileNav(false);
+      window.clearTimeout(scrollTimer);
+      if (detail.anchor) {
+        scrollTimer = window.setTimeout(() => {
+          document.getElementById(detail.anchor!)?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+          });
+        }, 180);
+      }
+    };
+    window.addEventListener('arlo:open-settings-section', openSettingsSection);
+    try {
+      const pending = sessionStorage.getItem('arlo-pending-settings-section');
+      if (pending) {
+        openSettingsSection(new CustomEvent('arlo:open-settings-section', { detail: JSON.parse(pending) }));
+      }
+    } catch (error) {
+      console.warn('[Settings] Could not restore the pending Settings destination:', error);
+    }
+    return () => {
+      window.clearTimeout(scrollTimer);
+      window.removeEventListener('arlo:open-settings-section', openSettingsSection);
+    };
   }, []);
 
   useEffect(() => {
@@ -4087,6 +4195,8 @@ export const SettingsApp: React.FC = () => {
 
   const [photoCount, setPhotoCount] =
     useState(0);
+  const [wallpaperImportError, setWallpaperImportError] = useState('');
+  const [wallpaperImporting, setWallpaperImporting] = useState(false);
 
   const [showMobileNav, setShowMobileNav] =
     useState(false);
@@ -4347,6 +4457,79 @@ export const SettingsApp: React.FC = () => {
     reader.readAsDataURL(file);
 
     e.target.value = '';
+  };
+
+  const handleLiveWallpaperVideo = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file) return;
+    setWallpaperImportError('');
+    if (!file.type.startsWith('video/')) {
+      setWallpaperImportError('Choose a supported video file.');
+      return;
+    }
+    if (file.size > 250 * 1024 * 1024) {
+      setWallpaperImportError('Live wallpaper videos must be smaller than 250 MB.');
+      return;
+    }
+
+    setWallpaperImporting(true);
+    let previewUrl: string | null = null;
+    try {
+      const poster = await new Promise<{ duration: number; thumbnail: string }>((resolve, reject) => {
+        const video = document.createElement('video');
+        previewUrl = URL.createObjectURL(file);
+        video.preload = 'metadata';
+        video.muted = true;
+        video.onloadeddata = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            const scale = Math.min(1, 640 / Math.max(video.videoWidth, video.videoHeight));
+            canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+            canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+            const context = canvas.getContext('2d');
+            if (!context) throw new Error('Could not prepare a wallpaper preview.');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            resolve({
+              duration: Number.isFinite(video.duration) ? video.duration : 0,
+              thumbnail: canvas.toDataURL('image/jpeg', 0.78),
+            });
+          } catch (error) {
+            reject(error);
+          }
+        };
+        video.onerror = () => reject(new Error('This video could not be opened. Try an MP4 or WebM file.'));
+        video.src = previewUrl;
+        video.load();
+      });
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        previewUrl = null;
+      }
+      const media = await addVideoToLibrary(file, {
+        duration: poster.duration,
+        source: 'Wallpaper settings',
+      });
+      const wallpaper: Wallpaper = {
+        id: `live-video-${media.id}`,
+        name: formatFileName(file.name) || 'Custom live wallpaper',
+        category: 'custom',
+        url: poster.thumbnail,
+        thumbnail: poster.thumbnail,
+        isLive: true,
+        liveVideoId: media.id,
+        themePreference: 'dark',
+      };
+      setWallpaper(wallpaper);
+      URL.revokeObjectURL(media.url);
+      sound.playClick();
+    } catch (error) {
+      console.error('[Settings] Could not import live wallpaper video:', error);
+      setWallpaperImportError(error instanceof Error ? error.message : 'Could not import this live wallpaper video.');
+    } finally {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setWallpaperImporting(false);
+    }
   };
 
   /* ==========================================================
@@ -5420,6 +5603,154 @@ export const SettingsApp: React.FC = () => {
                   </div>
                 </SectionCard>
 
+                <SectionCard id="arlo-jelly-notch-settings" className="space-y-5 p-5 sm:p-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sky-400/20 bg-sky-400/10">
+                        <Sparkles className="h-4 w-4 text-sky-300" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold">Jelly Notch</h3>
+                        <p className="mt-1 max-w-xl text-[10px] leading-relaxed text-slate-400">
+                          A playful, shape-shifting hub for music, timers, notifications and system activity.
+                        </p>
+                      </div>
+                    </div>
+                    <Toggle
+                      enabled={settings.jellyNotchEnabled}
+                      onChange={() => {
+                        updateSettings({ jellyNotchEnabled: !settings.jellyNotchEnabled });
+                        sound.playToggle(!settings.jellyNotchEnabled);
+                      }}
+                    />
+                  </div>
+
+                  {settings.jellyNotchEnabled && (
+                    <>
+                      <div className="border-t border-white/[0.08] pt-4">
+                        <div className="mb-3 text-[10px] font-semibold uppercase tracking-[.16em] text-slate-500">
+                          Surface material
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {JELLY_NOTCH_STYLES.map(style => (
+                            <motion.button
+                              key={style.id}
+                              type="button"
+                              aria-pressed={settings.jellyNotchStyle === style.id}
+                              onClick={() => updateSettings({ jellyNotchStyle: style.id })}
+                              whileHover={{ y: -2 }}
+                              whileTap={{ scale: 0.98 }}
+                              className={`flex items-center gap-3 rounded-xl border p-3 text-left transition ${
+                                settings.jellyNotchStyle === style.id
+                                  ? 'border-sky-400/60 bg-sky-400/[0.08]'
+                                  : 'border-white/[0.08] bg-white/[0.025] hover:border-white/20'
+                              }`}
+                            >
+                              <span className="h-10 w-14 shrink-0 rounded-xl border border-white/20 shadow-lg" style={{ background: style.background, backdropFilter: 'blur(12px)' }} />
+                              <span className="min-w-0">
+                                <span className="block text-[10px] font-semibold text-white">{style.label}</span>
+                                <span className="mt-1 block text-[9px] text-slate-500">{style.description}</span>
+                              </span>
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="border-t border-white/[0.08] pt-4">
+                        <div className="mb-3 text-[10px] font-semibold uppercase tracking-[.16em] text-slate-500">
+                          Choose a shape
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                          {JELLY_NOTCH_SHAPES.map(shape => (
+                            <motion.button
+                              key={shape.id}
+                              type="button"
+                              aria-pressed={settings.jellyNotchShape === shape.id}
+                              onClick={() => {
+                                updateSettings({ jellyNotchShape: shape.id });
+                                sound.playClick();
+                              }}
+                              whileHover={{ y: -2, scale: 1.02 }}
+                              whileTap={{ scale: 0.97 }}
+                              className={`flex min-h-[74px] flex-col items-center justify-center gap-2 rounded-xl border px-2 py-2 transition-colors ${
+                                settings.jellyNotchShape === shape.id
+                                  ? 'border-sky-400/60 bg-sky-400/10 text-white'
+                                  : 'border-white/[0.08] bg-white/[0.025] text-slate-400 hover:border-white/20'
+                              }`}
+                            >
+                              <span
+                                aria-hidden="true"
+                                className="block bg-gradient-to-br from-slate-700 to-black shadow-[0_2px_12px_rgba(56,189,248,.18)]"
+                                style={{
+                                  width: shape.width,
+                                  height: shape.height,
+                                  borderRadius: shape.radius,
+                                }}
+                              />
+                              <span className="text-[9px] font-medium">{shape.label}</span>
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                      {settings.jellyNotchShape === 'custom' && (
+                        <div className="grid gap-4 border-t border-white/[0.08] pt-4 sm:grid-cols-2">
+                          <label className="space-y-2 text-[10px] text-slate-400">
+                            <span className="flex justify-between"><span>Width</span><span>{settings.jellyNotchWidth}px</span></span>
+                            <input
+                              aria-label="Jelly Notch width"
+                              type="range"
+                              min="120"
+                              max="480"
+                              step="4"
+                              value={settings.jellyNotchWidth}
+                              onChange={event => updateSettings({ jellyNotchWidth: Number(event.target.value) })}
+                              className="w-full accent-sky-400"
+                            />
+                          </label>
+                          <label className="space-y-2 text-[10px] text-slate-400">
+                            <span className="flex justify-between"><span>Height</span><span>{settings.jellyNotchHeight}px</span></span>
+                            <input
+                              aria-label="Jelly Notch height"
+                              type="range"
+                              min="40"
+                              max="96"
+                              step="2"
+                              value={settings.jellyNotchHeight}
+                              onChange={event => updateSettings({ jellyNotchHeight: Number(event.target.value) })}
+                              className="w-full accent-sky-400"
+                            />
+                          </label>
+                        </div>
+                      )}
+                      <div className="grid gap-4 border-t border-white/[0.08] pt-4 sm:grid-cols-2">
+                        <label className="space-y-2 text-[10px] text-slate-400">
+                          <span className="flex justify-between"><span>Transparency</span><span>{settings.jellyNotchOpacity}%</span></span>
+                          <input
+                            aria-label="Jelly Notch transparency"
+                            type="range"
+                            min="35"
+                            max="100"
+                            value={settings.jellyNotchOpacity}
+                            onChange={event => updateSettings({ jellyNotchOpacity: Number(event.target.value) })}
+                            className="w-full accent-sky-400"
+                          />
+                        </label>
+                        <label className="space-y-2 text-[10px] text-slate-400">
+                          <span className="flex justify-between"><span>Glass blur</span><span>{settings.jellyNotchBlur}px</span></span>
+                          <input
+                            aria-label="Jelly Notch glass blur"
+                            type="range"
+                            min="0"
+                            max="40"
+                            value={settings.jellyNotchBlur}
+                            onChange={event => updateSettings({ jellyNotchBlur: Number(event.target.value) })}
+                            className="w-full accent-sky-400"
+                          />
+                        </label>
+                      </div>
+                    </>
+                  )}
+                </SectionCard>
+
                 <SectionCard id="arlo-mascot-settings" className="space-y-5 p-5 sm:p-6">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -6015,35 +6346,29 @@ export const SettingsApp: React.FC = () => {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <PageHeader
                     title="Wallpaper"
-                    description="Transform your desktop with immersive wallpapers and custom images."
+                    description="Transform your desktop with still images, animated scenes, or a local video wallpaper."
                     icon={ImageIcon}
                   />
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      wallpaperInputRef.current?.click()
-                    }
-                    className="
-                      px-4
-                      py-2.5
-                      rounded-xl
-                      bg-sky-500
-                      hover:bg-sky-400
-                      text-xs
-                      font-bold
-                      flex
-                      items-center
-                      justify-center
-                      gap-2
-                      shadow-lg
-                      shadow-sky-500/20
-                      transition-colors
-                    "
-                  >
-                    <Upload className="w-4 h-4" />
-                    Import to Photos
-                  </button>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => wallpaperInputRef.current?.click()}
+                      className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3.5 py-2.5 text-xs font-bold text-slate-200 transition hover:border-white/20 hover:bg-white/10"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Import image
+                    </button>
+                    <button
+                      type="button"
+                      disabled={wallpaperImporting}
+                      onClick={() => liveWallpaperInputRef.current?.click()}
+                      className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-violet-500 px-3.5 py-2.5 text-xs font-bold text-white shadow-lg shadow-sky-500/20 transition hover:-translate-y-0.5 hover:from-sky-400 hover:to-violet-400 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      <Video className="h-4 w-4" />
+                      {wallpaperImporting ? 'Adding video…' : 'Import live video'}
+                    </button>
+                  </div>
 
                   <input
                     ref={wallpaperInputRef}
@@ -6052,17 +6377,33 @@ export const SettingsApp: React.FC = () => {
                     onChange={handleCustomWallpaper}
                     className="hidden"
                   />
+                  <input
+                    ref={liveWallpaperInputRef}
+                    type="file"
+                    accept="video/mp4,video/webm,video/ogg,video/quicktime"
+                    onChange={event => void handleLiveWallpaperVideo(event)}
+                    className="hidden"
+                  />
                 </div>
+                {wallpaperImportError && (
+                  <div role="alert" className="rounded-xl border border-rose-300/20 bg-rose-300/[0.06] px-3 py-2 text-[10px] text-rose-200">
+                    {wallpaperImportError}
+                  </div>
+                )}
 
                 {/* Current wallpaper */}
 
                 <SectionCard className="p-0 overflow-hidden">
                   <div className="relative h-64 sm:h-80">
-                    <img
-                      src={currentWallpaper.url}
-                      alt={currentWallpaper.name}
-                      className="w-full h-full object-cover"
-                    />
+                    {currentWallpaper.liveVideoId ? (
+                      <VideoWallpaper mediaId={currentWallpaper.liveVideoId} audioEnabled={false} />
+                    ) : (
+                      <img
+                        src={currentWallpaper.thumbnail || currentWallpaper.url}
+                        alt={currentWallpaper.name}
+                        className="h-full w-full object-cover"
+                      />
+                    )}
 
                     <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent" />
 
@@ -6087,6 +6428,19 @@ export const SettingsApp: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                </SectionCard>
+
+                <SectionCard className="p-2">
+                  <SettingRow
+                    icon={Volume2}
+                    title="Live wallpaper audio"
+                    description="Allow sound from your selected video wallpaper. Browsers may require a click before audio can start."
+                  >
+                    <Toggle
+                      enabled={settings.liveWallpaperAudio}
+                      onChange={() => updateSettings({ liveWallpaperAudio: !settings.liveWallpaperAudio })}
+                    />
+                  </SettingRow>
                 </SectionCard>
 
                 {/* Photos information */}
@@ -6753,6 +7107,129 @@ export const SettingsApp: React.FC = () => {
               </motion.div>
             )}
 
+            {activeTab === 'media' && (
+              <motion.div
+                key="media"
+                variants={pageVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="space-y-6 max-w-3xl"
+              >
+                <PageHeader
+                  title="Media"
+                  description="Tune the Dynamic Workspace music experience and connect a licensed music catalog."
+                  icon={Music}
+                />
+
+                <SectionCard className="divide-y divide-white/[0.06]">
+                  <SettingRow
+                    icon={SkipForward}
+                    title="Collapsed notch transport"
+                    description="Reveal previous, play/pause and next controls when hovering over the compact music strip."
+                  >
+                    <Toggle
+                      enabled={settings.notchMusicHoverControls}
+                      onChange={() => updateSettings({
+                        notchMusicHoverControls: !settings.notchMusicHoverControls,
+                      })}
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    icon={Waves}
+                    title="Notch visualizer"
+                    description="Choose gentle animated bars or a live spectrum from ARLO music playback."
+                  >
+                    <select
+                      aria-label="Notch music visualizer"
+                      value={settings.notchMusicVisualizer}
+                      onChange={event => updateSettings({
+                        notchMusicVisualizer: event.currentTarget.value === 'spectrum' ? 'spectrum' : 'bars',
+                      })}
+                      className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-[10px] font-semibold text-slate-200 outline-none focus:border-sky-300/40"
+                    >
+                      <option value="bars">Animated bars</option>
+                      <option value="spectrum">Live spectrum</option>
+                    </select>
+                  </SettingRow>
+                  <div className="space-y-3 py-4">
+                    <div>
+                      <h3 className="text-xs font-semibold text-white">Album artwork shape</h3>
+                      <p className="mt-1 text-[10px] text-slate-500">Choose the cover shape in the compact notch and music player.</p>
+                    </div>
+                    <div className="grid w-full grid-cols-3 gap-2" role="group" aria-label="Album artwork shape">
+                      {([
+                        { id: 'rounded', label: 'Rounded' },
+                        { id: 'square', label: 'Square' },
+                        { id: 'circle', label: 'Circle' },
+                      ] as const).map(shape => (
+                        <button
+                          key={shape.id}
+                          type="button"
+                          aria-pressed={settings.notchMusicArtworkShape === shape.id}
+                          onClick={() => updateSettings({ notchMusicArtworkShape: shape.id })}
+                          className={`flex min-w-0 flex-col items-center justify-center gap-2 rounded-xl border px-2 py-3 text-[9px] font-medium transition duration-200 hover:-translate-y-0.5 hover:bg-white/[0.06] ${
+                            settings.notchMusicArtworkShape === shape.id
+                              ? 'border-violet-300/40 bg-violet-300/[0.1] text-violet-100 shadow-[0_0_18px_rgba(167,139,250,.1)]'
+                              : 'border-white/[0.08] text-slate-400'
+                          }`}
+                        >
+                          <span className={`h-8 w-8 border border-white/20 bg-gradient-to-br from-violet-300/70 via-fuchsia-400/50 to-cyan-300/50 shadow-[0_4px_14px_rgba(167,139,250,.22)] ${
+                            shape.id === 'circle' ? 'rounded-full' : shape.id === 'square' ? 'rounded-[2px]' : 'rounded-[9px]'
+                          }`} />
+                          {shape.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </SectionCard>
+
+                <SectionCard className="space-y-4 p-5">
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-300/15 bg-emerald-300/[0.07] text-emerald-200">
+                      <Music className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <h3 className="text-sm font-bold">Jamendo free catalog</h3>
+                      <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                        Search and play Jamendo tracks licensed for streaming. The catalog is not a source for every commercial song.
+                      </p>
+                    </div>
+                  </div>
+                  <label className="block space-y-1.5">
+                    <span className="text-[10px] font-semibold text-slate-300">Jamendo client ID</span>
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={settings.jamendoClientId}
+                      onChange={event => updateSettings({ jamendoClientId: event.currentTarget.value })}
+                      placeholder="Paste your Jamendo API client ID"
+                      className="h-10 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-xs text-white outline-none transition focus:border-emerald-300/40"
+                    />
+                  </label>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[9px] leading-relaxed text-slate-500">
+                    <span>Stored locally in ARLO OS settings. A Jamendo API ID is required to search.</span>
+                    <a
+                      href="https://devportal.jamendo.com/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-semibold text-emerald-200 transition hover:text-emerald-100"
+                    >
+                      Get a client ID
+                    </a>
+                  </div>
+                </SectionCard>
+
+                <SectionCard className="flex items-start gap-3 border border-sky-300/10 p-4">
+                  <Monitor className="mt-0.5 h-4 w-4 shrink-0 text-sky-200" />
+                  <p className="text-[10px] leading-5 text-slate-400">
+                    ARLO publishes its own playback metadata and transport buttons to Windows media controls when supported. Controlling Spotify, YouTube Music, JioSaavn, Amazon Music or VLC running as separate apps requires a Windows system-media bridge; macOS Now Playing is not available on this Windows app.
+                  </p>
+                </SectionCard>
+              </motion.div>
+            )}
+
             {/* =================================================
                 WIFI
             ================================================= */}
@@ -6982,6 +7459,179 @@ export const SettingsApp: React.FC = () => {
                 FOCUS
             ================================================= */}
 
+            {activeTab === 'health' && (
+              <motion.div
+                key="health"
+                variants={pageVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="max-w-3xl space-y-6"
+              >
+                <PageHeader
+                  title="Health"
+                  description="Keep your desk wellbeing private and on this device. No microphone, camera or health permissions are used."
+                  icon={Heart}
+                />
+
+                <SectionCard className="p-5">
+                  <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-white">
+                    <Heart className="h-4 w-4 text-rose-300" />
+                    Daily goals
+                  </div>
+                  <div className="mb-4 flex items-center justify-between gap-4 rounded-xl border border-emerald-200/10 bg-emerald-200/[0.035] p-3">
+                    <div>
+                      <div className="text-[10px] font-medium text-slate-200">Show Health in the notch</div>
+                      <p className="mt-1 text-[9px] text-slate-500">Keep your daily rings and desk-break tools one hover away.</p>
+                    </div>
+                    <input
+                      aria-label="Show Health widget in notch"
+                      type="checkbox"
+                      checked={settings.jellyNotchWidgets.health}
+                      onChange={event => updateSettings({ jellyNotchWidgets: { ...settings.jellyNotchWidgets, health: event.currentTarget.checked } })}
+                      className="h-4 w-4 accent-emerald-300"
+                    />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {([
+                      { key: 'breakGoal', label: 'Breaks', min: 1, max: 16, suffix: 'per day' },
+                      { key: 'waterGoalGlasses', label: 'Water', min: 1, max: 24, suffix: 'glasses' },
+                      { key: 'mindfulGoalMinutes', label: 'Mindful', min: 1, max: 180, suffix: 'minutes' },
+                    ] as const).map(goal => (
+                      <label key={goal.key} className="rounded-xl border border-white/[0.07] bg-white/[0.025] p-3">
+                        <span className="block text-[10px] font-medium text-slate-300">{goal.label}</span>
+                        <span className="mt-2 flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={goal.min}
+                            max={goal.max}
+                            value={settings.health[goal.key]}
+                            onChange={event => updateSettings({
+                              health: {
+                                ...settings.health,
+                                [goal.key]: Math.min(goal.max, Math.max(goal.min, Number(event.currentTarget.value) || goal.min)),
+                              },
+                            })}
+                            className="w-16 rounded-lg border border-white/10 bg-black/25 px-2 py-1.5 font-mono text-sm text-white outline-none focus:border-emerald-300/40"
+                          />
+                          <span className="text-[9px] text-slate-500">{goal.suffix}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </SectionCard>
+
+                <SectionCard className="divide-y divide-white/[0.06]">
+                  <SettingRow icon={Timer} title="Break reminders" description="Time between gentle reminders to move away from the desk.">
+                    <label className="flex items-center gap-2 text-[10px] text-slate-400">
+                      Every
+                      <select
+                        value={settings.health.breakIntervalMinutes}
+                        onChange={event => updateSettings({ health: { ...settings.health, breakIntervalMinutes: Number(event.currentTarget.value) } })}
+                        className="rounded-lg border border-white/10 bg-slate-900 px-2 py-1.5 text-white"
+                      >
+                        {[30, 45, 60, 90, 120].map(minutes => <option key={minutes} value={minutes}>{minutes} min</option>)}
+                      </select>
+                    </label>
+                  </SettingRow>
+                  <SettingRow icon={RefreshCw} title="Movement break" description="Default guided movement session length.">
+                    <label className="flex items-center gap-2 text-[10px] text-slate-400">
+                      <select
+                        value={settings.health.movementBreakMinutes}
+                        onChange={event => updateSettings({ health: { ...settings.health, movementBreakMinutes: Number(event.currentTarget.value) } })}
+                        className="rounded-lg border border-white/10 bg-slate-900 px-2 py-1.5 text-white"
+                      >
+                        {[2, 3, 5, 10].map(minutes => <option key={minutes} value={minutes}>{minutes} min</option>)}
+                      </select>
+                    </label>
+                  </SettingRow>
+                  <SettingRow icon={Wind} title="Breathing pattern" description="Choose a gentle guided breathing rhythm.">
+                    <select
+                      value={settings.health.breathingPattern}
+                      onChange={event => updateSettings({ health: { ...settings.health, breathingPattern: event.currentTarget.value as 'box' | 'calm' } })}
+                      className="rounded-lg border border-white/10 bg-slate-900 px-2 py-1.5 text-[10px] text-white"
+                    >
+                      <option value="box">Box · 4–4–4–4</option>
+                      <option value="calm">Calm · 4–2–6</option>
+                    </select>
+                  </SettingRow>
+                  <SettingRow icon={Eye} title="Eye rest" description="20-20-20 eye break reminder interval and prompt length.">
+                    <div className="flex items-center gap-2">
+                      <input
+                        aria-label="Enable scheduled eye breaks"
+                        type="checkbox"
+                        checked={settings.health.eyeBreakRemindersEnabled}
+                        onChange={event => updateSettings({ health: { ...settings.health, eyeBreakRemindersEnabled: event.currentTarget.checked } })}
+                        className="h-4 w-4 accent-emerald-300"
+                      />
+                      <select
+                        aria-label="Eye break interval"
+                        value={settings.health.eyeBreakIntervalMinutes}
+                        onChange={event => updateSettings({ health: { ...settings.health, eyeBreakIntervalMinutes: Number(event.currentTarget.value) } })}
+                        className="rounded-lg border border-white/10 bg-slate-900 px-2 py-1.5 text-[10px] text-white"
+                      >
+                        {[20, 30, 45, 60].map(minutes => <option key={minutes} value={minutes}>Every {minutes}m</option>)}
+                      </select>
+                      <select
+                        aria-label="Eye break duration"
+                        value={settings.health.eyeBreakDurationSeconds}
+                        onChange={event => updateSettings({ health: { ...settings.health, eyeBreakDurationSeconds: Number(event.currentTarget.value) } })}
+                        className="rounded-lg border border-white/10 bg-slate-900 px-2 py-1.5 text-[10px] text-white"
+                      >
+                        {[20, 30, 60].map(seconds => <option key={seconds} value={seconds}>{seconds}s</option>)}
+                      </select>
+                    </div>
+                  </SettingRow>
+                  <SettingRow icon={Clock3} title="Wind down" description="Enable your preferred evening wind-down reminder time.">
+                    <div className="flex items-center gap-2">
+                      <input
+                        aria-label="Enable wind down"
+                        type="checkbox"
+                        checked={settings.health.windDownEnabled}
+                        onChange={event => updateSettings({ health: { ...settings.health, windDownEnabled: event.currentTarget.checked } })}
+                        className="h-4 w-4 accent-emerald-300"
+                      />
+                      <input
+                        aria-label="Wind down time"
+                        type="time"
+                        disabled={!settings.health.windDownEnabled}
+                        value={settings.health.windDownTime}
+                        onChange={event => updateSettings({ health: { ...settings.health, windDownTime: event.currentTarget.value } })}
+                        className="rounded-lg border border-white/10 bg-slate-900 px-2 py-1.5 text-[10px] text-white disabled:opacity-40"
+                      />
+                    </div>
+                  </SettingRow>
+                </SectionCard>
+
+                <SectionCard className="space-y-1 p-4">
+                  <SettingRow icon={Ear} title="Hearing warnings" description="Warn when ARLO's output volume is set above your chosen level. ARLO does not measure ambient sound or listen through your microphone.">
+                    <input
+                      aria-label="Enable hearing warnings"
+                      type="checkbox"
+                      checked={settings.health.hearingWarningsEnabled}
+                      onChange={event => updateSettings({ health: { ...settings.health, hearingWarningsEnabled: event.currentTarget.checked } })}
+                      className="h-4 w-4 accent-emerald-300"
+                    />
+                  </SettingRow>
+                  {settings.health.hearingWarningsEnabled && (
+                    <label className="flex items-center justify-between gap-4 px-3 py-3 text-[10px] text-slate-400">
+                      Warn above {settings.health.hearingWarningThresholdPercent}% system volume
+                      <input
+                        aria-label="Hearing warning volume threshold"
+                        type="range"
+                        min="50"
+                        max="100"
+                        step="5"
+                        value={settings.health.hearingWarningThresholdPercent}
+                        onChange={event => updateSettings({ health: { ...settings.health, hearingWarningThresholdPercent: Number(event.currentTarget.value) } })}
+                        className="w-32 accent-emerald-300"
+                      />
+                    </label>
+                  )}
+                </SectionCard>
+              </motion.div>
+            )}
+
             {activeTab === 'connections' && (
               <motion.div
                 key="connections"
@@ -7092,6 +7742,156 @@ export const SettingsApp: React.FC = () => {
                   <p className="text-[10px] leading-5 text-slate-400">
                     Sign-in is provided by the selected service itself. Passwords are entered on that service’s page and are not read or saved by ARLO OS. Some providers block embedded browsers; use “Open in browser” if their sign-in page does not load here.
                   </p>
+                </SectionCard>
+              </motion.div>
+            )}
+
+            {activeTab === 'dayProgress' && (
+              <motion.div
+                key="dayProgress"
+                variants={pageVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="max-w-3xl space-y-6"
+              >
+                <PageHeader
+                  title="Day Progress"
+                  description="Build a private timeline from events and tasks already stored on this device."
+                  icon={CalendarDays}
+                />
+                <SectionCard className="p-3 sm:p-4">
+                  <div className="space-y-2">
+                    <motion.label
+                      whileHover={{ y: -1 }}
+                      transition={{ duration: 0.18 }}
+                      className="group flex cursor-pointer items-center gap-4 rounded-2xl border border-sky-300/15 bg-sky-400/[0.07] p-4 transition-colors hover:border-sky-300/30 hover:bg-sky-400/[0.11] focus-within:ring-2 focus-within:ring-sky-300/50"
+                    >
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-sky-200/15 bg-sky-300/10 text-sky-200 transition duration-200 group-hover:scale-105 group-hover:bg-sky-300/15">
+                        <CalendarDays className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-slate-100">Show Day Progress in the notch</span>
+                        <span className="mt-1 block text-xs leading-relaxed text-slate-400">Adds the timeline widget and its dashboard tab.</span>
+                      </span>
+                      <input
+                        aria-label="Show Day Progress widget"
+                        type="checkbox"
+                        checked={settings.jellyNotchWidgets.dayProgress}
+                        onChange={event => updateSettings({
+                          jellyNotchWidgets: { ...settings.jellyNotchWidgets, dayProgress: event.currentTarget.checked },
+                        })}
+                        className="h-5 w-5 shrink-0 cursor-pointer accent-sky-400 focus-visible:outline-none"
+                      />
+                    </motion.label>
+                    <div className="px-1 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Timeline sources
+                    </div>
+                    {([
+                      { key: 'calendar', title: 'Calendar events', description: 'Events scheduled for today.', icon: CalendarDays },
+                      { key: 'reminders', title: 'Reminders', description: 'Reminders due today.', icon: Bell },
+                      { key: 'tasks', title: 'Dashboard tasks', description: 'Tasks added to the Dynamic Workspace today.', icon: CheckCircle2 },
+                    ] as const).map(source => {
+                      const SourceIcon = source.icon;
+                      return (
+                        <motion.label
+                          key={source.key}
+                          whileHover={{ x: 2 }}
+                          transition={{ duration: 0.16 }}
+                          className="group flex cursor-pointer items-center gap-4 rounded-xl border border-transparent px-3 py-3 transition-colors hover:border-white/[0.08] hover:bg-white/[0.045] focus-within:ring-2 focus-within:ring-sky-300/50"
+                        >
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.045] text-slate-400 transition-colors group-hover:bg-sky-300/10 group-hover:text-sky-200">
+                            <SourceIcon className="h-4 w-4" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[13px] font-medium text-slate-200">{source.title}</span>
+                            <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">{source.description}</span>
+                          </span>
+                          <input
+                            aria-label={`Include ${source.title} in Day Progress`}
+                            type="checkbox"
+                            checked={settings.dayProgress.sources[source.key]}
+                            onChange={event => updateSettings({
+                              dayProgress: {
+                                ...settings.dayProgress,
+                                sources: { ...settings.dayProgress.sources, [source.key]: event.currentTarget.checked },
+                              },
+                            })}
+                            className="h-5 w-5 shrink-0 cursor-pointer accent-sky-400 focus-visible:outline-none"
+                          />
+                        </motion.label>
+                      );
+                    })}
+                  </div>
+                </SectionCard>
+                <SectionCard className="p-3 sm:p-4">
+                  <div className="space-y-2">
+                    <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Evening & layout
+                    </div>
+                    <motion.label
+                      whileHover={{ x: 2 }}
+                      transition={{ duration: 0.16 }}
+                      className="group flex cursor-pointer items-center gap-4 rounded-xl border border-transparent px-3 py-3 transition-colors hover:border-white/[0.08] hover:bg-white/[0.045] focus-within:ring-2 focus-within:ring-violet-300/50"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.045] text-violet-200 transition-colors group-hover:bg-violet-300/10">
+                        <Moon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13px] font-medium text-slate-200">Bedtime marker</span>
+                        <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">A visual wind-down reminder; it won’t trigger a notification.</span>
+                      </span>
+                      <input
+                        aria-label="Show bedtime marker in Day Progress"
+                        type="checkbox"
+                        checked={settings.dayProgress.bedtimeMarkerEnabled}
+                        onChange={event => updateSettings({
+                          dayProgress: { ...settings.dayProgress, bedtimeMarkerEnabled: event.currentTarget.checked },
+                        })}
+                        className="h-5 w-5 shrink-0 cursor-pointer accent-violet-400 focus-visible:outline-none"
+                      />
+                    </motion.label>
+                    <label className="flex items-center gap-4 rounded-xl border border-transparent px-3 py-3 transition-colors hover:border-white/[0.08] hover:bg-white/[0.045] focus-within:ring-2 focus-within:ring-violet-300/50">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.045] text-violet-200">
+                        <Clock3 className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13px] font-medium text-slate-200">Bedtime</span>
+                        <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">Choose when the marker appears on your timeline.</span>
+                      </span>
+                      <input
+                        aria-label="Bedtime marker time"
+                        type="time"
+                        value={settings.dayProgress.bedtimeTime}
+                        onChange={event => updateSettings({
+                          dayProgress: { ...settings.dayProgress, bedtimeTime: event.currentTarget.value },
+                        })}
+                        className="min-h-10 rounded-xl border border-white/10 bg-slate-900/80 px-3 text-sm font-medium text-white outline-none transition focus:border-violet-300/50 focus:ring-2 focus:ring-violet-300/20"
+                      />
+                    </label>
+                    <motion.label
+                      whileHover={{ x: 2 }}
+                      transition={{ duration: 0.16 }}
+                      className="group flex cursor-pointer items-center gap-4 rounded-xl border border-transparent px-3 py-3 transition-colors hover:border-white/[0.08] hover:bg-white/[0.045] focus-within:ring-2 focus-within:ring-sky-300/50"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.045] text-sky-200 transition-colors group-hover:bg-sky-300/10">
+                        <Eye className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13px] font-medium text-slate-200">Today summary column</span>
+                        <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">Show local time, the next event, and task completion.</span>
+                      </span>
+                      <input
+                        aria-label="Show Day Progress summary column"
+                        type="checkbox"
+                        checked={settings.dayProgress.showSummaryColumn}
+                        onChange={event => updateSettings({
+                          dayProgress: { ...settings.dayProgress, showSummaryColumn: event.currentTarget.checked },
+                        })}
+                        className="h-5 w-5 shrink-0 cursor-pointer accent-sky-400 focus-visible:outline-none"
+                      />
+                    </motion.label>
+                  </div>
                 </SectionCard>
               </motion.div>
             )}
@@ -7340,6 +8140,50 @@ export const SettingsApp: React.FC = () => {
                   </SettingRow>
                 </SectionCard>
 
+                <SectionCard className="space-y-4 p-5">
+                  <div>
+                    <h3 className="text-sm font-bold">Notification appearance</h3>
+                    <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                      Choose the material used for on-screen notification alerts.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {([
+                      ['glass', 'Clear glass', 'bg-slate-950/55 backdrop-blur-xl'],
+                      ['midnight', 'Midnight', 'bg-[#11131a]/90'],
+                      ['aurora', 'Aurora', 'bg-gradient-to-br from-cyan-900/80 via-violet-900/70 to-slate-950/80'],
+                    ] as const satisfies ReadonlyArray<readonly [NotificationStyle, string, string]>).map(([style, label, preview]) => (
+                      <button
+                        key={style}
+                        type="button"
+                        aria-pressed={settings.notificationStyle === style}
+                        onClick={() => {
+                          updateSettings({ notificationStyle: style });
+                          sound.playClick();
+                        }}
+                        className={`group flex min-h-20 items-center gap-3 rounded-2xl border p-3 text-left transition duration-200 hover:-translate-y-0.5 hover:bg-white/[0.04] ${
+                          settings.notificationStyle === style
+                            ? 'border-sky-300/40 bg-sky-300/[0.07] shadow-[0_0_22px_rgba(56,189,248,.08)]'
+                            : 'border-white/[0.08] bg-white/[0.02] hover:border-white/15'
+                        }`}
+                      >
+                        <span className={`relative h-12 w-16 shrink-0 overflow-hidden rounded-xl border border-white/10 ${preview}`}>
+                          <span className="absolute inset-x-2 top-2 h-1 rounded-full bg-white/45" />
+                          <span className="absolute inset-x-2 top-4 h-1 rounded-full bg-white/20" />
+                          <span className="absolute bottom-2 left-2 h-1 w-6 rounded-full bg-sky-200/55" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[11px] font-semibold text-slate-200">{label}</span>
+                          <span className="mt-1 block text-[9px] leading-relaxed text-slate-500">
+                            {style === 'glass' ? 'Transparent, soft blur' : style === 'midnight' ? 'Deep, quiet surface' : 'Colorful glass glow'}
+                          </span>
+                        </span>
+                        {settings.notificationStyle === style && <CheckCircle2 className="h-4 w-4 shrink-0 text-sky-200" />}
+                      </button>
+                    ))}
+                  </div>
+                </SectionCard>
+
                 <SectionCard className="p-5">
                   <div className="flex items-center gap-3">
                     {focusEnabled ? (
@@ -7484,10 +8328,10 @@ export const SettingsApp: React.FC = () => {
                         Version {appVersion} Pro
                       </div>
 
-                      <p className="text-xs text-slate-300 mt-5 max-w-xl leading-relaxed">
+                      {/* <p className="text-xs text-slate-300 mt-5 max-w-xl leading-relaxed">
                         Designed and engineered by Abhishek Kuntare.
                         A full-featured desktop operating system experience built with React, TypeScript, Electron and Tailwind CSS.
-                      </p>
+                      </p> */}
                     </div>
                   </div>
                 </SectionCard>

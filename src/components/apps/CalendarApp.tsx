@@ -34,6 +34,10 @@ import {
 } from 'lucide-react';
 
 import { sound } from '../../services/soundService';
+import {
+  DAY_PROGRESS_CALENDAR_KEY,
+  notifyDayProgressUpdated,
+} from '../../services/dayProgressService';
 
 interface Attendee {
   id: string;
@@ -63,6 +67,18 @@ interface CalendarEvent {
   completed?: boolean;
   allDay?: boolean;
 }
+
+const isCalendarEvent = (value: unknown): value is CalendarEvent =>
+  typeof value === 'object' && value !== null &&
+  'id' in value && typeof value.id === 'string' &&
+  'title' in value && typeof value.title === 'string' &&
+  'time' in value && typeof value.time === 'string' &&
+  'startTime' in value && typeof value.startTime === 'string' &&
+  'endTime' in value && typeof value.endTime === 'string' &&
+  'day' in value && typeof value.day === 'number' &&
+  'month' in value && typeof value.month === 'number' &&
+  'year' in value && typeof value.year === 'number' &&
+  'color' in value && typeof value.color === 'string';
 
 const EVENT_IMAGES = {
   release:
@@ -310,14 +326,33 @@ export const CalendarApp: React.FC = () => {
   const today = new Date();
 
   const [currentDate, setCurrentDate] = useState(
-    new Date(2026, 8, 19),
+    new Date(today.getFullYear(), today.getMonth(), 1),
   );
 
-  const [selectedDay, setSelectedDay] = useState(19);
+  const [selectedDay, setSelectedDay] = useState(today.getDate());
 
   const [events, setEvents] = useState<CalendarEvent[]>(
-    INITIAL_EVENTS,
+    () => {
+      try {
+        const saved = localStorage.getItem(DAY_PROGRESS_CALENDAR_KEY);
+        if (!saved) return INITIAL_EVENTS;
+        const parsed: unknown = JSON.parse(saved);
+        return Array.isArray(parsed) ? parsed.filter(isCalendarEvent) : INITIAL_EVENTS;
+      } catch (error) {
+        console.warn('[Calendar] Could not restore saved events:', error);
+        return INITIAL_EVENTS;
+      }
+    },
   );
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DAY_PROGRESS_CALENDAR_KEY, JSON.stringify(events));
+      notifyDayProgressUpdated();
+    } catch (error) {
+      console.warn('[Calendar] Could not save events:', error);
+    }
+  }, [events]);
 
   const [selectedEvent, setSelectedEvent] =
     useState<CalendarEvent | null>(null);

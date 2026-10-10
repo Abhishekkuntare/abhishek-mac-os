@@ -10,16 +10,19 @@ import { AnimatePresence, motion } from 'motion/react';
 
 import {
   Archive,
+  Camera,
   Check,
   ChevronLeft,
   ChevronRight,
   Download,
+  Edit3,
   Expand,
   FileImage,
   Heart,
   Image as ImageIcon,
   Images,
   Info,
+  LoaderCircle,
   Maximize2,
   MoreHorizontal,
   Play,
@@ -29,11 +32,20 @@ import {
   Star,
   Trash2,
   Upload,
+  Video,
+  RotateCcw,
+  RotateCw,
   X,
 } from 'lucide-react';
 
 import { useOS } from '../../context/OSContext';
 import { sound } from '../../services/soundService';
+import {
+  deletePhotoLibraryItem,
+  updatePhotoLibraryMedia,
+  type PhotoLibraryItem,
+} from '../../services/photoLibrary';
+import { useOSPhotoLibrary } from '../../services/useOSPhotoLibrary';
 
 interface PhotoItem {
   id: string;
@@ -41,110 +53,24 @@ interface PhotoItem {
   url: string;
   category: string;
   fav: boolean;
-  source: 'sample' | 'imported';
+  source: 'imported' | 'camera';
   createdAt: number;
+  kind?: 'photo' | 'video';
+  libraryItemId?: string;
+  duration?: number;
+  thumbnailUrl?: string;
+  width?: number;
+  height?: number;
   fileName?: string;
   fileSize?: number;
   mimeType?: string;
 }
 
-const SAMPLE_PHOTOS: PhotoItem[] = [
-  {
-    id: 'p1',
-    title: 'Aurora Horizon',
-    url: 'https://images.unsplash.com/photo-1579033461380-adb47c3eb938?q=90&w=1800&auto=format&fit=crop',
-    category: 'Nature',
-    fav: true,
-    source: 'sample',
-    createdAt: Date.now() - 100000,
-  },
-  {
-    id: 'p2',
-    title: 'Glass Architecture',
-    url: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?q=90&w=1800&auto=format&fit=crop',
-    category: 'Architecture',
-    fav: true,
-    source: 'sample',
-    createdAt: Date.now() - 200000,
-  },
-  {
-    id: 'p3',
-    title: 'Neon Cyberpunk',
-    url: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=90&w=1800&auto=format&fit=crop',
-    category: 'Urban',
-    fav: false,
-    source: 'sample',
-    createdAt: Date.now() - 300000,
-  },
-  {
-    id: 'p4',
-    title: 'Deep Cosmic Nebula',
-    url: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=90&w=1800&auto=format&fit=crop',
-    category: 'Space',
-    fav: true,
-    source: 'sample',
-    createdAt: Date.now() - 400000,
-  },
-  {
-    id: 'p5',
-    title: 'Glacial Alpine Peak',
-    url: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?q=90&w=1800&auto=format&fit=crop',
-    category: 'Nature',
-    fav: false,
-    source: 'sample',
-    createdAt: Date.now() - 500000,
-  },
-  {
-    id: 'p6',
-    title: 'Sunset Coastline',
-    url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=90&w=1800&auto=format&fit=crop',
-    category: 'Nature',
-    fav: false,
-    source: 'sample',
-    createdAt: Date.now() - 600000,
-  },
-  {
-    id: 'p7',
-    title: 'Modern City',
-    url: 'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?q=90&w=1800&auto=format&fit=crop',
-    category: 'Urban',
-    fav: false,
-    source: 'sample',
-    createdAt: Date.now() - 700000,
-  },
-  {
-    id: 'p8',
-    title: 'Mountain Clouds',
-    url: 'https://images.unsplash.com/photo-1500534623283-312aade485b7?q=90&w=1800&auto=format&fit=crop',
-    category: 'Nature',
-    fav: false,
-    source: 'sample',
-    createdAt: Date.now() - 800000,
-  },
-  {
-    id: 'p9',
-    title: 'Future Architecture',
-    url: 'https://images.unsplash.com/photo-1487958449943-2429e8be8625?q=90&w=1800&auto=format&fit=crop',
-    category: 'Architecture',
-    fav: false,
-    source: 'sample',
-    createdAt: Date.now() - 900000,
-  },
-  {
-    id: 'p10',
-    title: 'Galaxy Dreams',
-    url: 'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?q=90&w=1800&auto=format&fit=crop',
-    category: 'Space',
-    fav: true,
-    source: 'sample',
-    createdAt: Date.now() - 1000000,
-  },
-];
-
 const CATEGORIES = [
   'All Photos',
   'Favorites',
   'Recently Added',
+  'Camera',
   'Nature',
   'Architecture',
   'Space',
@@ -245,6 +171,24 @@ const deleteStoredPhoto = async (id: string) => {
   });
 };
 
+const toCameraPhoto = (item: PhotoLibraryItem): PhotoItem => ({
+  id: item.id,
+  title: `${item.kind === 'video' ? 'Camera video' : 'Camera photo'} · ${formatDate(item.createdAt)}`,
+  url: item.url,
+  thumbnailUrl: item.thumbnailUrl,
+  category: 'Camera',
+  fav: false,
+  source: 'camera',
+  kind: item.kind,
+  libraryItemId: item.id,
+  createdAt: item.createdAt,
+  duration: item.duration,
+  width: item.width,
+  height: item.height,
+  fileSize: undefined,
+  mimeType: item.kind === 'video' ? 'video/webm' : 'image/jpeg',
+});
+
 const updateStoredPhoto = async (photo: PhotoItem) => {
   if (photo.source !== 'imported') return;
 
@@ -344,6 +288,15 @@ const TiltPhotoCard: React.FC<TiltCardProps> = ({
         onPointerMove={handlePointerMove}
         onPointerLeave={resetRotation}
         onClick={onClick}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onClick();
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-label={`Preview ${photo.kind === 'video' ? 'video' : 'photo'}: ${photo.title}`}
         animate={{
           rotateX: rotation.x,
           rotateY: rotation.y,
@@ -357,15 +310,25 @@ const TiltPhotoCard: React.FC<TiltCardProps> = ({
           stiffness: 260,
           damping: 22,
         }}
-        className="relative aspect-[1.12] rounded-[22px] overflow-hidden cursor-pointer bg-slate-900 border border-white/[0.08] shadow-[0_18px_50px_rgba(0,0,0,0.35)]"
+        className="relative aspect-[1.12] rounded-[22px] overflow-hidden cursor-pointer bg-slate-900 border border-white/[0.08] shadow-[0_18px_50px_rgba(0,0,0,0.35)] outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70"
       >
         {/* Image */}
-        <img
-          src={photo.url}
-          alt={photo.title}
-          draggable={false}
-          className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
-        />
+        {photo.kind === 'video' ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-slate-800 via-slate-950 to-indigo-950">
+            <Video className="h-12 w-12 text-white/35 transition-transform duration-300 group-hover:scale-110 group-hover:text-white/60" />
+            <span className="absolute bottom-4 right-4 rounded-md border border-white/10 bg-black/45 px-2 py-1 text-[10px] font-medium text-white/75">
+              {photo.duration ? `${photo.duration}s` : 'Video'}
+            </span>
+          </div>
+        ) : (
+          <img
+            src={photo.thumbnailUrl || photo.url}
+            alt={photo.title}
+            draggable={false}
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
+          />
+        )}
+        {photo.kind === 'video' && <span className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center"><span className="flex h-12 w-12 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white shadow-xl backdrop-blur-md transition-transform group-hover:scale-110"><Play className="ml-0.5 h-5 w-5 fill-current" /></span></span>}
 
         {/* Cinematic image treatment */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/90 pointer-events-none" />
@@ -420,14 +383,10 @@ const TiltPhotoCard: React.FC<TiltCardProps> = ({
                   {formatDate(photo.createdAt)}
                 </span>
 
-                {photo.source === 'imported' && (
-                  <>
-                    <span className="w-1 h-1 rounded-full bg-white/30" />
-                    <span className="text-[10px] text-cyan-300">
-                      Imported
-                    </span>
-                  </>
-                )}
+                <span className="w-1 h-1 rounded-full bg-white/30" />
+                <span className="text-[10px] text-cyan-300">
+                  {photo.source === 'camera' ? 'Camera' : 'Imported'}
+                </span>
               </div>
             </div>
 
@@ -453,12 +412,13 @@ const TiltPhotoCard: React.FC<TiltCardProps> = ({
 
 export const PhotosApp: React.FC = () => {
   const { setWallpaper } = useOS();
+  const { items: cameraItems } = useOSPhotoLibrary();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const slideshowTimerRef = useRef<number | null>(null);
 
-  const [photos, setPhotos] = useState<PhotoItem[]>(SAMPLE_PHOTOS);
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
 
   const [activeCategory, setActiveCategory] = useState('All Photos');
 
@@ -466,6 +426,10 @@ export const PhotosApp: React.FC = () => {
 
   const [selectedPhoto, setSelectedPhoto] =
     useState<PhotoItem | null>(null);
+  const [isEditingPhoto, setIsEditingPhoto] = useState(false);
+  const [editFilter, setEditFilter] = useState<'original' | 'vivid' | 'warm' | 'mono'>('original');
+  const [editRotation, setEditRotation] = useState(0);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const [showInfo, setShowInfo] = useState(false);
 
@@ -513,8 +477,8 @@ export const PhotosApp: React.FC = () => {
             ];
           });
         }
-      } catch {
-        // IndexedDB may not be available in some environments.
+      } catch (error) {
+        console.error('[Photos] Could not load imported media:', error);
       } finally {
         if (mounted) {
           setIsLoadingLibrary(false);
@@ -527,6 +491,32 @@ export const PhotosApp: React.FC = () => {
     return () => {
       mounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const cameraPhotos = cameraItems.map(toCameraPhoto);
+    setPhotos(current => {
+      const nonCameraPhotos = current.filter(photo => photo.source !== 'camera');
+      const ids = new Set(cameraPhotos.map(photo => photo.id));
+      return [
+        ...cameraPhotos,
+        ...nonCameraPhotos.filter(photo => !ids.has(photo.id)),
+      ].sort((left, right) => right.createdAt - left.createdAt);
+    });
+  }, [cameraItems]);
+
+  useEffect(() => {
+    const handleCameraPhotoAdded = (event: Event) => {
+      const item = (event as CustomEvent<PhotoLibraryItem>).detail;
+      if (!item?.id || !item.url) return;
+      const photo = toCameraPhoto(item);
+      setPhotos(current => [photo, ...current.filter(existing => existing.id !== photo.id)]);
+      setActiveCategory('All Photos');
+      setSelectedPhoto(photo);
+      setIsEditingPhoto(false);
+    };
+    window.addEventListener('abhishek-os-photo-added', handleCameraPhotoAdded);
+    return () => window.removeEventListener('abhishek-os-photo-added', handleCameraPhotoAdded);
   }, []);
 
   /*
@@ -587,11 +577,11 @@ export const PhotosApp: React.FC = () => {
     if (activeCategory === 'Favorites') {
       result = result.filter(photo => photo.fav);
     } else if (activeCategory === 'Recently Added') {
-      result = result
-        .filter(photo => photo.source === 'imported')
-        .sort((a, b) => b.createdAt - a.createdAt);
+      result = result.sort((a, b) => b.createdAt - a.createdAt);
     } else if (activeCategory === 'Imported') {
       result = result.filter(photo => photo.source === 'imported');
+    } else if (activeCategory === 'Camera') {
+      result = result.filter(photo => photo.source === 'camera');
     } else if (activeCategory !== 'All Photos') {
       result = result.filter(
         photo => photo.category === activeCategory,
@@ -633,6 +623,7 @@ export const PhotosApp: React.FC = () => {
   const importedCount = photos.filter(
     photo => photo.source === 'imported',
   ).length;
+  const cameraCount = photos.filter(photo => photo.source === 'camera').length;
 
   const favoriteCount = photos.filter(
     photo => photo.fav,
@@ -667,7 +658,73 @@ export const PhotosApp: React.FC = () => {
   const handlePhotoSelect = (photo: PhotoItem) => {
     setSelectedPhoto(photo);
     setShowInfo(false);
+    setIsEditingPhoto(false);
     sound.playClick();
+  };
+
+  const savePhotoEdits = async () => {
+    const photo = selectedPhoto;
+    if (!photo || photo.kind === 'video') return;
+    setIsSavingEdit(true);
+    try {
+      const image = new Image();
+      image.src = photo.url;
+      await image.decode();
+      const rotated = editRotation % 180 !== 0;
+      const canvas = document.createElement('canvas');
+      canvas.width = rotated ? image.naturalHeight : image.naturalWidth;
+      canvas.height = rotated ? image.naturalWidth : image.naturalHeight;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Photo editor could not create an image canvas.');
+      context.translate(canvas.width / 2, canvas.height / 2);
+      context.rotate((editRotation * Math.PI) / 180);
+      context.filter = editFilter === 'vivid'
+        ? 'saturate(1.35) contrast(1.08)'
+        : editFilter === 'warm'
+          ? 'sepia(.22) saturate(1.15)'
+          : editFilter === 'mono'
+            ? 'grayscale(1) contrast(1.08)'
+            : 'none';
+      context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(result => result ? resolve(result) : reject(new Error('Could not export the edited photo.')), 'image/jpeg', 0.94);
+      });
+
+      let updatedPhoto: PhotoItem;
+      if (photo.source === 'camera' && photo.libraryItemId) {
+        const item = await updatePhotoLibraryMedia(photo.libraryItemId, blob);
+        updatedPhoto = toCameraPhoto(item);
+      } else {
+        const url = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not save the edited photo.'));
+          reader.onerror = () => reject(reader.error ?? new Error('Could not save the edited photo.'));
+          reader.readAsDataURL(blob);
+        });
+        updatedPhoto = {
+          ...photo,
+          url,
+          thumbnailUrl: undefined,
+          width: canvas.width,
+          height: canvas.height,
+          fileSize: blob.size,
+          mimeType: blob.type,
+        };
+        await saveStoredPhoto(updatedPhoto);
+      }
+
+      setPhotos(current => current.map(item => item.id === photo.id ? updatedPhoto : item));
+      setSelectedPhoto(updatedPhoto);
+      setIsEditingPhoto(false);
+      setEditFilter('original');
+      setEditRotation(0);
+      showToast('Edits saved to Photos');
+    } catch (error) {
+      console.error('[Photos] Could not save the edited image:', error);
+      showToast(error instanceof Error ? error.message : 'Could not save the photo edits.');
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const navigatePhoto = useCallback(
@@ -743,11 +800,6 @@ export const PhotosApp: React.FC = () => {
   const handleDeletePhoto = async (
     photo: PhotoItem,
   ) => {
-    if (photo.source !== 'imported') {
-      showToast('Built-in Photos cannot be deleted');
-      return;
-    }
-
     const confirmed = window.confirm(
       `Move "${photo.title}" to Trash?`,
     );
@@ -756,7 +808,11 @@ export const PhotosApp: React.FC = () => {
 
     sound.playClick();
 
-    await deleteStoredPhoto(photo.id);
+    if (photo.source === 'camera') {
+      await deletePhotoLibraryItem(photo.id);
+    } else {
+      await deleteStoredPhoto(photo.id);
+    }
 
     setPhotos(prev =>
       prev.filter(item => item.id !== photo.id),
@@ -819,6 +875,7 @@ export const PhotosApp: React.FC = () => {
           source: 'imported',
           createdAt: Date.now(),
           fileName: file.name,
+          kind: 'photo',
           fileSize: file.size,
           mimeType: file.type,
         };
@@ -1068,8 +1125,10 @@ export const PhotosApp: React.FC = () => {
                     : category ===
                         'Recently Added'
                       ? Archive
-                      : category === 'Imported'
-                        ? Upload
+                      : category === 'Camera'
+                        ? Camera
+                        : category === 'Imported'
+                          ? Upload
                         : ImageIcon;
 
               return (
@@ -1137,12 +1196,14 @@ export const PhotosApp: React.FC = () => {
                     )}
 
                   {!sidebarCollapsed &&
-                    category ===
-                      'Imported' && (
+                    category === 'Imported' && (
                       <span className="relative z-10 ml-auto text-[9px] text-white/30">
                         {importedCount}
                       </span>
                     )}
+                  {!sidebarCollapsed && category === 'Camera' && (
+                    <span className="relative z-10 ml-auto text-[9px] text-white/30">{cameraCount}</span>
+                  )}
                 </motion.button>
               );
             })}
@@ -1181,7 +1242,7 @@ export const PhotosApp: React.FC = () => {
               </div>
 
               <p className="text-[9px] text-white/30 mt-2">
-                Imported photos are saved locally.
+                Photos and notch camera captures stay on this device.
               </p>
             </div>
           </div>
@@ -1596,6 +1657,11 @@ export const PhotosApp: React.FC = () => {
                       {filteredPhotos.length}
                     </div>
                   </div>
+                  {selectedPhoto.source === 'camera' && (
+                    <span className="hidden items-center gap-1.5 rounded-full border border-emerald-300/15 bg-emerald-300/[0.08] px-2 py-1 text-[9px] font-medium text-emerald-100/80 sm:inline-flex">
+                      <Check className="h-3 w-3" /> Saved in Photos
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-1.5">
@@ -1639,35 +1705,64 @@ export const PhotosApp: React.FC = () => {
                     <Info className="w-4 h-4" />
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleDownload(
-                        selectedPhoto,
-                      )
-                    }
-                    className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/10 text-white/50 hover:text-white"
-                    title="Download"
-                  >
-                    <Download className="w-4 h-4" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleSetWallpaper(
-                        selectedPhoto,
-                      )
-                    }
-                    className="hidden sm:flex h-8 px-3 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 border border-purple-400/15 items-center gap-1.5 text-[9px] text-purple-200 font-bold"
-                  >
-                    {setSuccess ? (
-                      <Check className="w-3 h-3" />
-                    ) : (
-                      <Sparkles className="w-3 h-3" />
-                    )}
-                    Wallpaper
-                  </button>
+                  {!isEditingPhoto && selectedPhoto.kind !== 'video' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditFilter('original');
+                        setEditRotation(0);
+                        setIsEditingPhoto(true);
+                      }}
+                      className="flex h-8 items-center gap-1.5 rounded-lg border border-cyan-300/15 bg-cyan-300/10 px-2.5 text-[9px] font-bold text-cyan-100 transition hover:scale-[1.03] hover:bg-cyan-300/20"
+                      title="Edit photo"
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                      Edit
+                    </button>
+                  )}
+                  {!isEditingPhoto && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleDownload(selectedPhoto)}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-white/50 transition hover:bg-white/10 hover:text-white"
+                        title={selectedPhoto.kind === 'video' ? 'Download video' : 'Download photo'}
+                      >
+                        <Download className="h-4 w-4" />
+                      </button>
+                      {selectedPhoto.kind !== 'video' && (
+                        <button
+                          type="button"
+                          onClick={() => handleSetWallpaper(selectedPhoto)}
+                          className="hidden h-8 items-center gap-1.5 rounded-lg border border-purple-400/15 bg-purple-500/15 px-3 text-[9px] font-bold text-purple-200 transition hover:bg-purple-500/25 sm:flex"
+                        >
+                          {setSuccess ? <Check className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
+                          Wallpaper
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {isEditingPhoto && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingPhoto(false)}
+                        disabled={isSavingEdit}
+                        className="h-8 rounded-lg px-3 text-[10px] font-semibold text-white/60 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void savePhotoEdits()}
+                        disabled={isSavingEdit}
+                        className="flex h-8 items-center gap-1.5 rounded-lg bg-cyan-300 px-3 text-[10px] font-bold text-slate-950 transition hover:scale-[1.03] hover:bg-cyan-200 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {isSavingEdit ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                        Save edits
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1690,30 +1785,90 @@ export const PhotosApp: React.FC = () => {
                   <AnimatePresence
                     mode="wait"
                   >
-                    <motion.img
-                      key={selectedPhoto.id}
-                      initial={{
-                        opacity: 0,
-                        scale: 0.96,
-                        x: 20,
-                      }}
-                      animate={{
-                        opacity: 1,
-                        scale: 1,
-                        x: 0,
-                      }}
-                      exit={{
-                        opacity: 0,
-                        scale: 0.96,
-                        x: -20,
-                      }}
-                      transition={{
-                        duration: 0.35,
-                      }}
-                      src={selectedPhoto.url}
-                      alt={selectedPhoto.title}
-                      className="relative z-10 max-w-[92%] max-h-[82%] object-contain rounded-xl shadow-[0_30px_80px_rgba(0,0,0,0.55)]"
-                    />
+                    {selectedPhoto.kind === 'video' ? (
+                      <motion.video
+                        key={selectedPhoto.id}
+                        initial={{ opacity: 0, scale: 0.96 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.96 }}
+                        transition={{ duration: 0.3 }}
+                        src={selectedPhoto.url}
+                        controls
+                        autoPlay
+                        playsInline
+                        className="relative z-10 max-h-[82%] max-w-[92%] rounded-xl shadow-[0_30px_80px_rgba(0,0,0,0.55)]"
+                      />
+                    ) : (
+                      <motion.img
+                        key={selectedPhoto.id}
+                        initial={{ opacity: 0, scale: 0.96, x: 20 }}
+                        animate={{ opacity: 1, scale: 1, x: 0 }}
+                        exit={{ opacity: 0, scale: 0.96, x: -20 }}
+                        transition={{ duration: 0.35 }}
+                        src={selectedPhoto.url}
+                        alt={selectedPhoto.title}
+                        style={{
+                          filter: editFilter === 'vivid'
+                            ? 'saturate(1.35) contrast(1.08)'
+                            : editFilter === 'warm'
+                              ? 'sepia(.22) saturate(1.15)'
+                              : editFilter === 'mono'
+                                ? 'grayscale(1) contrast(1.08)'
+                                : undefined,
+                          transform: isEditingPhoto ? `rotate(${editRotation}deg)` : undefined,
+                        }}
+                        className="relative z-10 max-h-[82%] max-w-[92%] rounded-xl object-contain shadow-[0_30px_80px_rgba(0,0,0,0.55)] transition-[filter,transform] duration-300"
+                      />
+                    )}
+                  </AnimatePresence>
+
+                  <AnimatePresence>
+                    {isEditingPhoto && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 18, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 12, scale: 0.98 }}
+                        className="absolute bottom-4 left-1/2 z-30 flex w-[min(94%,520px)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-2xl border border-white/15 bg-slate-950/80 p-3 shadow-2xl backdrop-blur-2xl"
+                      >
+                        {([
+                          ['original', 'Original'],
+                          ['vivid', 'Vivid'],
+                          ['warm', 'Warm'],
+                          ['mono', 'Mono'],
+                        ] as const).map(([filter, label]) => (
+                          <button
+                            key={filter}
+                            type="button"
+                            onClick={() => setEditFilter(filter)}
+                            aria-pressed={editFilter === filter}
+                            className={`rounded-xl border px-3 py-2 text-[10px] font-semibold transition hover:-translate-y-0.5 ${
+                              editFilter === filter
+                                ? 'border-cyan-200/40 bg-cyan-300/20 text-cyan-100 shadow-[0_0_20px_rgba(103,232,249,.12)]'
+                                : 'border-white/10 bg-white/[0.04] text-white/65 hover:bg-white/[0.1] hover:text-white'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                        <span className="mx-1 h-6 w-px bg-white/10" />
+                        <button
+                          type="button"
+                          onClick={() => setEditRotation(rotation => (rotation + 270) % 360)}
+                          className="flex h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-[10px] font-semibold text-white/70 transition hover:-translate-y-0.5 hover:bg-white/[0.1] hover:text-white"
+                          title="Rotate left"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" /> Rotate
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditRotation(rotation => (rotation + 90) % 360)}
+                          className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white/70 transition hover:-translate-y-0.5 hover:bg-white/[0.1] hover:text-white"
+                          title="Rotate right"
+                        >
+                          <RotateCw className="h-3.5 w-3.5" />
+                        </button>
+                      </motion.div>
+                    )}
                   </AnimatePresence>
 
                   {/* Previous */}
@@ -1869,38 +2024,25 @@ export const PhotosApp: React.FC = () => {
 
                               <div>
                                 <div className="text-[10px] font-semibold">
-                                  {selectedPhoto.source ===
-                                  'imported'
-                                    ? 'Stored in Photos'
-                                    : 'Built-in Photo'}
+                                  Saved in Photos
                                 </div>
 
                                 <div className="text-[8px] text-white/30">
-                                  {selectedPhoto.source ===
-                                  'imported'
-                                    ? 'Persistent local library'
-                                    : 'ARLO OS collection'}
+                                  Stored on this device
                                 </div>
                               </div>
                             </div>
                           </div>
                         </div>
 
-                        {selectedPhoto.source ===
-                          'imported' && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleDeletePhoto(
-                                selectedPhoto,
-                              )
-                            }
-                            className="w-full mt-6 h-9 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-400/10 text-red-300 text-[10px] font-semibold flex items-center justify-center gap-2"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Move to Trash
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePhoto(selectedPhoto)}
+                          className="w-full mt-6 h-9 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-400/10 text-red-300 text-[10px] font-semibold flex items-center justify-center gap-2"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Move to Trash
+                        </button>
                       </div>
                     </motion.aside>
                   )}
@@ -1926,11 +2068,17 @@ export const PhotosApp: React.FC = () => {
                           : 'border-white/10 opacity-50 hover:opacity-100'
                       }`}
                     >
-                      <img
-                        src={photo.url}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
+                      {photo.kind === 'video' ? (
+                        <span className="flex h-full w-full items-center justify-center bg-slate-900 text-white/60">
+                          <Play className="h-4 w-4 fill-current" />
+                        </span>
+                      ) : (
+                        <img
+                          src={photo.thumbnailUrl || photo.url}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      )}
 
                       {photo.id ===
                         selectedPhoto.id && (

@@ -7,6 +7,19 @@ export type DockSize = 'small' | 'medium' | 'large';
 export type CursorStyle = 'system' | 'arrow' | 'crosshair';
 export type BatteryIconStyle = 'classic' | 'rounded' | 'square' | 'circle';
 export type GhostShortcut = 'ctrl-shift-space' | 'ctrl-alt-space' | 'ctrl-shift-g';
+export type NotificationStyle = 'glass' | 'midnight' | 'aurora';
+export type NotchMusicArtworkShape = 'rounded' | 'square' | 'circle';
+export type JellyNotchAnimation =
+  | 'spring'
+  | 'fade'
+  | 'bounce'
+  | 'slide'
+  | 'zoom'
+  | 'flip'
+  | 'elastic'
+  | 'pop'
+  | 'swoop'
+  | 'gentle';
 
 export interface UserProfile {
   fullName: string;
@@ -29,6 +42,7 @@ export interface Wallpaper {
   thumbnail: string;
   isLive?: boolean;
   liveType?: 'aurora' | 'particles' | 'gradient' | 'stars' | 'mesh';
+  liveVideoId?: string;
   themePreference?: 'dark' | 'light';
 }
 
@@ -50,6 +64,19 @@ export interface WindowState {
   desktopSpaceId: string;
   preMaximizedBounds?: { x: number; y: number; width: number; height: number };
 }
+
+export type WindowSnapType =
+  | 'left'
+  | 'right'
+  | 'top'
+  | 'maximize'
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-right'
+  | 'left-third'
+  | 'center-third'
+  | 'right-third';
 
 export interface AppMetadata {
   id: string;
@@ -117,6 +144,68 @@ export interface DesktopIcon {
 export interface SystemSettings {
   theme: ThemeMode;
   accent: AccentColor;
+  jellyNotchEnabled: boolean;
+  jellyNotchDashboard: boolean;
+  jellyNotchAnimation: JellyNotchAnimation;
+  jellyNotchShape: JellyNotchShape;
+  jellyNotchWidth: number;
+  jellyNotchHeight: number;
+  jellyNotchStyle: JellyNotchStyle;
+  jellyNotchOpacity: number;
+  jellyNotchBlur: number;
+  notchMusicHoverControls: boolean;
+  notchMusicVisualizer: NotchMusicVisualizer;
+  notchMusicArtworkShape: NotchMusicArtworkShape;
+  jamendoClientId: string;
+  jellyNotchWidgets: {
+    fileTray: boolean;
+    music: boolean;
+    calendar: boolean;
+    notifications: boolean;
+    timer: boolean;
+    pomodoro: boolean;
+    health: boolean;
+    stopwatch: boolean;
+    todos: boolean;
+    notes: boolean;
+    screenTime: boolean;
+    lowBattery: boolean;
+    translation: boolean;
+    windowSnap: boolean;
+    clipboard: boolean;
+    deviceActivity: boolean;
+    weather: boolean;
+    workspaces: boolean;
+    systemStatus: boolean;
+    camera: boolean;
+    dayProgress: boolean;
+    ghostAI: boolean;
+  };
+  dayProgress: {
+    sources: {
+      calendar: boolean;
+      reminders: boolean;
+      tasks: boolean;
+    };
+    bedtimeMarkerEnabled: boolean;
+    bedtimeTime: string;
+    showSummaryColumn: boolean;
+  };
+  health: {
+    waterGoalGlasses: number;
+    breakGoal: number;
+    mindfulGoalMinutes: number;
+    breakIntervalMinutes: number;
+    movementBreakMinutes: number;
+    breathingPattern: 'box' | 'calm';
+    windDownEnabled: boolean;
+    windDownTime: string;
+    hearingWarningsEnabled: boolean;
+    hearingWarningThresholdPercent: number;
+    eyeBreakRemindersEnabled: boolean;
+    eyeBreakIntervalMinutes: number;
+    eyeBreakDurationSeconds: number;
+  };
   uiStyle: UIStyle;
   animationLevel: AnimationLevel;
   soundEffects: boolean;
@@ -124,6 +213,7 @@ export interface SystemSettings {
   glassEffects: boolean;
   glassIntensity: number; // 0.2 to 1
   liveWallpapers: boolean;
+  liveWallpaperAudio: boolean;
   dockPosition: DockPosition;
   dockSize: DockSize;
   dockAutoHide: boolean;
@@ -143,6 +233,7 @@ export interface SystemSettings {
   bluetoothConnected: boolean;
   bluetoothDeviceName: string;
   doNotDisturb: boolean;
+  notificationStyle: NotificationStyle;
   airDropEnabled: boolean;
   batteryLevel: number;
   batteryCharging: boolean;
@@ -167,6 +258,25 @@ export interface SystemSettings {
   ghostVoice: 'lily';
 }
 
+export type JellyNotchWidget = keyof SystemSettings['jellyNotchWidgets'];
+
+export type JellyNotchShape =
+  | 'capsule'
+  | 'rounded'
+  | 'square'
+  | 'circle'
+  | 'oval'
+  | 'superellipse'
+  | 'compact'
+  | 'wide'
+  | 'orb'
+  | 'split'
+  | 'double'
+  | 'custom';
+
+export type JellyNotchStyle = 'glass' | 'solid' | 'transparent' | 'aurora';
+export type NotchMusicVisualizer = 'bars' | 'spectrum';
+
 export interface AudioTrack {
   id: string;
   title: string;
@@ -176,4 +286,6 @@ export interface AudioTrack {
   coverUrl: string;
   synthesizerPreset?: 'ambient' | 'chillhop' | 'synthwave' | 'classical';
   audioUrl?: string;
+  sourceUrl?: string;
+  licenseUrl?: string;
 }

@@ -17,6 +17,7 @@ import electronUpdater from 'electron-updater';
 import dotenv from 'dotenv';
 import {
   GHOST_GEMINI_MODEL,
+  GHOST_REGISTERED_CAPABILITY_NAMES,
   GHOST_TOOL_DECLARATIONS,
   isValidGhostToolResults,
   runGhostAgent,
@@ -65,6 +66,16 @@ let viteProcess = null;
 let pendingBluetoothSelection = null;
 let previousCpuTimes = null;
 let localTrashOperation = Promise.resolve();
+let hostMediaWatchProcess = null;
+let hostMediaWatchBuffer = '';
+let hostMediaWatchStopping = false;
+let hostMediaState = { brightness: null, volume: null };
+let notchDeviceWatchProcess = null;
+let notchDeviceWatchBuffer = '';
+let notchDeviceWatchStopping = false;
+let notchClipboardWatchTimer = null;
+let notchClipboardLastText = null;
+let notchClipboardReadWarningShown = false;
 const execFileAsync = promisify(execFile);
 const readCpuTimes = () => os.cpus().reduce((total, cpu) => {
   Object.keys(cpu.times).forEach(key => {
@@ -72,6 +83,306 @@ const readCpuTimes = () => os.cpus().reduce((total, cpu) => {
   });
   return total;
 }, {});
+
+const sendWindowsMediaCommand = async command => {
+  if (process.platform !== 'win32') {
+    throw new Error('Windows media-key controls are only available on Windows.');
+  }
+  const virtualKey = {
+    previous: 0xB1,
+    playPause: 0xB3,
+    next: 0xB0,
+  }[command];
+  if (!virtualKey) throw new Error('Unsupported media command.');
+  const script = `$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ArloMediaKeys {
+  [DllImport("user32.dll")]
+  private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+  public static void Send(byte virtualKey) {
+    keybd_event(virtualKey, 0, 0, UIntPtr.Zero);
+    keybd_event(virtualKey, 0, 2, UIntPtr.Zero);
+  }
+}
+'@
+[ArloMediaKeys]::Send(${virtualKey})`;
+  await execFileAsync('powershell.exe', [
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    script,
+  ], { timeout: 5000, windowsHide: true });
+};
+
+const startHostMediaWatcher = () => {
+  if (process.platform !== 'win32' || hostMediaWatchProcess) return;
+
+  const script = String.raw`$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+[ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IAudioDeviceEnumerator {
+  [PreserveSig] int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr devices);
+  [PreserveSig] int GetDefaultAudioEndpoint(int dataFlow, int role, out IAudioDevice device);
+}
+
+[ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IAudioDevice {
+  [PreserveSig] int Activate(ref Guid iid, int clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.Interface)] out IAudioEndpointVolume endpoint);
+}
+
+[ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IAudioEndpointVolume {
+  [PreserveSig] int RegisterControlChangeNotify(IntPtr notify);
+  [PreserveSig] int UnregisterControlChangeNotify(IntPtr notify);
+  [PreserveSig] int GetChannelCount(out uint count);
+  [PreserveSig] int SetMasterVolumeLevel(float level, ref Guid context);
+  [PreserveSig] int SetMasterVolumeLevelScalar(float level, ref Guid context);
+  [PreserveSig] int GetMasterVolumeLevel(out float level);
+  [PreserveSig] int GetMasterVolumeLevelScalar(out float level);
+}
+
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+public class AudioDeviceEnumerator {}
+
+public static class HostMediaStateReader {
+  private static IAudioEndpointVolume endpoint;
+
+  public static int ReadVolumePercent() {
+    try {
+      if (endpoint == null) {
+        var enumerator = (IAudioDeviceEnumerator)new AudioDeviceEnumerator();
+        IAudioDevice device;
+        if (enumerator.GetDefaultAudioEndpoint(0, 1, out device) != 0) return -1;
+        var iid = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");
+        if (device.Activate(ref iid, 23, IntPtr.Zero, out endpoint) != 0) return -1;
+      }
+      float value;
+      return endpoint.GetMasterVolumeLevelScalar(out value) == 0
+        ? (int)Math.Round(value * 100)
+        : -1;
+    } catch {
+      endpoint = null;
+      return -1;
+    }
+  }
+}
+'@
+
+$lastBrightness = -1
+$lastVolume = -1
+while ($true) {
+  $brightness = $null
+  $volume = $null
+  try {
+    $monitor = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness | Select-Object -First 1
+    if ($null -ne $monitor) { $brightness = [int]$monitor.CurrentBrightness }
+  } catch {}
+  try {
+    $volumePercent = [HostMediaStateReader]::ReadVolumePercent()
+    if ($volumePercent -ge 0) { $volume = [int]$volumePercent }
+  } catch {}
+
+  if (($null -ne $brightness -and $brightness -ne $lastBrightness) -or
+      ($null -ne $volume -and $volume -ne $lastVolume)) {
+    [pscustomobject]@{ brightness = $brightness; volume = $volume } | ConvertTo-Json -Compress
+    if ($null -ne $brightness) { $lastBrightness = $brightness }
+    if ($null -ne $volume) { $lastVolume = $volume }
+  }
+  Start-Sleep -Milliseconds 300
+}`;
+
+  const watcher = spawn('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    script,
+  ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  hostMediaWatchProcess = watcher;
+  hostMediaWatchBuffer = '';
+  watcher.stdout.setEncoding('utf8');
+  watcher.stdout.on('data', chunk => {
+    hostMediaWatchBuffer += chunk;
+    const lines = hostMediaWatchBuffer.split(/\r?\n/);
+    hostMediaWatchBuffer = lines.pop() || '';
+    lines.forEach(line => {
+      if (!line.trim() || !mainWindow || mainWindow.isDestroyed()) return;
+      try {
+        const state = JSON.parse(line);
+        hostMediaState = {
+          brightness: Number.isFinite(state.brightness) ? Math.max(0, Math.min(100, state.brightness)) : null,
+          volume: Number.isFinite(state.volume) ? Math.max(0, Math.min(100, state.volume)) : null,
+        };
+        mainWindow.webContents.send('system:media-state', hostMediaState);
+      } catch (error) {
+        console.warn('[ARLO OS] Ignoring invalid host media state:', error);
+      }
+    });
+  });
+  watcher.stderr.setEncoding('utf8');
+  watcher.stderr.on('data', chunk => {
+    const message = String(chunk).trim();
+    if (message) console.warn('[ARLO OS] Host media watcher:', message);
+  });
+  watcher.on('error', error => {
+    if (hostMediaWatchProcess === watcher) hostMediaWatchProcess = null;
+    console.warn('[ARLO OS] Could not start host media watcher:', error);
+  });
+  watcher.on('exit', (code, signal) => {
+    if (hostMediaWatchProcess === watcher) hostMediaWatchProcess = null;
+    if (code !== 0 && !hostMediaWatchStopping) {
+      console.warn('[ARLO OS] Host media watcher stopped unexpectedly:', { code, signal });
+    }
+  });
+};
+const startNotchDeviceWatcher = () => {
+  if (process.platform !== 'win32' || notchDeviceWatchProcess) return;
+
+  const script = String.raw`$ErrorActionPreference = 'Stop'
+$previousDevices = @{}
+$previousPower = $null
+$initialized = $false
+while ($true) {
+  $currentDevices = @{}
+  try {
+    Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | ForEach-Object {
+      $name = [string]$_.FriendlyName
+      $class = [string]$_.Class
+      $instance = [string]$_.InstanceId
+      $kind = $null
+      if ($class -eq 'Monitor') { $kind = 'display' }
+      elseif ($name -match 'headphone|earbud|earphone|headset') { $kind = 'headphones' }
+      elseif ($name -match 'gamepad|game controller|xbox|joystick|controller') { $kind = 'controller' }
+      elseif ($class -match 'DiskDrive|WPD' -and $instance -match '^USB\\') { $kind = 'storage' }
+      elseif ($class -match 'Bluetooth' -or $instance -match '^(BTH|BTHLE)\\') { $kind = 'bluetooth' }
+      elseif ($instance -match '^USB\\' -and $name -notmatch 'root hub|host controller') { $kind = 'usb' }
+      if ($kind -and $instance) {
+        $currentDevices["$kind|$instance"] = @{ kind = $kind; deviceName = $(if ($name) { $name } else { $kind }) }
+      }
+    }
+  } catch {}
+
+  $power = $null
+  try {
+    $battery = Get-CimInstance -Namespace root/WMI -ClassName BatteryStatus -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $battery) { $power = [bool]$battery.PowerOnline }
+  } catch {}
+
+  if ($initialized) {
+    foreach ($key in $currentDevices.Keys) {
+      if (-not $previousDevices.ContainsKey($key)) {
+        $device = $currentDevices[$key]
+        [pscustomobject]@{ kind = $device.kind; deviceName = $device.deviceName; connected = $true } | ConvertTo-Json -Compress
+      }
+    }
+    foreach ($key in $previousDevices.Keys) {
+      if (-not $currentDevices.ContainsKey($key)) {
+        $device = $previousDevices[$key]
+        [pscustomobject]@{ kind = $device.kind; deviceName = $device.deviceName; connected = $false } | ConvertTo-Json -Compress
+      }
+    }
+    if ($null -ne $power -and $null -ne $previousPower -and $power -ne $previousPower) {
+      [pscustomobject]@{ kind = 'power'; deviceName = 'Charger'; connected = $power } | ConvertTo-Json -Compress
+    }
+  }
+  $previousDevices = $currentDevices
+  if ($null -ne $power) { $previousPower = $power }
+  $initialized = $true
+  Start-Sleep -Seconds 2
+}`;
+  const watcher = spawn('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    script,
+  ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  notchDeviceWatchProcess = watcher;
+  notchDeviceWatchBuffer = '';
+  watcher.stdout.setEncoding('utf8');
+  watcher.stdout.on('data', chunk => {
+    notchDeviceWatchBuffer += chunk;
+    const lines = notchDeviceWatchBuffer.split(/\r?\n/);
+    notchDeviceWatchBuffer = lines.pop() || '';
+    lines.forEach(line => {
+      if (!line.trim() || !mainWindow || mainWindow.isDestroyed()) return;
+      try {
+        const activity = JSON.parse(line);
+        if (typeof activity.kind !== 'string' || typeof activity.deviceName !== 'string' || typeof activity.connected !== 'boolean') {
+          throw new Error('Invalid device activity shape.');
+        }
+        mainWindow.webContents.send('system:notch-device-activity', activity);
+      } catch (error) {
+        console.warn('[ARLO OS] Ignoring invalid notch device activity:', error);
+      }
+    });
+  });
+  watcher.stderr.setEncoding('utf8');
+  watcher.stderr.on('data', chunk => {
+    const message = String(chunk).trim();
+    if (message) console.warn('[ARLO OS] Notch device watcher:', message);
+  });
+  watcher.on('error', error => {
+    if (notchDeviceWatchProcess === watcher) notchDeviceWatchProcess = null;
+    console.warn('[ARLO OS] Could not start notch device watcher:', error);
+  });
+  watcher.on('exit', (code, signal) => {
+    if (notchDeviceWatchProcess === watcher) notchDeviceWatchProcess = null;
+    if (code !== 0 && !notchDeviceWatchStopping) {
+      console.warn('[ARLO OS] Notch device watcher stopped unexpectedly:', { code, signal });
+    }
+    notchDeviceWatchStopping = false;
+  });
+};
+const stopNotchDeviceWatcher = () => {
+  if (!notchDeviceWatchProcess) return;
+  notchDeviceWatchStopping = true;
+  notchDeviceWatchProcess.kill();
+  notchDeviceWatchProcess = null;
+  notchDeviceWatchBuffer = '';
+};
+const startNotchClipboardWatcher = () => {
+  if (notchClipboardWatchTimer !== null) return;
+  const initialText = clipboard.readText();
+  if (typeof initialText === 'string') {
+    notchClipboardLastText = initialText;
+  } else {
+    notchClipboardLastText = null;
+    notchClipboardReadWarningShown = true;
+    console.error('[ARLO OS] Clipboard returned a non-text value; ignoring it.');
+  }
+  notchClipboardWatchTimer = setInterval(() => {
+    const text = clipboard.readText();
+    if (typeof text !== 'string') {
+      if (!notchClipboardReadWarningShown) {
+        console.error('[ARLO OS] Clipboard returned a non-text value; ignoring it.');
+        notchClipboardReadWarningShown = true;
+      }
+      return;
+    }
+    notchClipboardReadWarningShown = false;
+    if (text === notchClipboardLastText) return;
+    notchClipboardLastText = text;
+    if (!text || !mainWindow || mainWindow.isDestroyed()) return;
+    const preview = text.replace(/\s+/g, ' ').trim().slice(0, 120);
+    mainWindow.webContents.send('system:notch-clipboard-activity', { preview });
+  }, 700);
+};
+const stopNotchClipboardWatcher = () => {
+  if (notchClipboardWatchTimer === null) return;
+  clearInterval(notchClipboardWatchTimer);
+  notchClipboardWatchTimer = null;
+  notchClipboardLastText = null;
+  notchClipboardReadWarningShown = false;
+};
 const localFoldersFile = () => path.join(app.getPath('userData'), 'local-folders.json');
 const fullAccessFile = () => path.join(app.getPath('userData'), 'full-filesystem-access.json');
 const appTrashDirectory = () => path.join(app.getPath('userData'), 'file-trash');
@@ -560,7 +871,25 @@ ipcMain.handle('ghost-ai:chat', async (event, request) => {
     !request.context.displayName.trim() ||
     request.context.displayName.length > 100 ||
     !Array.isArray(request.context.availableApps) ||
-    request.context.availableApps.length > 100
+    request.context.availableApps.length > 100 ||
+    !request.context.detective ||
+    typeof request.context.detective.name !== 'string' ||
+    typeof request.context.detective.role !== 'string' ||
+    typeof request.context.detective.personality !== 'string' ||
+    typeof request.context.detective.description !== 'string' ||
+    typeof request.context.detective.instructions !== 'string' ||
+    request.context.detective.instructions.length > 2000 ||
+    !Array.isArray(request.context.detective.skills) ||
+    request.context.detective.skills.length > 20 ||
+    request.context.detective.skills.some(value => typeof value !== 'string' || value.length > 80) ||
+    !Array.isArray(request.context.detective.permittedTools) ||
+    request.context.detective.permittedTools.length > 30 ||
+    request.context.detective.permittedTools.some(value =>
+      typeof value !== 'string' ||
+      value.length > 80 ||
+      !GHOST_REGISTERED_CAPABILITY_NAMES.has(value),
+    ) ||
+    ['name', 'role', 'personality', 'description'].some(field => request.context.detective[field].length > 300)
   ) {
     return { success: false, code: 'INVALID_REQUEST', message: 'Ghost received an invalid chat request.' };
   }
@@ -593,6 +922,16 @@ ipcMain.handle('ghost-ai:chat', async (event, request) => {
       app.id.length <= 80 &&
       app.name.length <= 120,
     ),
+    detective: {
+      ...request.context.detective,
+      name: request.context.detective.name.trim(),
+      role: request.context.detective.role.trim(),
+      personality: request.context.detective.personality.trim(),
+      description: request.context.detective.description.trim(),
+      instructions: request.context.detective.instructions.slice(0, 2000),
+      skills: request.context.detective.skills.slice(0, 20),
+      permittedTools: request.context.detective.permittedTools.slice(0, 30),
+    },
   };
   if (context.availableApps.length !== request.context.availableApps.length) {
     return { success: false, code: 'INVALID_REQUEST', message: 'Ghost received invalid app context.' };
@@ -601,7 +940,12 @@ ipcMain.handle('ghost-ai:chat', async (event, request) => {
   let pendingToolCalls;
   let toolResults;
   if (request.pendingToolCalls !== undefined || request.toolResults !== undefined) {
-    if (!isValidGhostToolResults(request.pendingToolCalls, request.toolResults)) {
+    if (
+      !isValidGhostToolResults(request.pendingToolCalls, request.toolResults) ||
+      request.pendingToolCalls.some(call =>
+        !GHOST_REGISTERED_CAPABILITY_NAMES.has(call.name) || !context.detective.permittedTools.includes(call.name),
+      )
+    ) {
       return { success: false, code: 'INVALID_TOOL_RESULTS', message: 'Ghost received invalid tool results.' };
     }
     pendingToolCalls = request.pendingToolCalls;
@@ -734,6 +1078,10 @@ ipcMain.handle('studio:clipboardWrite', (event, text) => {
 ipcMain.handle('files:chooseFolders', event => {
   assertTrustedFilesFrame(event);
   return chooseLocalFolders();
+});
+ipcMain.handle('files:chooseApplication', event => {
+  assertTrustedFilesFrame(event);
+  return chooseLocalApplication();
 });
 ipcMain.handle('files:getFolders', event => {
   assertTrustedFilesFrame(event);
@@ -1039,6 +1387,42 @@ async function chooseLocalFolders() {
   return { canceled: false, folders };
 }
 
+async function chooseLocalApplication() {
+  if (process.platform !== 'win32') {
+    throw new Error('Adding local applications is currently supported on Windows only.');
+  }
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose an application inside a connected Finder folder',
+    properties: ['openFile'],
+    filters: [{ name: 'Windows applications', extensions: ['exe', 'lnk'] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return { canceled: true };
+
+  const applicationPath = await fs.realpath(result.filePaths[0]);
+  if (!(await isLocalPathAuthorized(applicationPath))) {
+    throw new Error('Connect the folder containing this application in Finder before adding it.');
+  }
+  const stats = await fs.stat(applicationPath);
+  if (!stats.isFile() || !['.exe', '.lnk'].includes(path.extname(applicationPath).toLowerCase())) {
+    throw new Error('Choose a Windows application (.exe) or shortcut (.lnk).');
+  }
+
+  let iconUrl;
+  try {
+    iconUrl = (await app.getFileIcon(applicationPath, { size: 'large' })).toDataURL();
+  } catch (error) {
+    console.warn('[Finder] Could not load the selected application icon:', error);
+  }
+  return {
+    canceled: false,
+    application: {
+      name: path.basename(applicationPath, path.extname(applicationPath)),
+      path: applicationPath,
+      iconUrl,
+    },
+  };
+}
+
 async function removeLocalFolder(folderPath) {
   const folders = await readLocalFolders();
   const normalizedPath = path.resolve(folderPath);
@@ -1195,6 +1579,7 @@ const LOCAL_MEDIA_MIME_TYPES = {
   gif: 'image/gif',
   jpeg: 'image/jpeg',
   jpg: 'image/jpeg',
+  pdf: 'application/pdf',
   m4a: 'audio/mp4',
   m4v: 'video/mp4',
   mkv: 'video/x-matroska',
@@ -2681,7 +3066,6 @@ app.whenReady().then(async () => {
       return false;
     }
   );
-
   /* =======================================================
      APP INFORMATION
   ======================================================= */
@@ -2717,6 +3101,29 @@ app.whenReady().then(async () => {
         return getConnectivityState();
       }
     );
+    ipcMain.handle('system:getMediaState', event => {
+      assertTrustedFilesFrame(event);
+      return hostMediaState;
+    });
+    ipcMain.handle('system:sendWindowsMediaCommand', async (event, command) => {
+      assertTrustedFilesFrame(event);
+      if (!['previous', 'playPause', 'next'].includes(command)) {
+        throw new Error('Unsupported Windows media command.');
+      }
+      await sendWindowsMediaCommand(command);
+    });
+    ipcMain.handle('system:setNotchClipboardMonitoring', (event, enabled) => {
+      assertTrustedFilesFrame(event);
+      if (typeof enabled !== 'boolean') throw new Error('Invalid notch clipboard monitoring state.');
+      if (enabled) startNotchClipboardWatcher();
+      else stopNotchClipboardWatcher();
+    });
+    ipcMain.handle('system:setNotchDeviceMonitoring', (event, enabled) => {
+      assertTrustedFilesFrame(event);
+      if (typeof enabled !== 'boolean') throw new Error('Invalid notch device monitoring state.');
+      if (enabled) startNotchDeviceWatcher();
+      else stopNotchDeviceWatcher();
+    });
     ipcMain.handle('system:setWifiEnabled', (event, enabled) => {
       assertTrustedFilesFrame(event);
       if (typeof enabled !== 'boolean') throw new Error('Invalid Wi-Fi state.');
@@ -2825,6 +3232,7 @@ app.whenReady().then(async () => {
   ======================================================= */
 
   await createWindow();
+  startHostMediaWatcher();
   registerGhostShortcut('ctrl-shift-space');
 
   /* =======================================================
@@ -2871,6 +3279,13 @@ app.on(
 );
 
 app.on('will-quit', () => {
+  hostMediaWatchStopping = true;
+  if (hostMediaWatchProcess && hostMediaWatchProcess.exitCode === null) {
+    hostMediaWatchProcess.kill();
+    hostMediaWatchProcess = null;
+  }
+  stopNotchDeviceWatcher();
+  stopNotchClipboardWatcher();
   globalShortcut.unregisterAll();
   if (ghostWakeProcess && ghostWakeProcess.exitCode === null) {
     ghostWakeProcess.kill();

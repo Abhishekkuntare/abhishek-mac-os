@@ -61,6 +61,7 @@ export const QuickLookModal: React.FC = () => {
   const [slideshowFiles, setSlideshowFiles] = useState<VirtualFile[] | null>(null);
   const [slideshowIndex, setSlideshowIndex] = useState(0);
   const [saveDestination, setSaveDestination] = useState<string | null>(null);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     setFileStack(quickLookFile ? [quickLookFile] : []);
@@ -101,6 +102,33 @@ export const QuickLookModal: React.FC = () => {
     setSaveError('');
     setImageMenu(null);
   }, [activeFile?.id]);
+
+  useEffect(() => {
+    if (!activeFile || (activeFile.extension || activeFile.name.split('.').pop())?.toLowerCase() !== 'pdf') {
+      setPdfPreviewUrl(null);
+      return;
+    }
+    if (activeFile.previewUrl) {
+      setPdfPreviewUrl(activeFile.previewUrl);
+      return;
+    }
+    const content = activeFile.content ?? '';
+    if (!content) {
+      setPdfPreviewUrl(null);
+      return;
+    }
+    if (content.startsWith('data:application/pdf')) {
+      setPdfPreviewUrl(content);
+      return;
+    }
+    if (!content.startsWith('%PDF')) {
+      setPdfPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([content], { type: 'application/pdf' }));
+    setPdfPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [activeFile?.content, activeFile?.extension, activeFile?.name, activeFile?.previewUrl]);
 
   useEffect(() => {
     if (!imageMenu) return;
@@ -550,6 +578,22 @@ export const QuickLookModal: React.FC = () => {
               ) : null}
             </div>
           </div>
+        ) : (activeFile.extension || activeFile.name.split('.').pop())?.toLowerCase() === 'pdf' ? (
+          pdfPreviewUrl ? (
+            <iframe
+              title={`PDF preview: ${activeFile.name}`}
+              src={pdfPreviewUrl}
+              className="min-h-0 flex-1 bg-slate-200"
+            />
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-black/20 p-8 text-center">
+              <FileText className="mb-4 h-14 w-14 text-rose-300/80" />
+              <p className="text-sm font-semibold text-white/85">{activeFile.name}</p>
+              <p className="mt-2 max-w-sm text-xs leading-relaxed text-slate-400">
+                This PDF entry has no embedded PDF data to preview. Open an actual PDF file from Finder to view it in your system PDF reader.
+              </p>
+            </div>
+          )
         ) : activeFile.type === 'image' && activeFile.previewUrl ? (
           <div
             className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden bg-black/20 p-6"

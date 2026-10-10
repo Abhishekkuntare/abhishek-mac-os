@@ -31,7 +31,7 @@ const config = {
     publisherDisplayName: requiredSettings.APPX_PUBLISHER_DISPLAY_NAME,
     applicationId: 'AbhishekOS',
     backgroundColor: '#070c1a',
-    displayName: 'ARLO OS',
+    displayName: 'Arlo Desktop Environment',
     languages: ['en-US'],
   },
 };

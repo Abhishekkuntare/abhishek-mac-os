@@ -277,6 +277,8 @@ import { vfs } from '../../services/virtualFileSystem';
 import { getSemanticSearchTerms, searchFilesByMeaning } from '../../services/semanticSearch';
 import type { VirtualFile } from '../../types/desktop';
 import { sound } from '../../services/soundService';
+import { openSettingsDestination, searchSettingsDestinations } from '../../services/settingsSearch';
+import { openVirtualFile } from '../../services/fileAssociations';
 
 interface BatteryManagerLike {
   level: number;
@@ -303,6 +305,7 @@ export const Spotlight: React.FC = () => {
     lockSystem,
     sleepSystem,
     setShowPowerDialog,
+    setQuickLookFile,
     updateSettings,
     settings,
     recordActivity,
@@ -847,6 +850,16 @@ export const Spotlight: React.FC = () => {
     });
   });
 
+  searchSettingsDestinations(q).forEach(destination => {
+    allResults.push({
+      id: `settings-${destination.id}`,
+      type: 'settings',
+      title: destination.title,
+      subtitle: destination.subtitle,
+      onSelect: () => openSettingsDestination(destination, openApp),
+    });
+  });
+
   /*
    * Files
    */
@@ -869,7 +882,8 @@ export const Spotlight: React.FC = () => {
             localStorage.setItem('finder-pending-open-path', parentPath);
             window.dispatchEvent(new CustomEvent('finder:open-host-path', { detail: parentPath }));
           } else {
-            localStorage.setItem('finder-pending-open-path', file.path);
+            openVirtualFile(file, openApp, setQuickLookFile);
+            return;
           }
         } catch (error) {
           console.warn('Could not save the search result location.', error);
@@ -1085,6 +1099,8 @@ export const Spotlight: React.FC = () => {
                           ? 'bg-indigo-500/30 text-indigo-300'
                           : item.type === 'command'
                           ? 'bg-emerald-500/30 text-emerald-300'
+                          : item.type === 'settings'
+                          ? 'bg-indigo-500/30 text-indigo-300'
                           : item.type === 'battery'
                           ? batteryLevel < 20
                             ? 'bg-red-500/30 text-red-300'
@@ -1099,6 +1115,8 @@ export const Spotlight: React.FC = () => {
                       ) : item.type === 'file' ? (
                         <FileText className="w-5 h-5" />
                       ) : item.type === 'command' ? (
+                        <Settings className="w-5 h-5" />
+                      ) : item.type === 'settings' ? (
                         <Settings className="w-5 h-5" />
                       ) : item.type === 'battery' ? (
                         <BatteryIcon />

@@ -5,7 +5,23 @@ import { resolveGeminiApiKey } from '../ghost-api-key.mjs';
 import { getLocalFallbackReply, runGhostChat } from '../src/services/ghostChatClient.ts';
 import { executeGhostCommand } from '../src/services/ghostCommands.ts';
 import { isMeaningfulGhostTranscript, matchGhostWakePhrase } from '../src/services/ghostWakePhrases.ts';
+import {
+  appendGhostActivity,
+  getGhostActivityTasks,
+  routeGhostRequest,
+  startGhostActivity,
+} from '../src/services/ghostOrchestrator.ts';
 import { executeRegisteredTool, GHOST_TOOLS } from '../src/services/ghostToolRegistry.ts';
+
+const detective = {
+  name: 'Scout',
+  role: 'Desktop operator',
+  personality: 'Practical and attentive.',
+  description: 'Handles desktop tasks.',
+  skills: ['Open apps'],
+  instructions: '',
+  permittedTools: ['open_app', 'close_app', 'create_desktop_item', 'show_desktop', 'get_local_time', 'get_battery_status', 'set_focus_mode', 'search_files', 'get_system_info', 'arrange_window'],
+};
 
 const request = {
   model: GHOST_GEMINI_MODEL,
@@ -13,6 +29,7 @@ const request = {
   context: {
     displayName: 'Abhishek',
     availableApps: [{ id: 'music', name: 'Music' }],
+    detective,
   },
 };
 
@@ -21,6 +38,8 @@ test('accepts result payloads for every registered Ghost tool', () => {
     open_app: { app: 'music' },
     close_app: { app: 'music' },
     create_desktop_item: { type: 'file', name: 'notes.txt' },
+    rename_desktop_item: { name: 'notes.txt', new_name: 'ideas.txt' },
+    delete_desktop_item: { name: 'ideas.txt' },
     show_desktop: {},
     get_local_time: {},
     get_battery_status: {},
@@ -54,6 +73,25 @@ test('rejects malformed arguments for otherwise registered Ghost tools', () => {
       `${call.name} malformed arguments should be rejected`,
     );
   }
+});
+
+test('routes specialist requests to the assigned detective and uses that detective permissions', () => {
+  const current = { id: 'scout', ...detective };
+  const assigned = routeGhostRequest('Please debug this TypeScript error', current);
+  assert.equal(assigned.id, 'violet');
+  assert.equal(assigned.role, 'Coding assistant');
+  assert.deepEqual(assigned.permittedTools, ['open_app', 'get_system_info', 'search_files', 'arrange_window']);
+  assert.equal(routeGhostRequest('Hello there', current), current);
+});
+
+test('records bounded progress events and final activity status', () => {
+  const id = `activity-${Date.now()}`;
+  startGhostActivity(id, 'Find a document', 'Ruby', 'File investigator');
+  appendGhostActivity(id, 'running', 'Searching authorized locations.');
+  appendGhostActivity(id, 'completed', 'Found one matching document.');
+  const [task] = getGhostActivityTasks().filter(candidate => candidate.id === id);
+  assert.equal(task.status, 'completed');
+  assert.equal(task.events.at(-1).summary, 'Found one matching document.');
 });
 
 test('uses the requested Gemini model and answers a personalized greeting', async () => {
@@ -142,6 +180,52 @@ test('asks Gemini to call open_app for a conversational Music request', async ()
   });
 });
 
+test('avoids replaying signed function calls when asking Gemini to summarize verified tool results', async () => {
+  const thoughtSignature = 'opaque-gemini-signature';
+  let followUpRequest;
+  const firstClient = {
+    models: {
+      generateContent: async () => ({
+        functionCalls: [{ id: 'call-music', name: 'open_app', args: { app: 'music' } }],
+        candidates: [{
+          content: {
+            parts: [{
+              functionCall: { id: 'call-music', name: 'open_app', args: { app: 'music' } },
+              thoughtSignature,
+            }],
+          },
+        }],
+      }),
+    },
+  };
+  const toolResponse = await runGhostAgent(firstClient, request, AbortSignal.timeout(1000));
+  assert.equal(toolResponse.toolCalls[0].thoughtSignature, thoughtSignature);
+
+  const followUpClient = {
+    models: {
+      generateContent: async input => {
+        followUpRequest = input;
+        return { text: 'Music is open.' };
+      },
+    },
+  };
+  await runGhostAgent(followUpClient, {
+    ...request,
+    pendingToolCalls: toolResponse.toolCalls,
+    toolResults: [{
+      id: 'call-music',
+      name: 'open_app',
+      success: true,
+      result: 'Music opened.',
+    }],
+  }, AbortSignal.timeout(1000));
+  const resultPrompt = followUpRequest.contents.at(-1).parts[0].text;
+  assert.match(resultPrompt, /open_app: SUCCESS — Music opened\./);
+  assert.equal(JSON.stringify(followUpRequest.contents).includes(thoughtSignature), false);
+  assert.equal(JSON.stringify(followUpRequest.contents).includes('"functionCall"'), false);
+  assert.equal(followUpRequest.config.tools, undefined);
+});
+
 test('direct Music command accepts natural phrasing without “for me” as app name', async () => {
   const opened = [];
   const result = await executeGhostCommand('open music for me', {
@@ -155,6 +239,21 @@ test('direct Music command accepts natural phrasing without “for me” as app 
   });
   assert.deepEqual(opened, ['music']);
   assert.equal(result?.reply, 'Opening Music.');
+});
+
+test('local Ghost shortcuts enforce the selected detective capability list', async () => {
+  let opened = false;
+  const result = await executeGhostCommand('Open Music', {
+    openApp: () => { opened = true; return true; },
+    closeApp: () => false,
+    showDesktop: async () => {},
+    createDesktopItem: () => '',
+    renameDesktopItem: () => null,
+    deleteDesktopItem: () => null,
+    updateSettings: () => {},
+  }, undefined, undefined, ['get_local_time']);
+  assert.equal(opened, false);
+  assert.match(result.reply, /does not have the open app capability/);
 });
 
 test('natural app-opening requests are handled locally without Gemini', async () => {
@@ -227,6 +326,26 @@ test('local time and battery questions return current system facts', async () =>
   assert.match(unavailable.reply, /does not report battery status/);
 });
 
+test('enables Focus Mode locally for natural requests including “the focus mode”', async () => {
+  const changes = [];
+  const host = {
+    openApp: () => true,
+    closeApp: () => true,
+    showDesktop: async () => {},
+    createDesktopItem: () => '',
+    renameDesktopItem: () => null,
+    deleteDesktopItem: () => null,
+    updateSettings: settings => changes.push(settings),
+  };
+
+  const enabled = await executeGhostCommand('enable the focus mode', host);
+  const disabled = await executeGhostCommand('turn off the focus mode', host);
+
+  assert.deepEqual(changes, [{ doNotDisturb: true }, { doNotDisturb: false }]);
+  assert.equal(enabled.reply, 'Focus Mode is on.');
+  assert.equal(disabled.reply, 'Focus Mode is off.');
+});
+
 test('Hindi and Marathi text commands open Music and create desktop folders', async () => {
   const opened = [];
   const created = [];
@@ -273,6 +392,7 @@ test('wake phrases accept Hey Lily and Hey Ghost in English, Hindi, and Marathi'
   assert.deepEqual(matchGhostWakePhrase('नमस्ते लिली'), { command: '' });
   assert.deepEqual(matchGhostWakePhrase('जागो लिली, टर्मिनल खोलो'), { command: 'टर्मिनल खोलो' });
   assert.deepEqual(matchGhostWakePhrase('namaskar Lily'), { command: '' });
+  assert.deepEqual(matchGhostWakePhrase('Hey Scout, open Finder', ['Scout']), { command: 'open Finder' });
   assert.equal(matchGhostWakePhrase('Hey Assistant, open Finder'), null);
 });
 
@@ -291,7 +411,7 @@ test('unavailable AI replies stay concise and offer local desktop actions withou
   assert.match(getLocalFallbackReply('mr'), /apps उघडणे किंवा बंद करणे/);
 });
 
-test('tool result is sent to Gemini before producing the final response', async () => {
+test('verified tool result is sent to Gemini without replaying a function call', async () => {
   let followUp;
   const client = {
     models: {
@@ -307,8 +427,9 @@ test('tool result is sent to Gemini before producing the final response', async 
     pendingToolCalls: [{ id: 'call-music', name: 'open_app', args: { app: 'music' } }],
     toolResults: [{ id: 'call-music', name: 'open_app', success: true, result: 'Music opened.' }],
   }, AbortSignal.timeout(1000));
-  assert.equal(followUp.contents.at(-2).parts[0].functionCall.name, 'open_app');
-  assert.equal(followUp.contents.at(-1).parts[0].functionResponse.response.success, true);
+  assert.match(followUp.contents.at(-1).parts[0].text, /open_app: SUCCESS — Music opened\./);
+  assert.equal(JSON.stringify(followUp.contents).includes('"functionCall"'), false);
+  assert.equal(followUp.config.tools, undefined);
   assert.equal(response.message, 'Done, Abhishek. Music is open.');
 });
 
@@ -365,6 +486,38 @@ test('registered desktop, battery, and time tools call only their provided host 
   assert.deepEqual(created, [{ type: 'file', name: 'index.py' }]);
 });
 
+test('registered file search, system information, and window arrangement use explicit host actions', async () => {
+  const arranged = [];
+  const host = {
+    searchAuthorizedFiles: async query => [`${query}: report.txt — C:\\Authorized\\report.txt`],
+    getSystemInfo: async () => 'CPU usage: 12%. Memory: 3.0 GB of 8.0 GB.',
+    arrangeWindow: (appId, position) => {
+      arranged.push({ appId, position });
+      return { success: true, result: `Music moved to ${position}.` };
+    },
+  };
+  const search = await executeRegisteredTool({
+    id: 'search-1',
+    name: 'search_files',
+    args: { query: 'report' },
+  }, host);
+  const systemInfo = await executeRegisteredTool({
+    id: 'system-info-1',
+    name: 'get_system_info',
+    args: {},
+  }, host);
+  const arrange = await executeRegisteredTool({
+    id: 'arrange-1',
+    name: 'arrange_window',
+    args: { app: 'music', position: 'left' },
+  }, host);
+  assert.equal(search.success, true);
+  assert.match(search.result, /C:\\Authorized\\report\.txt/);
+  assert.equal(systemInfo.result, 'CPU usage: 12%. Memory: 3.0 GB of 8.0 GB.');
+  assert.equal(arrange.success, true);
+  assert.deepEqual(arranged, [{ appId: 'music', position: 'left' }]);
+});
+
 test('chat client dispatches a registered create-file request and refuses to claim a failed creation', async () => {
   const previousWindow = globalThis.window;
   let calls = 0;
@@ -390,21 +543,23 @@ test('chat client dispatches a registered create-file request and refuses to cla
       [{ role: 'user', content: 'Create a Python file named index.py on my desktop.' }],
       'Abhishek',
       { openApp: () => false, createDesktopItem: (type, name) => { created.push({ type, name }); return 'Created file "index.py" on the desktop.'; } },
+      detective,
       'test-create-desktop-file',
     );
     assert.deepEqual(created, [{ type: 'file', name: 'index.py' }]);
     assert.equal(payloads[1].toolResults[0].success, true);
-    assert.equal(answer, 'Created index.py.');
+    assert.equal(answer, 'Created index.py.\n\ncreate_desktop_item: Created file "index.py" on the desktop.');
 
     calls = 0;
     const failed = await runGhostChat(
       [{ role: 'user', content: 'Create a Python file named index.py on my desktop.' }],
       'Abhishek',
       { openApp: () => false, createDesktopItem: () => { throw new Error('A file already exists.'); } },
+      detective,
       'test-create-desktop-file-failure',
     );
     assert.equal(payloads[3].toolResults[0].success, false);
-    assert.equal(failed, "I couldn't complete that action.");
+    assert.equal(failed, "I couldn't complete that action.\n\ncreate_desktop_item: Failed — A file already exists.");
   } finally {
     globalThis.window = previousWindow;
   }
@@ -433,6 +588,7 @@ test('chat client executes Gemini open_app request and reports verified success 
       [{ role: 'user', content: 'Can you open music for me?' }],
       'Abhishek',
       { openApp: appId => { opened.push(appId); return true; } },
+      detective,
       'test-open-music',
     );
     assert.deepEqual(opened, ['music']);
@@ -466,9 +622,45 @@ test('chat client does not claim success when an app could not be opened', async
       [{ role: 'user', content: 'Can you open music for me?' }],
       'Abhishek',
       { openApp: () => false },
+      detective,
       'test-open-music-failure',
     );
     assert.equal(answer, "Music couldn't be opened.");
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test('chat client refuses a tool that is outside the selected detective permissions', async () => {
+  const previousWindow = globalThis.window;
+  const calls = [];
+  globalThis.window = {
+    electronAPI: {
+      ghostAIChat: async payload => {
+        calls.push(payload);
+        return calls.length === 1
+          ? {
+              success: true,
+              kind: 'tool_calls',
+              toolCalls: [{ id: 'focus-1', name: 'set_focus_mode', args: { enabled: true } }],
+            }
+          : { success: true, kind: 'message', message: 'Focus Mode enabled.' };
+      },
+    },
+  };
+  let focusChanged = false;
+  try {
+    const answer = await runGhostChat(
+      [{ role: 'user', content: 'Enable Focus Mode.' }],
+      'Abhishek',
+      { openApp: () => false, setFocusMode: () => { focusChanged = true; } },
+      { ...detective, permittedTools: ['open_app'] },
+      'test-disallowed-tool',
+    );
+    assert.equal(focusChanged, false);
+    assert.equal(calls[1].toolResults[0].success, false);
+    assert.match(calls[1].toolResults[0].result, /not permitted/);
+    assert.match(answer, /Failed — Scout is not permitted/);
   } finally {
     globalThis.window = previousWindow;
   }
@@ -491,6 +683,7 @@ test('chat client preserves the structured missing-key response', async () => {
         [{ role: 'user', content: 'Hello Ghost' }],
         'Abhishek',
         { openApp: () => false },
+        detective,
         'test-missing-key',
       ),
       error => error.code === 'MISSING_API_KEY' && error.message === 'Ghost AI needs a Gemini API key.',
@@ -522,4 +715,44 @@ test('unregistered and high-risk tools cannot execute', async () => {
     args: {},
   }, host);
   assert.equal(unknown.success, false);
+});
+
+test('Ghost camera capture tools require and report explicit notch approval', async () => {
+  const unavailable = await executeRegisteredTool({
+    id: 'camera-unavailable',
+    name: 'take_camera_photo',
+    args: {},
+  }, { openApp: () => false });
+  assert.equal(unavailable.success, false);
+
+  let requested;
+  const host = {
+    openApp: () => false,
+    requestCameraCapture: async (kind, durationSeconds) => {
+      requested = { kind, durationSeconds };
+      return { success: false, result: 'Camera capture was declined.' };
+    },
+  };
+  const declined = await executeRegisteredTool({
+    id: 'camera-declined',
+    name: 'take_camera_photo',
+    args: {},
+  }, host);
+  assert.equal(declined.success, false);
+  assert.equal(requested.kind, 'photo');
+
+  const recorded = await executeRegisteredTool({
+    id: 'camera-video',
+    name: 'record_camera_video',
+    args: { duration_seconds: '7' },
+  }, host);
+  assert.equal(recorded.success, false);
+  assert.deepEqual(requested, { kind: 'video', durationSeconds: 7 });
+
+  const invalidDuration = await executeRegisteredTool({
+    id: 'camera-video-invalid',
+    name: 'record_camera_video',
+    args: { duration_seconds: '60' },
+  }, host);
+  assert.equal(invalidDuration.success, false);
 });

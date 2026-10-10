@@ -12,6 +12,7 @@ const MusicApp = lazy(() => import('../apps/MusicApp').then(module => ({ default
 const PhotosApp = lazy(() => import('../apps/PhotosApp').then(module => ({ default: module.PhotosApp })));
 const TVApp = lazy(() => import('../apps/TVApp').then(module => ({ default: module.TVApp })));
 const GhostAIApp = lazy(() => import('../apps/GhostAIApp').then(module => ({ default: module.GhostAIApp })));
+const GhostDetectivesApp = lazy(() => import('../apps/GhostDetectivesApp').then(module => ({ default: module.GhostDetectivesApp })));
 const NotesApp = lazy(() => import('../apps/NotesApp').then(module => ({ default: module.NotesApp })));
 const NextpadApp = lazy(() => import('../apps/NextpadApp').then(module => ({ default: module.NextpadApp })));
 const CalendarApp = lazy(() => import('../apps/CalendarApp').then(module => ({ default: module.CalendarApp })));
@@ -84,6 +85,8 @@ export const WindowManager: React.FC = () => {
         return <TVApp />;
       case 'ghostai':
         return <GhostAIApp />;
+      case 'ghostdetectives':
+        return <GhostDetectivesApp />;
       case 'notes':
         return <NotesApp />;
       case 'nextpad':

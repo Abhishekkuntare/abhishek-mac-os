@@ -15,6 +15,7 @@ import {
   Settings2,
   X,
 } from 'lucide-react';
+import { vfs } from '../../services/virtualFileSystem';
 
 interface EditorDocument {
   id: string;
@@ -22,6 +23,8 @@ interface EditorDocument {
   content: string;
   language: string;
   dirty: boolean;
+  path?: string;
+  vfsFileId?: string;
 }
 
 const STORAGE_KEY = 'abhishek_os_nextpad_documents_v1';
@@ -100,6 +103,7 @@ export const NextpadApp: React.FC = () => {
   const [showFind, setShowFind] = useState(false);
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const [storageError, setStorageError] = useState(false);
+  const [linkedFileError, setLinkedFileError] = useState(false);
   const [query, setQuery] = useState('');
   const [replacement, setReplacement] = useState('');
   const [wrapLines, setWrapLines] = useState(true);
@@ -117,6 +121,94 @@ export const NextpadApp: React.FC = () => {
     if (!query || !activeDocument) return 0;
     return activeDocument.content.split(query).length - 1;
   }, [activeDocument, query]);
+
+  useEffect(() => {
+    const openRequestedFile = (request?: {
+      name: string;
+      content: string;
+      path?: string;
+      vfsFileId?: string;
+    }) => {
+      let pending = request;
+      if (!pending) {
+        try {
+          const stored = localStorage.getItem('nextpad-pending-open-file');
+          pending = stored ? JSON.parse(stored) as typeof request : undefined;
+        } catch (error) {
+          console.error('[Nextpad++] Could not read the requested file:', error);
+          return;
+        }
+      }
+      if (!pending || typeof pending.name !== 'string' || typeof pending.content !== 'string') return;
+
+      localStorage.removeItem('nextpad-pending-open-file');
+      const documentId = pending.vfsFileId ? `vfs-${pending.vfsFileId}` : undefined;
+      const existing = documents.find(document =>
+        (documentId && document.id === documentId) ||
+        (pending?.vfsFileId && document.vfsFileId === pending.vfsFileId),
+      );
+      const opened = existing
+        ? {
+            ...existing,
+            name: pending.name,
+            content: pending.content,
+            language: extensionLanguage(pending.name),
+            path: pending.path,
+            vfsFileId: pending.vfsFileId,
+            dirty: false,
+          }
+        : {
+            ...createDocument(pending.name, pending.content),
+            ...(documentId ? { id: documentId } : {}),
+            path: pending.path,
+            vfsFileId: pending.vfsFileId,
+          };
+      setDocuments(current => existing
+        ? current.map(document => document.id === existing.id ? opened : document)
+        : [...current, opened]);
+      setActiveId(opened.id);
+      setCaret({ line: 1, column: 1 });
+    };
+    const handleOpenRequest = (event: Event) => {
+      openRequestedFile((event as CustomEvent<{
+        name: string;
+        content: string;
+        path?: string;
+        vfsFileId?: string;
+      }>).detail);
+    };
+
+    window.addEventListener('nextpad:open-file', handleOpenRequest);
+    openRequestedFile();
+    return () => window.removeEventListener('nextpad:open-file', handleOpenRequest);
+  }, [documents]);
+
+  useEffect(() => {
+    const linkedDirtyDocuments = documents.filter(document => document.vfsFileId && document.dirty);
+    if (!linkedDirtyDocuments.length) return;
+    const timer = window.setTimeout(() => {
+      const syncedIds = new Set<string>();
+      let hasFailure = false;
+      linkedDirtyDocuments.forEach(document => {
+        if (!vfs.updateFileContent(document.vfsFileId!, document.content)) {
+          console.error(`[Nextpad++] Could not sync "${document.name}" to its original VFS file.`);
+          hasFailure = true;
+        } else {
+          syncedIds.add(document.id);
+        }
+      });
+      setLinkedFileError(hasFailure);
+      setDocuments(current => current.map(document =>
+        syncedIds.has(document.id) &&
+        linkedDirtyDocuments.some(pending =>
+          pending.id === document.id && pending.content === document.content
+        )
+          ? { ...document, dirty: false }
+          : document,
+      ));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [documents]);
 
   useEffect(() => {
     try {
@@ -199,6 +291,19 @@ export const NextpadApp: React.FC = () => {
   const saveDocument = () => {
     if (!activeDocument) return;
     try {
+      if (activeDocument.vfsFileId) {
+        if (!vfs.updateFileContent(activeDocument.vfsFileId, activeDocument.content)) {
+          setLinkedFileError(true);
+          throw new Error('The original file is no longer available in Finder.');
+        }
+        setLinkedFileError(false);
+        setDocuments(current =>
+          current.map(document =>
+            document.id === activeDocument.id ? { ...document, dirty: false } : document,
+          ),
+        );
+        return;
+      }
       const blob = new Blob([activeDocument.content], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -413,7 +518,7 @@ export const NextpadApp: React.FC = () => {
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-lime-300" />Ready</span>
           <span className={storageError ? 'text-rose-300' : ''}>
-            {storageError ? 'Could not save locally' : activeDocument?.dirty ? 'Unsaved changes' : 'Saved on this device'}
+            {linkedFileError ? 'Original file unavailable' : storageError ? 'Could not save locally' : activeDocument?.dirty ? 'Unsaved changes' : activeDocument?.vfsFileId ? 'Synced with Finder' : 'Saved on this device'}
           </span>
           <span>UTF-8</span>
         </div>

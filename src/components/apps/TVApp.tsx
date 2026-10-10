@@ -25,17 +25,17 @@ import {
   MoreHorizontal,
   X,
   Clock3,
-  Eye,
   Layers3,
   Radio,
   Settings,
   PictureInPicture2,
-  RotateCcw,
   Check,
   Loader2,
 } from 'lucide-react';
 
 import { sound } from '../../services/soundService';
+import { useOSPhotoLibrary } from '../../services/useOSPhotoLibrary';
+import type { PhotoLibraryItem } from '../../services/photoLibrary';
 
 type VideoItem = {
   id: string;
@@ -46,118 +46,8 @@ type VideoItem = {
   thumbnail: string;
   video: string;
   creator: string;
-  views: string;
   accent: string;
 };
-
-const SAMPLE_VIDEOS: VideoItem[] = [
-  {
-    id: 'v1',
-    title: 'ARLO OS — Cinematic System Showcase',
-    duration: '00:30',
-    category: 'Technology',
-    thumbnail:
-      'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=1600&auto=format&fit=crop',
-    video:
-      'https://storage.googleapis.com/coverr-main/mp4/ForBiggerBlazes.mp4',
-    description:
-      'A cinematic technology showcase designed as the flagship experience for Abhishek TV.',
-    creator: 'Abhishek Studio',
-    views: '1.2M',
-    accent: 'from-cyan-500 to-blue-600',
-  },
-
-  {
-    id: 'v2',
-    title: 'Earth From Space — A Journey Beyond',
-    duration: '00:30',
-    category: 'Space',
-    thumbnail:
-      'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=1600&auto=format&fit=crop',
-    video:
-      'https://storage.googleapis.com/coverr-main/mp4/Mt_Baker.mp4',
-    description:
-      'A cinematic visual journey inspired by orbital views of our planet.',
-    creator: 'Abhishek Originals',
-    views: '892K',
-    accent: 'from-indigo-500 to-violet-600',
-  },
-
-  {
-    id: 'v3',
-    title: 'The Future of Digital Creation',
-    duration: '00:30',
-    category: 'Future',
-    thumbnail:
-      'https://images.unsplash.com/photo-1519608487953-e999c86e7455?q=80&w=1600&auto=format&fit=crop',
-    video:
-      'https://storage.googleapis.com/coverr-main/mp4/ForBiggerEscapes.mp4',
-    description:
-      'A futuristic visual experience exploring creativity, technology and digital worlds.',
-    creator: 'Abhishek TV',
-    views: '654K',
-    accent: 'from-fuchsia-500 to-purple-600',
-  },
-
-  {
-    id: 'v4',
-    title: 'Deep Focus — Creative Coding Session',
-    duration: '00:30',
-    category: 'Coding',
-    thumbnail:
-      'https://images.unsplash.com/photo-1515879218367-8466d910aaa4?q=80&w=1600&auto=format&fit=crop',
-    video:
-      'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
-    description:
-      'A calm visual session for developers, designers and digital creators.',
-    creator: 'Focus Lab',
-    views: '428K',
-    accent: 'from-emerald-500 to-cyan-600',
-  },
-
-  {
-    id: 'v5',
-    title: 'Beyond The Horizon',
-    duration: '00:30',
-    category: 'Cinematic',
-    thumbnail:
-      'https://images.unsplash.com/photo-1500534623283-312aade485b7?q=80&w=1600&auto=format&fit=crop',
-    video:
-      'https://storage.googleapis.com/coverr-main/mp4/ForBiggerJoyrides.mp4',
-    description:
-      'A cinematic escape into motion, atmosphere and endless horizons.',
-    creator: 'Cinema Lab',
-    views: '318K',
-    accent: 'from-orange-500 to-rose-600',
-  },
-
-  {
-    id: 'v6',
-    title: 'Digital Dreams',
-    duration: '00:30',
-    category: 'Art',
-    thumbnail:
-      'https://images.unsplash.com/photo-1531058020387-3be344556be6?q=80&w=1600&auto=format&fit=crop',
-    video:
-      'https://storage.googleapis.com/coverr-main/mp4/ForBiggerFun.mp4',
-    description:
-      'An abstract visual experience combining art, motion and digital imagination.',
-    creator: 'Digital Artists',
-    views: '287K',
-    accent: 'from-pink-500 to-violet-600',
-  },
-];
-
-const CATEGORIES = [
-  'All',
-  'Featured',
-  'Technology',
-  'Space',
-  'Future',
-  'Coding',
-  'Cinematic',
-  'Art',
-];
 
 const formatTime = (seconds: number) => {
   if (!Number.isFinite(seconds)) return '00:00';
@@ -171,6 +61,42 @@ const formatTime = (seconds: number) => {
   )}`;
 };
 
+const EMPTY_VIDEO: VideoItem = {
+  id: '',
+  title: '',
+  category: '',
+  duration: '00:00',
+  description: '',
+  thumbnail: '',
+  video: '',
+  creator: '',
+  accent: 'from-cyan-500 to-blue-600',
+};
+
+const CATEGORIES = ['All', 'Camera', 'Imported'];
+
+const toVideoItem = (item: PhotoLibraryItem): VideoItem => {
+  const isCameraMedia = item.source.toLowerCase().includes('camera');
+  const category = isCameraMedia ? 'Camera' : 'Imported';
+  const createdAt = new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date(item.createdAt));
+
+  return {
+    id: item.id,
+    title: `${isCameraMedia ? 'Camera recording' : 'Saved video'} · ${createdAt}`,
+    category,
+    duration: formatTime(item.duration ?? 0),
+    description: item.source,
+    thumbnail: item.thumbnailUrl ?? '',
+    video: item.url,
+    creator: item.source,
+    accent: 'from-cyan-500 to-blue-600',
+  };
+};
+
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
@@ -178,10 +104,9 @@ export const TVApp: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerRef = useRef<HTMLDivElement | null>(null);
   const progressRef = useRef<HTMLDivElement | null>(null);
+  const { items: mediaItems, isLoading: isLoadingLibrary } = useOSPhotoLibrary();
 
-  const [activeVideo, setActiveVideo] = useState<VideoItem>(
-    SAMPLE_VIDEOS[0],
-  );
+  const [activeVideo, setActiveVideo] = useState<VideoItem>(EMPTY_VIDEO);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -294,17 +219,23 @@ export const TVApp: React.FC = () => {
    */
 
   const playNext = useCallback(() => {
-    const currentIndex = SAMPLE_VIDEOS.findIndex(
+    const videos = mediaItems
+      .filter(item => item.kind === 'video')
+      .sort((left, right) => left.createdAt - right.createdAt)
+      .map(toVideoItem);
+    if (videos.length === 0) return;
+
+    const currentIndex = videos.findIndex(
       video => video.id === activeVideo.id,
     );
 
     const nextIndex =
-      currentIndex === SAMPLE_VIDEOS.length - 1
+      currentIndex < 0 || currentIndex === videos.length - 1
         ? 0
         : currentIndex + 1;
 
-    changeVideo(SAMPLE_VIDEOS[nextIndex], true);
-  }, [activeVideo.id, changeVideo]);
+    changeVideo(videos[nextIndex], true);
+  }, [activeVideo.id, changeVideo, mediaItems]);
 
   /*
    * ------------------------------------------------------------
@@ -313,17 +244,23 @@ export const TVApp: React.FC = () => {
    */
 
   const playPrevious = useCallback(() => {
-    const currentIndex = SAMPLE_VIDEOS.findIndex(
+    const videos = mediaItems
+      .filter(item => item.kind === 'video')
+      .sort((left, right) => left.createdAt - right.createdAt)
+      .map(toVideoItem);
+    if (videos.length === 0) return;
+
+    const currentIndex = videos.findIndex(
       video => video.id === activeVideo.id,
     );
 
     const previousIndex =
-      currentIndex === 0
-        ? SAMPLE_VIDEOS.length - 1
+      currentIndex <= 0
+        ? videos.length - 1
         : currentIndex - 1;
 
-    changeVideo(SAMPLE_VIDEOS[previousIndex], true);
-  }, [activeVideo.id, changeVideo]);
+    changeVideo(videos[previousIndex], true);
+  }, [activeVideo.id, changeVideo, mediaItems]);
 
   /*
    * ------------------------------------------------------------
@@ -580,11 +517,14 @@ export const TVApp: React.FC = () => {
 
   const filteredVideos = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const savedVideos = mediaItems
+      .filter(item => item.kind === 'video')
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .map(toVideoItem);
 
-    return SAMPLE_VIDEOS.filter(video => {
+    return savedVideos.filter(video => {
       const matchesCategory =
         category === 'All' ||
-        category === 'Featured' ||
         video.category === category;
 
       const matchesSearch =
@@ -595,9 +535,9 @@ export const TVApp: React.FC = () => {
 
       return matchesCategory && matchesSearch;
     });
-  }, [category, search]);
+  }, [category, mediaItems, search]);
 
-  const featuredVideos = SAMPLE_VIDEOS.slice(0, 3);
+  const featuredVideos = filteredVideos.slice(0, 3);
 
   /*
    * ------------------------------------------------------------
@@ -693,7 +633,7 @@ export const TVApp: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-[15px] font-black tracking-tight">
-                    Abhishek TV
+                    Videos
                   </h1>
 
                   <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest text-cyan-300">
@@ -725,19 +665,10 @@ export const TVApp: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={() =>
-                  showToast('Abhishek TV is live')
-                }
-                className="hidden items-center gap-2 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-[10px] font-bold text-red-300 transition hover:bg-red-500/20 sm:flex"
-              >
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-                </span>
-
-                LIVE
-              </button>
+              <span className="hidden items-center gap-2 rounded-xl border border-cyan-400/15 bg-cyan-400/[0.06] px-3 py-2 text-[10px] font-bold text-cyan-200 sm:flex">
+                <Film className="h-3.5 w-3.5" />
+                {filteredVideos.length} SAVED
+              </span>
 
               <button
                 onClick={() =>
@@ -808,25 +739,41 @@ export const TVApp: React.FC = () => {
                     }}
                     className="absolute inset-0"
                   >
-                    <video
-                      ref={videoRef}
-                      key={activeVideo.video}
-                      src={activeVideo.video}
-                      poster={activeVideo.thumbnail}
-                      playsInline
-                      preload="none"
-                      className="h-full w-full object-cover"
-                      onLoadedMetadata={
-                        handleLoadedMetadata
-                      }
-                      onTimeUpdate={handleTimeUpdate}
-                      onEnded={handleVideoEnded}
-                      onPlay={handleVideoPlay}
-                      onPause={handleVideoPause}
-                      onWaiting={() => setIsLoading(true)}
-                      onCanPlay={() => setIsLoading(false)}
-                      onError={handlePlaybackError}
-                    />
+                    {activeVideo.video ? (
+                      <video
+                        ref={videoRef}
+                        key={activeVideo.video}
+                        src={activeVideo.video}
+                        poster={activeVideo.thumbnail || undefined}
+                        playsInline
+                        preload="none"
+                        className="h-full w-full object-cover"
+                        onLoadedMetadata={handleLoadedMetadata}
+                        onTimeUpdate={handleTimeUpdate}
+                        onEnded={handleVideoEnded}
+                        onPlay={handleVideoPlay}
+                        onPause={handleVideoPause}
+                        onWaiting={() => setIsLoading(true)}
+                        onCanPlay={() => setIsLoading(false)}
+                        onError={handlePlaybackError}
+                      />
+                    ) : (
+                      <div className="flex h-full flex-col items-center justify-center gap-4 bg-[radial-gradient(circle_at_50%_45%,rgba(34,211,238,.12),transparent_35%),linear-gradient(135deg,#0b1220,#030712)] px-6 text-center">
+                        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-cyan-300">
+                          <Film className="h-7 w-7" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-white">
+                            {isLoadingLibrary ? 'Loading your videos…' : 'Your video library is ready'}
+                          </p>
+                          <p className="mt-1 text-xs text-white/45">
+                            {isLoadingLibrary
+                              ? 'Checking saved camera recordings and videos.'
+                              : 'Record a video with Camera or import one as a live wallpaper to see it here.'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </motion.div>
                 </AnimatePresence>
 
@@ -860,7 +807,7 @@ export const TVApp: React.FC = () => {
                 {/* Center play */}
 
                 <AnimatePresence>
-                  {!isPlaying && !isLoading && (
+                  {activeVideo.video && !isPlaying && !isLoading && (
                     <motion.button
                       initial={{
                         opacity: 0,
@@ -910,7 +857,7 @@ export const TVApp: React.FC = () => {
                       </span>
 
                       <span className="rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[8px] font-bold text-white/60 backdrop-blur-xl">
-                        4K
+                        SAVED
                       </span>
                     </motion.div>
                   </div>
@@ -1115,35 +1062,33 @@ export const TVApp: React.FC = () => {
                 >
                   <div className="min-w-0">
                     <h2 className="text-xl font-black tracking-tight text-white md:text-2xl">
-                      {activeVideo.title}
+                      {activeVideo.title || 'Choose a saved video'}
                     </h2>
 
-                    <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-slate-500">
-                      <span className="font-semibold text-slate-300">
-                        {activeVideo.creator}
-                      </span>
-
-                      <span>•</span>
-
-                      <span className="flex items-center gap-1">
-                        <Eye className="h-3 w-3" />
-                        {activeVideo.views} views
-                      </span>
-
-                      <span>•</span>
-
-                      <span className="flex items-center gap-1">
-                        <Clock3 className="h-3 w-3" />
-                        {activeVideo.duration}
-                      </span>
-                    </div>
-
-                    <p className="mt-3 max-w-3xl text-xs leading-6 text-slate-500">
-                      {activeVideo.description}
-                    </p>
+                    {activeVideo.video ? (
+                      <>
+                        <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-slate-500">
+                          <span className="font-semibold text-slate-300">
+                            {activeVideo.creator}
+                          </span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <Clock3 className="h-3 w-3" />
+                            {activeVideo.duration}
+                          </span>
+                        </div>
+                        <p className="mt-3 max-w-3xl text-xs leading-6 text-slate-500">
+                          {activeVideo.description}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="mt-2 max-w-3xl text-xs leading-6 text-slate-500">
+                        Select a recording or imported video below to start playback.
+                      </p>
+                    )}
                   </div>
 
-                  <div className="flex shrink-0 gap-2">
+                  {activeVideo.video && <div className="flex shrink-0 gap-2">
                     <button
                       onClick={() =>
                         showToast('Added to Watchlist')
@@ -1166,7 +1111,7 @@ export const TVApp: React.FC = () => {
                     >
                       SHARE
                     </button>
-                  </div>
+                  </div>}
                 </motion.div>
               </AnimatePresence>
             </div>
@@ -1174,7 +1119,7 @@ export const TVApp: React.FC = () => {
 
           {/* Featured */}
 
-          <section className="px-4 pb-7 md:px-6">
+          <section className={`px-4 pb-7 md:px-6 ${featuredVideos.length === 0 ? 'hidden' : ''}`}>
             <div className="mx-auto max-w-[1450px]">
               <div className="mb-4 flex items-end justify-between">
                 <div>
@@ -1182,17 +1127,17 @@ export const TVApp: React.FC = () => {
                     <Sparkles className="h-4 w-4 text-cyan-400" />
 
                     <span className="text-[9px] font-black uppercase tracking-[.22em] text-cyan-400">
-                      Curated For You
+                      Your Library
                     </span>
                   </div>
 
                   <h3 className="text-lg font-black text-white">
-                    Featured experiences
+                    Recently saved
                   </h3>
                 </div>
 
                 <button
-                  onClick={() => setCategory('Featured')}
+                  onClick={() => setCategory('All')}
                   className="flex items-center gap-1 text-[10px] font-bold text-slate-500 transition hover:text-white"
                 >
                   View all
@@ -1247,20 +1192,21 @@ export const TVApp: React.FC = () => {
                       } shadow-2xl transition-colors`}
                     >
                       <div className="relative aspect-video overflow-hidden">
-                        <motion.img
-                          src={video.thumbnail}
-                          alt={video.title}
-                          animate={{
-                            scale:
-                              hoveredVideo === video.id
-                                ? 1.08
-                                : 1,
-                          }}
-                          transition={{
-                            duration: 0.6,
-                          }}
-                          className="h-full w-full object-cover"
-                        />
+                        {video.thumbnail ? (
+                          <motion.img
+                            src={video.thumbnail}
+                            alt={video.title}
+                            animate={{
+                              scale: hoveredVideo === video.id ? 1.08 : 1,
+                            }}
+                            transition={{ duration: 0.6 }}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center bg-gradient-to-br from-slate-800 via-slate-950 to-cyan-950">
+                            <Film className="h-10 w-10 text-white/35" />
+                          </div>
+                        )}
 
                         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent" />
 
@@ -1320,7 +1266,7 @@ export const TVApp: React.FC = () => {
                         </h4>
 
                         <p className="mt-1 line-clamp-2 text-[10px] leading-5 text-slate-500">
-                          {video.description}
+                          {video.category} · {video.duration}
                         </p>
                       </div>
                     </motion.div>
@@ -1369,14 +1315,18 @@ export const TVApp: React.FC = () => {
                   </div>
 
                   <h4 className="text-sm font-bold text-white">
-                    No videos found
+                    {isLoadingLibrary ? 'Loading saved videos' : search ? 'No videos found' : 'No saved videos yet'}
                   </h4>
 
                   <p className="mt-1 text-[10px] text-slate-600">
-                    Try another search or category.
+                    {isLoadingLibrary
+                      ? 'Your library will appear here shortly.'
+                      : search
+                        ? 'Try another search or category.'
+                        : 'Record a video with Camera or add one through Wallpaper settings.'}
                   </p>
 
-                  <button
+                  {search && <button
                     onClick={() => {
                       setSearch('');
                       setCategory('All');
@@ -1384,7 +1334,7 @@ export const TVApp: React.FC = () => {
                     className="mt-4 rounded-xl bg-white px-4 py-2 text-[10px] font-bold text-slate-950"
                   >
                     Reset
-                  </button>
+                  </button>}
                 </motion.div>
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -1423,11 +1373,17 @@ export const TVApp: React.FC = () => {
                         } transition-colors hover:border-white/15`}
                       >
                         <div className="relative aspect-video overflow-hidden">
-                          <img
-                            src={video.thumbnail}
-                            alt={video.title}
-                            className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-                          />
+                          {video.thumbnail ? (
+                            <img
+                              src={video.thumbnail}
+                              alt={video.title}
+                              className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center bg-gradient-to-br from-slate-800 via-slate-950 to-cyan-950">
+                              <Film className="h-9 w-9 text-white/35" />
+                            </div>
+                          )}
 
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
 
@@ -1456,9 +1412,7 @@ export const TVApp: React.FC = () => {
                               {video.creator}
                             </span>
 
-                            <span className="text-[8px] text-slate-600">
-                              {video.views}
-                            </span>
+                            <span className="text-[8px] text-slate-600">{video.category}</span>
                           </div>
                         </div>
                       </motion.div>
@@ -1482,7 +1436,7 @@ export const TVApp: React.FC = () => {
             onChange={event =>
               setSearch(event.target.value)
             }
-            placeholder="Search Abhishek TV..."
+            placeholder="Search videos..."
             className="h-11 w-full rounded-2xl border border-white/10 bg-[#10151f]/90 pl-10 pr-10 text-xs text-white shadow-2xl outline-none backdrop-blur-2xl placeholder:text-slate-600"
           />
 

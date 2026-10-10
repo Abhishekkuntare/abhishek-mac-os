@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Folder,
   FileText,
@@ -44,12 +45,39 @@ import {
   LockKeyhole,
   Play,
   Pause,
+  Keyboard,
+  AppWindow,
 } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { VirtualFile } from '../../types/desktop';
 import { vfs } from '../../services/virtualFileSystem';
 import { sound } from '../../services/soundService';
+import { openVirtualFile } from '../../services/fileAssociations';
 import { AppIcon } from '../system/AppIcon';
+import { APP_REGISTRY } from '../../data/defaultApps';
+
+interface LocalApplicationShortcut {
+  path: string;
+  name: string;
+  iconUrl?: string;
+}
+
+const readLocalApplicationShortcuts = (): LocalApplicationShortcut[] => {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem('finder-local-applications') || '[]');
+    if (!Array.isArray(stored)) return [];
+    return stored.filter((item): item is LocalApplicationShortcut =>
+      typeof item === 'object' &&
+      item !== null &&
+      'path' in item && typeof item.path === 'string' &&
+      'name' in item && typeof item.name === 'string' &&
+      (!('iconUrl' in item) || typeof item.iconUrl === 'string' && item.iconUrl.startsWith('data:image/')),
+    );
+  } catch (error) {
+    console.warn('[Finder] Could not restore local application shortcuts:', error);
+    return [];
+  }
+};
 
 interface ContextMenuState {
   visible: boolean;
@@ -185,6 +213,8 @@ export const FinderApp: React.FC = () => {
   const [hostClipboard, setHostClipboard] = useState<{ paths: string[]; move: boolean } | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
+  const [localApplications, setLocalApplications] = useState<LocalApplicationShortcut[]>(readLocalApplicationShortcuts);
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   const [pathHistory, setPathHistory] = useState<string[]>(['/Users/abhishek']);
   const [historyIndex, setHistoryIndex] = useState(0);
   const previousPathRef = useRef(currentPath);
@@ -227,6 +257,7 @@ export const FinderApp: React.FC = () => {
   const [showFolderProperties, setShowFolderProperties] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isDraggingOverFinder, setIsDraggingOverFinder] = useState(false);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
@@ -242,8 +273,12 @@ export const FinderApp: React.FC = () => {
     index: number;
     playing: boolean;
   } | null>(null);
+  const [imageSlideDirection, setImageSlideDirection] = useState<1 | -1>(1);
+  const imageSwipeStart = useRef<number | null>(null);
+  const filmstripThumbsRef = useRef<HTMLDivElement | null>(null);
 
   const localFileInputRef = useRef<HTMLInputElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -258,6 +293,14 @@ export const FinderApp: React.FC = () => {
       console.warn('[Finder] Could not save favorite locations:', error);
     }
   }, [favoriteHostPaths]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('finder-local-applications', JSON.stringify(localApplications));
+    } catch (error) {
+      console.error('[Finder] Could not save local application shortcuts:', error);
+    }
+  }, [localApplications]);
 
   const isBrowsingLocal = currentPath === 'local://drives' || localFolders.some(folder => {
     const root = folder.path.toLowerCase().replace(/[\\/]+$/, '');
@@ -377,7 +420,7 @@ export const FinderApp: React.FC = () => {
     return () => window.removeEventListener('finder:open-host-path', handleOpenPath);
   }, [navigateTo]);
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     if (historyIndex > 0) {
       setHistoryIndex(historyIndex - 1);
       setCurrentPath(pathHistory[historyIndex - 1]);
@@ -385,9 +428,9 @@ export const FinderApp: React.FC = () => {
       setRenamingId(null);
       sound.playClick();
     }
-  };
+  }, [historyIndex, pathHistory]);
 
-  const handleForward = () => {
+  const handleForward = useCallback(() => {
     if (historyIndex < pathHistory.length - 1) {
       setHistoryIndex(historyIndex + 1);
       setCurrentPath(pathHistory[historyIndex + 1]);
@@ -395,7 +438,7 @@ export const FinderApp: React.FC = () => {
       setRenamingId(null);
       sound.playClick();
     }
-  };
+  }, [historyIndex, pathHistory]);
 
   // Only direct children when not searching, and full path search when searching
   const currentFiles = useMemo(() => {
@@ -434,6 +477,18 @@ export const FinderApp: React.FC = () => {
 
     return list;
   }, [filesState, localFiles, isBrowsingLocal, currentPath, searchQuery, sortField, sortOrder]);
+  const isApplicationsView = currentPath === '/Applications';
+  const applicationResults = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    const builtInApps = Object.values(APP_REGISTRY)
+      .filter(app => app.installed)
+      .filter(app => !query || `${app.name} ${app.category} ${app.description}`.toLowerCase().includes(query))
+      .map(app => ({ kind: 'arlo' as const, id: app.id, name: app.name, description: app.description }));
+    const personalApps = localApplications
+      .filter(app => !query || `${app.name} ${app.path}`.toLowerCase().includes(query))
+      .map(app => ({ kind: 'local' as const, id: app.path, name: app.name, description: app.path, iconUrl: app.iconUrl }));
+    return [...builtInApps, ...personalApps];
+  }, [localApplications, searchQuery]);
 
   const selectedFiles = useMemo(() => {
     const sourceFiles = isBrowsingLocal ? localFiles : filesState;
@@ -478,11 +533,64 @@ export const FinderApp: React.FC = () => {
     });
   };
 
+  const addLocalApplication = async () => {
+    try {
+      if (!window.electronAPI?.chooseLocalApplication) {
+        throw new Error('Adding desktop applications requires the installed ARLO OS desktop app.');
+      }
+      const result = await window.electronAPI.chooseLocalApplication();
+      if (result.canceled || !result.application) return;
+      setLocalApplications(current => [
+        result.application!,
+        ...current.filter(item => item.path.toLowerCase() !== result.application!.path.toLowerCase()),
+      ]);
+      addNotification({
+        appId: 'finder',
+        title: 'Application added',
+        message: `${result.application.name} is now available in Applications.`,
+        type: 'system',
+      });
+    } catch (error) {
+      addNotification({
+        appId: 'finder',
+        title: 'Could not add application',
+        message: error instanceof Error ? error.message : String(error),
+        type: 'system',
+      });
+    }
+  };
+
+  const openApplicationShortcut = async (application: (typeof applicationResults)[number]) => {
+    if (application.kind === 'arlo') {
+      openApp(application.id);
+      return;
+    }
+    try {
+      if (!window.electronAPI?.openLocalPath) {
+        throw new Error('Opening local applications requires the installed ARLO OS desktop app.');
+      }
+      await window.electronAPI.openLocalPath(application.id);
+      sound.playClick();
+    } catch (error) {
+      addNotification({
+        appId: 'finder',
+        title: `Unable to open ${application.name}`,
+        message: error instanceof Error ? error.message : String(error),
+        type: 'system',
+      });
+    }
+  };
+
+  const removeLocalApplication = (applicationPath: string) => {
+    setLocalApplications(current => current.filter(application => application.path !== applicationPath));
+  };
+
   const openInCodeStudio = (file: VirtualFile, content = file.content || '') => {
     const request = {
       name: file.name,
       content,
       path: file.hostPath || `${file.path}/${file.name}`,
+      vfsFileId: file.hostPath ? undefined : file.id,
     };
     try {
       localStorage.setItem('code-studio-pending-open-file', JSON.stringify(request));
@@ -579,6 +687,20 @@ export const FinderApp: React.FC = () => {
             type: 'system',
           });
         });
+    } else if (file.extension?.toLowerCase() === 'pdf' && file.hostPath && window.electronAPI?.getMediaUrl) {
+      void window.electronAPI.getMediaUrl(file.hostPath)
+        .then(previewUrl => {
+          setQuickLookFile({ ...file, previewUrl });
+          recordOpenedFile(file);
+        })
+        .catch(error => {
+          addNotification({
+            appId: 'finder',
+            title: 'Unable to preview PDF',
+            message: error instanceof Error ? error.message : String(error),
+            type: 'system',
+          });
+        });
     } else if (file.hostPath) {
       if (!window.electronAPI?.openLocalPath) {
         addNotification({
@@ -599,20 +721,8 @@ export const FinderApp: React.FC = () => {
             type: 'system',
           });
         });
-    } else if (file.type === 'image') {
-      setQuickLookFile(file);
-      recordOpenedFile(file);
-    } else if (file.type === 'document') {
-      setQuickLookFile(file);
-      recordOpenedFile(file);
-    } else if (file.type === 'audio') {
-      recordOpenedFile(file);
-      openApp('music', file.name);
-    } else if (file.type === 'video') {
-      recordOpenedFile(file);
-      openApp('tv', file.name);
     } else {
-      setQuickLookFile(file);
+      openVirtualFile(file, openApp, setQuickLookFile);
       recordOpenedFile(file);
     }
   };
@@ -635,6 +745,95 @@ export const FinderApp: React.FC = () => {
       })
     );
     event.dataTransfer.effectAllowed = 'move';
+  };
+
+  const moveDraggedItems = async (transfer: DataTransfer, destinationPath: string, destinationIsLocal: boolean) => {
+    const payload = transfer.getData('application/x-abhishek-os-items');
+    if (!payload) return false;
+
+    let items: Array<{ id: string; hostPath?: string }>;
+    try {
+      const parsed: unknown = JSON.parse(payload);
+      if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        !('items' in parsed) ||
+        !Array.isArray(parsed.items)
+      ) {
+        throw new Error('The dragged item information is invalid.');
+      }
+      items = parsed.items.filter((item): item is { id: string; hostPath?: string } =>
+        typeof item === 'object' &&
+        item !== null &&
+        'id' in item && typeof item.id === 'string' &&
+        (!('hostPath' in item) || typeof item.hostPath === 'string'),
+      );
+      if (items.length !== parsed.items.length || items.length === 0) {
+        throw new Error('One or more dragged items could not be identified.');
+      }
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : 'The dragged item information is invalid.');
+    }
+
+    if (destinationIsLocal) {
+      const paths = items.flatMap(item => item.hostPath ? [item.hostPath] : []);
+      if (paths.length !== items.length || !window.electronAPI?.transferLocalEntries) {
+        throw new Error('Move between ARLO Drive and PC folders is not supported. Copy files between locations instead.');
+      }
+      await window.electronAPI.transferLocalEntries(paths, destinationPath, true);
+      await refreshCurrentLocalFiles();
+    } else {
+      const fileIds = items.flatMap(item =>
+        !item.hostPath && vfs.getFileById(item.id) ? [item.id] : [],
+      );
+      if (fileIds.length !== items.length) {
+        throw new Error('Move between PC folders and ARLO Drive is not supported. Copy files between locations instead.');
+      }
+      const result = vfs.moveFiles(fileIds, destinationPath);
+      if (result.error) throw new Error(result.error);
+      refreshFiles();
+    }
+
+    sound.playClick();
+    setSelectedFileIds([]);
+    addNotification({
+      appId: 'finder',
+      title: 'Items moved',
+      message: `${items.length} ${items.length === 1 ? 'item was' : 'items were'} moved to ${destinationPath.split(/[\\/]+/).filter(Boolean).pop() || 'this folder'}.`,
+      type: 'system',
+    });
+    return true;
+  };
+
+  const handleFinderDrop = async (event: React.DragEvent, destinationPath: string, destinationIsLocal: boolean) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDraggingOverFinder(false);
+    setDragOverFolderId(null);
+    try {
+      const moved = await moveDraggedItems(event.dataTransfer, destinationPath, destinationIsLocal);
+      if (moved) return;
+      if (event.dataTransfer.files.length > 0) {
+        if (destinationIsLocal) {
+          addNotification({
+            appId: 'finder',
+            title: 'Drop into an authorized folder',
+            message: 'Files from other apps can be imported into ARLO Drive. To move PC files, drag them from a connected Finder folder.',
+            type: 'system',
+          });
+          return;
+        }
+        await importLocalFiles(event.dataTransfer.files, destinationPath);
+        refreshFiles();
+      }
+    } catch (error) {
+      addNotification({
+        appId: 'finder',
+        title: 'Could not move items',
+        message: error instanceof Error ? error.message : String(error),
+        type: 'system',
+      });
+    }
   };
 
   const pasteHostClipboard = async () => {
@@ -675,11 +874,60 @@ export const FinderApp: React.FC = () => {
         return;
       }
 
+      if (showKeyboardShortcuts) {
+        if (e.key === 'Escape') setShowKeyboardShortcuts(false);
+        return;
+      }
+
+      if (e.metaKey && e.code === 'Enter') return;
+      if (e.key === 'Escape') {
+        setSelectedFileIds([]);
+        setSearchQuery('');
+        return;
+      }
+
       if (isBrowsingLocal && (e.key === 'Delete' || e.key === 'Backspace')) {
         return;
       }
 
       const isMod = e.ctrlKey || e.metaKey;
+
+      if (e.code === 'F1' || e.key === '?') {
+        e.preventDefault();
+        setShowKeyboardShortcuts(true);
+        return;
+      }
+
+      if ((isMod && e.code === 'KeyF') || (e.code === 'Slash' && !isMod)) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+
+      if (e.code === 'F5') {
+        e.preventDefault();
+        if (isBrowsingLocal) void refreshCurrentLocalFiles();
+        else refreshFiles();
+        return;
+      }
+
+      if (isMod && e.code === 'KeyI') {
+        e.preventDefault();
+        setShowInspector(value => !value);
+        return;
+      }
+
+      if (e.altKey && e.code === 'ArrowLeft') {
+        e.preventDefault();
+        handleBack();
+        return;
+      }
+
+      if (e.altKey && e.code === 'ArrowRight') {
+        e.preventDefault();
+        handleForward();
+        return;
+      }
 
       // Select All: Cmd/Ctrl + A
       if (isMod && e.code === 'KeyA') {
@@ -790,8 +1038,17 @@ export const FinderApp: React.FC = () => {
         return;
       }
 
-      // Rename: Enter or F2
-      if (e.code === 'Enter' || e.code === 'F2') {
+      // Open selected item: Enter
+      if (e.code === 'Enter') {
+        if (primarySelectedFile) {
+          e.preventDefault();
+          handleOpenFile(primarySelectedFile);
+        }
+        return;
+      }
+
+      // Rename: F2
+      if (e.code === 'F2') {
         if (primarySelectedFile) {
           e.preventDefault();
           setRenamingId(primarySelectedFile.id);
@@ -836,7 +1093,7 @@ export const FinderApp: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentFiles, selectedFileIds, selectedFiles, primarySelectedFile, currentPath, addNotification, setQuickLookFile, isBrowsingLocal, hostClipboard, trashFinderFiles]);
+  }, [currentFiles, selectedFileIds, selectedFiles, primarySelectedFile, currentPath, addNotification, setQuickLookFile, isBrowsingLocal, hostClipboard, trashFinderFiles, showKeyboardShortcuts, handleBack, handleForward]);
 
   // Confirm rename
   const handleSaveRename = () => {
@@ -1095,9 +1352,40 @@ export const FinderApp: React.FC = () => {
     setImageFilmstrip({ files, index, playing });
   };
 
+  const stepImageFilmstrip = (direction: 1 | -1) => {
+    setImageSlideDirection(direction);
+    setImageFilmstrip(current => current
+      ? { ...current, index: (current.index + direction + current.files.length) % current.files.length }
+      : null);
+  };
+
+  useEffect(() => {
+    if (!imageFilmstrip) return;
+    const handleFilmstripKey = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        stepImageFilmstrip(-1);
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        stepImageFilmstrip(1);
+      }
+    };
+    window.addEventListener('keydown', handleFilmstripKey, true);
+    return () => window.removeEventListener('keydown', handleFilmstripKey, true);
+  }, [imageFilmstrip?.files.length]);
+
+  useEffect(() => {
+    filmstripThumbsRef.current
+      ?.querySelector<HTMLElement>('[data-active="true"]')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, [imageFilmstrip?.index]);
+
   useEffect(() => {
     if (!imageFilmstrip?.playing || imageFilmstrip.files.length < 2) return;
     const timer = window.setInterval(() => {
+      setImageSlideDirection(1);
       setImageFilmstrip(current => current
         ? { ...current, index: (current.index + 1) % current.files.length }
         : null);
@@ -1413,7 +1701,7 @@ export const FinderApp: React.FC = () => {
         <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
           {/* New File Button */}
           <button
-            disabled={isBrowsingLocal}
+            disabled={isBrowsingLocal || isApplicationsView}
             onClick={() => {
               setNewFileName('');
               setNewFileExtension('txt');
@@ -1429,7 +1717,7 @@ export const FinderApp: React.FC = () => {
 
           {/* New Folder Button */}
           <button
-            disabled={isBrowsingLocal}
+            disabled={isBrowsingLocal || isApplicationsView}
             onClick={() => {
               setNewFolderName('New Folder');
               setShowNewFolderModal(true);
@@ -1567,12 +1855,24 @@ export const FinderApp: React.FC = () => {
             <Info className="w-3.5 h-3.5" />
           </button>
 
+          <button
+            type="button"
+            onClick={() => setShowKeyboardShortcuts(true)}
+            aria-label="Show Finder keyboard shortcuts"
+            className="p-1.5 rounded-xl border border-white/10 bg-white/10 text-slate-300 transition-colors hover:bg-white/15 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+            title="Keyboard shortcuts (?)"
+          >
+            <Keyboard className="w-3.5 h-3.5" />
+          </button>
+
           {/* Search bar */}
           <div className="relative flex items-center">
             <Search className="w-3.5 h-3.5 absolute left-2.5 text-slate-400 pointer-events-none" />
             <input
+              ref={searchInputRef}
               type="text"
-              placeholder="Search"
+              placeholder={isApplicationsView ? 'Search apps' : 'Search'}
+              aria-label={isApplicationsView ? 'Search applications' : 'Search files'}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               onKeyDown={e => {
@@ -1747,22 +2047,16 @@ export const FinderApp: React.FC = () => {
           onDragOver={e => {
             e.preventDefault();
             e.stopPropagation();
-            setIsDraggingOverFinder(true);
-          }}
-          onDragLeave={e => {
-            e.preventDefault();
-            e.stopPropagation();
-            setIsDraggingOverFinder(false);
-          }}
-          onDrop={async e => {
-            e.preventDefault();
-            e.stopPropagation();
-            setIsDraggingOverFinder(false);
-            if (!isBrowsingLocal && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-              await importLocalFiles(e.dataTransfer.files, currentPath);
-              refreshFiles();
+            if (!e.dataTransfer.types.includes('application/x-abhishek-os-items') && e.dataTransfer.types.includes('Files')) {
+              setIsDraggingOverFinder(true);
             }
           }}
+          onDragLeave={e => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+              setIsDraggingOverFinder(false);
+            }
+          }}
+          onDrop={e => void handleFinderDrop(e, currentPath, isBrowsingLocal)}
           className="flex-1 overflow-y-auto p-4 bg-slate-900/20 relative focus:outline-none"
         >
           {/* Drag & drop overlay */}
@@ -1774,7 +2068,101 @@ export const FinderApp: React.FC = () => {
             </div>
           )}
 
-          {currentFiles.length === 0 ? (
+          {isApplicationsView ? (
+            <div className="mx-auto max-w-6xl space-y-5 pb-6">
+              <div className="flex flex-col gap-4 rounded-3xl border border-white/[0.08] bg-gradient-to-br from-sky-500/[0.12] via-indigo-500/[0.08] to-transparent p-5 shadow-xl sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-sky-300/20 bg-sky-400/10 text-sky-200 shadow-inner">
+                    <AppWindow className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h1 className="text-lg font-semibold tracking-tight text-white">Applications</h1>
+                    <p className="mt-1 max-w-xl text-xs leading-relaxed text-slate-400">
+                      Your ARLO OS apps, together with desktop apps you choose to add from connected folders.
+                    </p>
+                    <p className="mt-2 text-[10px] font-medium text-slate-500">
+                      {applicationResults.length} {applicationResults.length === 1 ? 'application' : 'applications'}
+                      {localApplications.length > 0 ? ` · ${localApplications.length} from this PC` : ' · Add apps from this PC'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void addLocalApplication()}
+                  className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-sky-300/25 bg-sky-400/15 px-4 text-xs font-semibold text-sky-100 shadow-lg shadow-sky-950/20 transition-all hover:-translate-y-0.5 hover:border-sky-200/50 hover:bg-sky-400/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                  title="Choose an .exe or .lnk inside a Finder-connected folder"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add app from PC
+                </button>
+              </div>
+
+              {applicationResults.length > 0 ? (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  {applicationResults.map((application, index) => {
+                    const metadata = application.kind === 'arlo' ? APP_REGISTRY[application.id] : undefined;
+                    return (
+                      <motion.div
+                        key={`${application.kind}-${application.id}`}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.18, delay: Math.min(index * 0.012, 0.16) }}
+                        whileHover={{ y: -3 }}
+                        className="group relative min-w-0 overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.025] shadow-lg shadow-black/10 transition-colors hover:border-sky-300/25 hover:bg-white/[0.055] hover:shadow-sky-950/20"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => void openApplicationShortcut(application)}
+                          title={`Open ${application.name}`}
+                          className="flex min-h-36 w-full flex-col items-center justify-center gap-3 p-4 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300"
+                        >
+                          <span
+                            className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-[20px] border border-white/10 bg-slate-900 shadow-xl transition-transform duration-200 group-hover:scale-105"
+                            style={metadata ? { background: metadata.iconBg } : undefined}
+                          >
+                            {application.kind === 'arlo' ? (
+                              <AppIcon
+                                appId={application.id}
+                                className="h-full w-full object-cover"
+                                fallback={<AppWindow className="h-7 w-7 text-sky-200" />}
+                              />
+                            ) : application.iconUrl ? (
+                              <img src={application.iconUrl} alt="" className="h-full w-full object-contain p-1" />
+                            ) : (
+                              <AppWindow className="h-7 w-7 text-sky-200" />
+                            )}
+                          </span>
+                          <span className="w-full min-w-0">
+                            <span className="block truncate text-xs font-semibold text-slate-100">{application.name}</span>
+                            <span className="mt-1 block truncate text-[10px] text-slate-500">
+                              {application.kind === 'arlo' ? metadata?.category : 'This PC'}
+                            </span>
+                          </span>
+                        </button>
+                        {application.kind === 'local' && (
+                          <button
+                            type="button"
+                            onClick={() => removeLocalApplication(application.id)}
+                            aria-label={`Remove ${application.name} from Finder`}
+                            title="Remove from Finder"
+                            className="absolute right-2 top-2 rounded-lg p-1.5 text-slate-500 opacity-0 transition hover:bg-rose-400/15 hover:text-rose-200 focus:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 group-hover:opacity-100"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex min-h-56 flex-col items-center justify-center rounded-3xl border border-dashed border-white/10 bg-white/[0.02] px-6 text-center">
+                  <Search className="mb-3 h-8 w-8 text-slate-600" />
+                  <p className="text-sm font-semibold text-slate-200">No applications match “{searchQuery}”</p>
+                  <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-500">Clear the search to browse your apps, or add a desktop app from a Finder-connected folder.</p>
+                </div>
+              )}
+            </div>
+          ) : currentFiles.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 py-16">
               <Folder className="w-16 h-16 mb-3 opacity-20 text-sky-400" />
               <p className="text-sm font-semibold text-slate-300">This folder is empty</p>
@@ -1816,6 +2204,24 @@ export const FinderApp: React.FC = () => {
                     key={file.id}
                     draggable={!isRenaming}
                     onDragStart={event => handleFileDragStart(event, file)}
+                    onDragOver={event => {
+                      if (file.type !== 'folder') return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setDragOverFolderId(file.id);
+                    }}
+                    onDragLeave={event => {
+                      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                        setDragOverFolderId(current => current === file.id ? null : current);
+                      }
+                    }}
+                    onDrop={event => {
+                      if (file.type !== 'folder') return;
+                      const destinationPath = file.hostPath
+                        ? file.hostPath
+                        : `${file.path.replace(/\/+$/, '')}/${file.name}`.replace(/\/+/g, '/');
+                      void handleFinderDrop(event, destinationPath, Boolean(file.hostPath));
+                    }}
                     onClick={e => {
                       e.stopPropagation();
                       if (e.metaKey || e.ctrlKey) {
@@ -1829,11 +2235,14 @@ export const FinderApp: React.FC = () => {
                     }}
                     onDoubleClick={e => {
                       e.stopPropagation();
-                      handleOpenFile(file);
+                      if (file.type === 'image') void contextAction(() => openImageFilmstrip(file));
+                      else handleOpenFile(file);
                     }}
                     onContextMenu={e => handleContextMenu(e, file.id)}
                     className={`group flex flex-col items-center p-3 rounded-2xl cursor-pointer transition-all duration-150 border relative ${
-                      isSelected
+                      dragOverFolderId === file.id
+                        ? 'bg-sky-500/25 border-sky-300 shadow-lg shadow-sky-950/30 text-white scale-[1.02]'
+                        : isSelected
                         ? 'bg-sky-500/25 border-sky-400/80 shadow-lg text-white'
                         : 'border-transparent hover:bg-white/5 text-slate-300 hover:text-white'
                     }`}
@@ -1898,6 +2307,24 @@ export const FinderApp: React.FC = () => {
                       key={file.id}
                       draggable={!isRenaming}
                       onDragStart={event => handleFileDragStart(event, file)}
+                      onDragOver={event => {
+                        if (file.type !== 'folder') return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setDragOverFolderId(file.id);
+                      }}
+                      onDragLeave={event => {
+                        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                          setDragOverFolderId(current => current === file.id ? null : current);
+                        }
+                      }}
+                      onDrop={event => {
+                        if (file.type !== 'folder') return;
+                        const destinationPath = file.hostPath
+                          ? file.hostPath
+                          : `${file.path.replace(/\/+$/, '')}/${file.name}`.replace(/\/+/g, '/');
+                        void handleFinderDrop(event, destinationPath, Boolean(file.hostPath));
+                      }}
                       onClick={e => {
                         e.stopPropagation();
                         if (e.metaKey || e.ctrlKey) {
@@ -1911,11 +2338,12 @@ export const FinderApp: React.FC = () => {
                       }}
                       onDoubleClick={e => {
                         e.stopPropagation();
-                        handleOpenFile(file);
+                        if (file.type === 'image') void contextAction(() => openImageFilmstrip(file));
+                        else handleOpenFile(file);
                       }}
                       onContextMenu={e => handleContextMenu(e, file.id)}
                       className={`grid grid-cols-12 py-2 px-2 items-center cursor-pointer rounded-xl transition-colors ${
-                        isSelected ? 'bg-sky-500/30 text-white font-medium' : 'hover:bg-white/5 text-slate-300'
+                        dragOverFolderId === file.id ? 'bg-sky-500/25 text-white ring-1 ring-sky-300/70' : isSelected ? 'bg-sky-500/30 text-white font-medium' : 'hover:bg-white/5 text-slate-300'
                       }`}
                     >
                       <div className="col-span-6 flex items-center gap-2.5 truncate">
@@ -2416,18 +2844,54 @@ export const FinderApp: React.FC = () => {
               <span className="ml-2 text-slate-500">{imageFilmstrip.index + 1} / {imageFilmstrip.files.length}</span>
             </div>
             <div className="flex items-center gap-1">
-              <button type="button" aria-label="Previous image" onClick={() => setImageFilmstrip(current => current ? { ...current, index: (current.index - 1 + current.files.length) % current.files.length } : null)} className="rounded-lg p-2 text-slate-300 hover:bg-white/10"><ChevronLeft className="h-4 w-4" /></button>
+              <button type="button" aria-label="Previous image" onClick={() => stepImageFilmstrip(-1)} className="rounded-lg p-2 text-slate-300 transition hover:bg-white/10 hover:text-white"><ChevronLeft className="h-4 w-4" /></button>
               <button type="button" aria-label={imageFilmstrip.playing ? 'Pause slideshow' : 'Start slideshow'} onClick={() => setImageFilmstrip(current => current ? { ...current, playing: !current.playing } : null)} className="rounded-lg p-2 text-slate-300 hover:bg-white/10">{imageFilmstrip.playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}</button>
-              <button type="button" aria-label="Next image" onClick={() => setImageFilmstrip(current => current ? { ...current, index: (current.index + 1) % current.files.length } : null)} className="rounded-lg p-2 text-slate-300 hover:bg-white/10"><ChevronRight className="h-4 w-4" /></button>
+              <button type="button" aria-label="Next image" onClick={() => stepImageFilmstrip(1)} className="rounded-lg p-2 text-slate-300 transition hover:bg-white/10 hover:text-white"><ChevronRight className="h-4 w-4" /></button>
               <button type="button" aria-label="Close filmstrip" onClick={() => setImageFilmstrip(null)} className="ml-2 rounded-lg p-2 text-slate-300 hover:bg-white/10"><X className="h-4 w-4" /></button>
             </div>
           </header>
-          <div className="flex min-h-0 flex-1 items-center justify-center p-4">
-            <img src={imageFilmstrip.files[imageFilmstrip.index]?.previewUrl} alt={imageFilmstrip.files[imageFilmstrip.index]?.name ?? 'Image preview'} className="max-h-full max-w-full object-contain" />
+          <div
+            className="group/preview relative flex min-h-0 flex-1 touch-pan-y items-center justify-center overflow-hidden p-4 sm:p-8"
+            onPointerDown={event => {
+              imageSwipeStart.current = event.clientX;
+            }}
+            onPointerUp={event => {
+              if (imageSwipeStart.current === null) return;
+              const distance = event.clientX - imageSwipeStart.current;
+              imageSwipeStart.current = null;
+              if (Math.abs(distance) > 55) stepImageFilmstrip(distance < 0 ? 1 : -1);
+            }}
+            onPointerCancel={() => {
+              imageSwipeStart.current = null;
+            }}
+          >
+            <AnimatePresence mode="wait" initial={false} custom={imageSlideDirection}>
+              <motion.img
+                key={imageFilmstrip.files[imageFilmstrip.index]?.id}
+                custom={imageSlideDirection}
+                src={imageFilmstrip.files[imageFilmstrip.index]?.previewUrl}
+                alt={imageFilmstrip.files[imageFilmstrip.index]?.name ?? 'Image preview'}
+                initial={{ opacity: 0, x: imageSlideDirection * 42, scale: 0.985 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: imageSlideDirection * -42, scale: 0.985 }}
+                transition={{ type: 'spring', stiffness: 340, damping: 34 }}
+                draggable={false}
+                className="max-h-full max-w-full select-none rounded-lg object-contain shadow-[0_24px_80px_rgba(0,0,0,0.35)]"
+              />
+            </AnimatePresence>
+            <button type="button" aria-label="Previous image" onClick={() => stepImageFilmstrip(-1)} className="absolute left-5 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/35 text-white/75 opacity-0 shadow-lg backdrop-blur-md transition duration-200 hover:scale-105 hover:bg-black/55 hover:text-white focus-visible:opacity-100 focus-visible:outline-none group-hover/preview:opacity-100">
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button type="button" aria-label="Next image" onClick={() => stepImageFilmstrip(1)} className="absolute right-5 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/35 text-white/75 opacity-0 shadow-lg backdrop-blur-md transition duration-200 hover:scale-105 hover:bg-black/55 hover:text-white focus-visible:opacity-100 focus-visible:outline-none group-hover/preview:opacity-100">
+              <ChevronRight className="h-5 w-5" />
+            </button>
           </div>
-          <div className="flex h-24 shrink-0 gap-2 overflow-x-auto border-t border-white/10 p-2">
+          <div ref={filmstripThumbsRef} className="flex h-24 shrink-0 gap-2 overflow-x-auto border-t border-white/10 bg-white/[0.025] p-2">
             {imageFilmstrip.files.map((file, index) => (
-              <button key={file.id} type="button" onClick={() => setImageFilmstrip(current => current ? { ...current, index } : null)} aria-label={`Show ${file.name}`} aria-current={imageFilmstrip.index === index} className={`h-full w-24 shrink-0 overflow-hidden rounded-lg border ${imageFilmstrip.index === index ? 'border-sky-400' : 'border-white/10 opacity-70 hover:opacity-100'}`}>
+              <button key={file.id} type="button" onClick={() => {
+                setImageSlideDirection(index >= imageFilmstrip.index ? 1 : -1);
+                setImageFilmstrip(current => current ? { ...current, index } : null);
+              }} data-active={imageFilmstrip.index === index} aria-label={`Show ${file.name}`} aria-current={imageFilmstrip.index === index} className={`h-full w-24 shrink-0 overflow-hidden rounded-lg border transition duration-200 hover:scale-[1.03] ${imageFilmstrip.index === index ? 'border-white/40 opacity-100 shadow-[0_0_18px_rgba(255,255,255,0.12)]' : 'border-white/10 opacity-65 hover:opacity-100'}`}>
                 <img src={file.previewUrl} alt="" className="h-full w-full object-cover" />
               </button>
             ))}
@@ -2634,6 +3098,68 @@ export const FinderApp: React.FC = () => {
               <button type="button" onClick={() => void contextAction(() => saveMediaIntoApp(saveToAppFile, saveDestination))} className="rounded-xl bg-sky-500 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-400">Save here</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {showKeyboardShortcuts && (
+        <div
+          className="fixed inset-0 z-[260] flex items-center justify-center bg-black/65 p-4 backdrop-blur-md"
+          onClick={() => setShowKeyboardShortcuts(false)}
+        >
+          <motion.section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="finder-shortcuts-title"
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8 }}
+            className="w-full max-w-xl overflow-hidden rounded-3xl border border-white/15 bg-slate-950/95 text-white shadow-[0_32px_100px_rgba(0,0,0,0.6)]"
+            onClick={event => event.stopPropagation()}
+          >
+            <header className="flex items-center justify-between border-b border-white/10 bg-gradient-to-r from-sky-500/10 to-indigo-500/10 px-5 py-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-sky-300/20 bg-sky-400/10 text-sky-200">
+                  <Keyboard className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2 id="finder-shortcuts-title" className="text-sm font-semibold">Finder keyboard shortcuts</h2>
+                  <p className="mt-0.5 text-[11px] text-slate-400">Use Ctrl on Windows; Cmd on Mac.</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setShowKeyboardShortcuts(false)} aria-label="Close shortcuts" className="rounded-xl p-2 text-slate-400 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">
+                <X className="h-4 w-4" />
+              </button>
+            </header>
+            <div className="grid gap-x-8 gap-y-1 p-5 sm:grid-cols-2">
+              {[
+                ['Open selected item', 'Enter'],
+                ['Quick Look preview', 'Space'],
+                ['Rename selected item', 'F2'],
+                ['Select all items', 'Ctrl / Cmd + A'],
+                ['Copy / Cut / Paste', 'Ctrl / Cmd + C / X / V'],
+                ['Duplicate in ARLO Drive', 'Ctrl / Cmd + D'],
+                ['Move selected to Trash', 'Delete'],
+                ['Create a new file', 'Ctrl / Cmd + N'],
+                ['Create a new folder', 'Ctrl / Cmd + Shift + N'],
+                ['Find files in this location', 'Ctrl / Cmd + F or /'],
+                ['Go back / forward', 'Alt + ← / →'],
+                ['Refresh this location', 'F5'],
+                ['Show / hide details', 'Ctrl / Cmd + I'],
+                ['Move selection', 'Arrow keys'],
+                ['Clear selection / search', 'Esc'],
+                ['Show this shortcut list', '? or F1'],
+              ].map(([label, shortcut]) => (
+                <div key={label} className="flex min-h-10 items-center justify-between gap-3 border-b border-white/[0.05] py-2">
+                  <span className="text-xs text-slate-300">{label}</span>
+                  <kbd className="shrink-0 rounded-lg border border-white/10 bg-white/[0.045] px-2 py-1 font-mono text-[10px] text-slate-200">{shortcut}</kbd>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-white/10 px-5 py-3">
+              <p className="text-[10px] text-slate-500">Drag ARLO items onto folders to move them. Drop files from your PC into ARLO Drive to import.</p>
+              <button type="button" onClick={() => setShowKeyboardShortcuts(false)} className="shrink-0 rounded-xl bg-sky-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">Done</button>
+            </div>
+          </motion.section>
         </div>
       )}
     </div>

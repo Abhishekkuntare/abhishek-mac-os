@@ -97,12 +97,11 @@ export interface MascotCompanionConfig {
   hair: 'soft' | 'spiky' | 'curly' | 'none';
   outfit: 'classic' | 'hoodie' | 'sport' | 'formal';
   accessory: 'none' | 'glasses' | 'headphones' | 'crown';
-  announceNotifications: boolean;
 }
 
 export const defaultMascotCompanionConfig = (): MascotCompanionConfig => ({
   name: 'Arlo',
-  visible: false,
+  visible: true,
   x: Math.max(16, window.innerWidth - 136),
   y: Math.max(72, window.innerHeight - 188),
   size: 104,
@@ -111,7 +110,6 @@ export const defaultMascotCompanionConfig = (): MascotCompanionConfig => ({
   hair: 'soft',
   outfit: 'classic',
   accessory: 'none',
-  announceNotifications: true,
 });
 
 export const loadMascotCompanionConfig = (): MascotCompanionConfig => {
@@ -136,7 +134,6 @@ export const loadMascotCompanionConfig = (): MascotCompanionConfig => {
       hair: ['soft', 'spiky', 'curly', 'none'].includes(parsed.hair ?? '') ? parsed.hair! : fallback.hair,
       outfit: ['classic', 'hoodie', 'sport', 'formal'].includes(parsed.outfit ?? '') ? parsed.outfit! : fallback.outfit,
       accessory: ['none', 'glasses', 'headphones', 'crown'].includes(parsed.accessory ?? '') ? parsed.accessory! : fallback.accessory,
-      announceNotifications: parsed.announceNotifications !== false,
     };
   } catch (error) {
     console.warn('[Mascot] Could not load companion preferences:', error);

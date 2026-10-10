@@ -12,28 +12,43 @@ Doom Scroll brings Instagram, Snapchat, WhatsApp, X, Threads, LinkedIn, Discord,
 
 ## ✨ Features
 
-* 🖥️ Modern desktop environment
-* 🎨 Customizable wallpapers and visual appearance
-* 🪟 Desktop windows and application management
-* 📁 File and folder workflows
-* 🌐 Built-in browser experience
+* 🖥️ Modern desktop environment with a resizable, multi-window workflow
+* 🧊 Jelly Notch / dynamic-island style top bar with widgets, system status, media controls, and dashboard shortcuts
+* 🎨 Customizable wallpapers, themes, glassmorphism surfaces, and immersive desktop styling
+* 🪟 Desktop windows, dock, task switching, notifications, and system controls
+* 📁 Finder and virtual file system with local folder support, trash management, and Quick Look previews
+* 🌐 Built-in browser experience with a streamlined, privacy-conscious workflow
 * 🌌 Doom Scroll social hub for opening official social and music websites
-* 💻 Developer-focused tools
-* 📝 Productivity applications
-* 📅 Calendar and reminders
-* 🧮 Calculator
-* 📷 Camera application
-* 🎵 Media and entertainment applications
-* ⚙️ System settings
-* 🔔 Notifications and system interactions
-* 📊 Activity tracking and recent user actions with your own bot arlo custmizable
-* 👻 Ghost AI — OS-level AI assistant for natural-language desktop automation with Lily
-* 📱 Responsive layouts
-* ✨ Animated and glass-inspired interface
-* 🔄 Automatic application updates
-* 🔐 Authenticode-signed Windows releases (after code-signing approval)
+* 📱 iPhone Mirroring / Sidecar support for phone screen sharing, live camera, notifications, and clipboard sync
+* 🤝 Universal Share for secure QR-paired file and clipboard transfers between devices
+* 💻 Developer-focused tools including Nextpad++, Code Studio, Terminal, and local file workflows
+* 📝 Productivity apps for notes, calendar, reminders, and task management
+* 🧮 Calculator, camera, media players, and entertainment apps
+* 🎵 Music, Photos, and video playback experiences
+* ⚙️ System settings, control center, host connectivity, Bluetooth, Wi‑Fi, battery, and notification controls
+* 📊 Activity tracking and recent user actions for contextual productivity and AI workflows
+* 👻 Ghost AI — OS-level AI assistant for natural-language desktop automation with Lily and wake-word voice control
+* 🕵️ Ghost Detectives — specialist detective roles with quick app launch and desktop troubleshooting support
+* 🔎 Meaning-based search across ARLO-imported text, code, browser history, and authorized local folders
+* 🔐 Privacy-aware permissions, local-only processing, and project-level cloud analytics opt-in
+* 📱 Responsive layouts designed for desktop-first use with polished motion and tactile interactions
+* 🔄 Automatic application updates and Windows release support
+* 🔒 Authenticode / Microsoft Store-ready signing workflow for Windows distribution
 
 Features may evolve as the project develops.
+
+### New in this update
+
+ARLO OS has recently expanded with a more complete desktop ecosystem and smarter AI workflows, including:
+
+* Jelly Notch — a dynamic island-style top panel with live widgets, quick controls, and a polished desktop dashboard
+* Ghost Detectives — a specialist detective system that lets users choose a role and launch ARLO apps directly from a themed workspace
+* iPhone Mirroring and Sidecar-style desktop streaming for mobile continuity and cross-device control
+* Universal Share — secure QR-paired transfer of files, text, URLs, clipboard content, and workspace metadata
+* Ghost AI upgrades — Gemini-powered assistant with wake-word voice support, local speech processing, Focus Mode, and tool execution safeguards
+* Finder improvements — local folder access, Quick Look previews, file operations, and better desktop file management
+* Meaning-based local search — content-aware search across user data, code, and browser URLs without sending data off-device
+* Control Center and host integrations — Wi‑Fi, Bluetooth, battery, and system status monitoring from the desktop UI
 
 ### Optional cloud profile analytics
 
@@ -42,6 +57,14 @@ Users may opt in during setup to share their profile with the project's private 
 ### Desktop themes
 
 The Themes section in Settings offers animated previews for 29 visual themes. ARLO OS's original appearance is the default; selecting a theme applies its colors and surfaces across the desktop, system panels, and built-in applications, and the choice is saved between launches. Use **Original Desktop** to restore the default appearance.
+
+### Jelly Notch (dynamic island)
+
+The Jelly Notch is the desktop's dynamic-island style top panel. It shows live system information and app widgets, supports glassy or transparent materials, and can be customized for width, height, shape, animation, opacity, and blur. The notch can surface quick actions like Ghost AI, notifications, media controls, and desktop status updates without crowding the workspace.
+
+### Ghost Detectives
+
+Ghost Detectives is a themed desktop helper that lets users pick a specialist detective persona with unique capabilities and quick access to ARLO OS tools. The selected detective is saved and reused by Ghost AI, and the workspace provides direct app launches, desktop shortcuts, and role-based guidance for everyday tasks.
 
 ### Code Studio runtimes
 

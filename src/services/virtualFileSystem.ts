@@ -321,7 +321,7 @@ export class VirtualFileSystem {
     if (collisions.length > 0) {
       return {
         moved: [],
-        error: `An item named "${collisions[0].name}" already exists on the Desktop.`,
+        error: `An item named "${collisions[0].name}" already exists in the destination folder.`,
       };
     }
 

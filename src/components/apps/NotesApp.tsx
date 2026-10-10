@@ -42,6 +42,7 @@ import {
 } from 'motion/react';
 
 import { sound } from '../../services/soundService';
+import { NOTES_UPDATED_EVENT } from '../../services/notesService';
 
 interface Note {
   id: string;
@@ -374,6 +375,7 @@ export const NotesApp: React.FC = () => {
           STORAGE_KEY,
           JSON.stringify(notes)
         );
+        window.dispatchEvent(new Event(NOTES_UPDATED_EVENT));
 
         setSaveState('saved');
       } catch {
@@ -661,6 +663,7 @@ export const NotesApp: React.FC = () => {
           STORAGE_KEY,
           JSON.stringify(notes)
         );
+        window.dispatchEvent(new Event(NOTES_UPDATED_EVENT));
 
         setSaveState('saved');
         showToast('Note saved');

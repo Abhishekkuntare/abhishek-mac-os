@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.8.0",
   "type": "module",
-  "productName": "ARLO OS",
+  "productName": "Arlo Desktop Environment",
   "description": "ARLO OS — a personal desktop experience built with React and Electron.",
   "author": "Abhishek Kuntare",
   "main": "electron-main.mjs",

@@ -1,6 +1,6 @@
 {
   "appId": "com.abhishekkuntare.abhishekos",
-  "productName": "ARLO OS",
+  "productName": "Arlo Desktop Environment",
   "copyright": "Copyright © 2026 Abhishek Kuntare",
   "asar": true,
   "directories": {
@@ -50,7 +50,7 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "ARLO OS",
+    "shortcutName": "Arlo Desktop Environment",
     "installerIcon": "build/icon.ico",
     "uninstallerIcon": "build/icon.ico",
     "deleteAppDataOnUninstall": false,

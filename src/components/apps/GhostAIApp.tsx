@@ -26,9 +26,25 @@ import { executeGhostCommand } from '../../services/ghostCommands';
 import { runGhostChat } from '../../services/ghostChatClient';
 import { GhostChatError } from '../../types/ghostAgent';
 import type { GhostToolHost } from '../../types/ghostAgent';
+import { routeGhostRequest } from '../../services/ghostOrchestrator';
+import { GhostActivityFeed } from '../system/GhostActivityFeed';
+import { requestNotchCameraCapture } from '../../services/notchCameraBridge';
 import { APP_REGISTRY } from '../../data/defaultApps';
 import { vfs } from '../../services/virtualFileSystem';
-import { createGhostDesktopItem, getGhostLocalTime } from '../../services/ghostDesktopActions';
+import {
+  createGhostDesktopItem,
+  deleteGhostDesktopItem,
+  getGhostLocalTime,
+  renameGhostDesktopItem,
+  searchGhostAuthorizedFiles,
+} from '../../services/ghostDesktopActions';
+import { GHOST_CHAT_STORAGE_KEY, GHOST_CHAT_UPDATED_EVENT } from '../../services/ghostChatHistory';
+import {
+  DETECTIVE_CONFIG_UPDATED_EVENT,
+  getDetective,
+  loadDetectiveConfig,
+  type DetectiveConfig,
+} from '../system/detectiveModel';
 
 interface ChatMessage {
   id: string;
@@ -37,7 +53,6 @@ interface ChatMessage {
   createdAt: number;
 }
 
-const CHAT_STORAGE_KEY = 'abhishek_os_ghost_ai_chat_v1';
 const MODELS = ['gemini-3.8-flash'];
 const STARTER_PROMPTS = [
   'Help me plan a focused workday',
@@ -47,7 +62,7 @@ const STARTER_PROMPTS = [
 
 const readChat = (): ChatMessage[] => {
   try {
-    const saved = localStorage.getItem(CHAT_STORAGE_KEY);
+    const saved = localStorage.getItem(GHOST_CHAT_STORAGE_KEY);
     if (!saved) return [];
     const parsed: unknown = JSON.parse(saved);
     if (!Array.isArray(parsed)) throw new Error('Saved chat is not a list.');
@@ -70,7 +85,7 @@ const displayTime = (timestamp: number) =>
   new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
 export const GhostAIApp: React.FC = () => {
-  const { openApp, showDesktop, updateSettings, windows, closeWindow, user, settings } = useOS();
+  const { openApp, showDesktop, updateSettings, windows, closeWindow, user, settings, snapWindow } = useOS();
   const [messages, setMessages] = useState<ChatMessage[]>(readChat);
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
   const [model, setModel] = useState(MODELS[0]);
@@ -83,10 +98,21 @@ export const GhostAIApp: React.FC = () => {
   const [isKeySettingsOpen, setIsKeySettingsOpen] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [detectiveConfig, setDetectiveConfig] = useState<DetectiveConfig>(loadDetectiveConfig);
+  const selectedDetective = getDetective(detectiveConfig);
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const endOfChatRef = useRef<HTMLDivElement>(null);
   const activeRequestIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const handleDetectiveConfig = (event: Event) => {
+      const config = (event as CustomEvent<DetectiveConfig>).detail;
+      if (config) setDetectiveConfig(config);
+    };
+    window.addEventListener(DETECTIVE_CONFIG_UPDATED_EVENT, handleDetectiveConfig);
+    return () => window.removeEventListener(DETECTIVE_CONFIG_UPDATED_EVENT, handleDetectiveConfig);
+  }, []);
 
   useEffect(() => () => {
     if (activeRequestIdRef.current) {
@@ -98,12 +124,27 @@ export const GhostAIApp: React.FC = () => {
 
   useEffect(() => {
     try {
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
+      localStorage.setItem(GHOST_CHAT_STORAGE_KEY, JSON.stringify(messages));
+      window.dispatchEvent(new Event(GHOST_CHAT_UPDATED_EVENT));
     } catch (error) {
       console.error('[Ghost AI] Could not save the conversation on this device:', error);
       setErrorMessage('This conversation could not be saved on this device.');
     }
   }, [messages]);
+
+  useEffect(() => {
+    const refreshChat = () => {
+      const nextMessages = readChat();
+      setMessages(current =>
+        JSON.stringify(current) === JSON.stringify(nextMessages) ? current : nextMessages);
+    };
+    window.addEventListener(GHOST_CHAT_UPDATED_EVENT, refreshChat);
+    window.addEventListener('storage', refreshChat);
+    return () => {
+      window.removeEventListener(GHOST_CHAT_UPDATED_EVENT, refreshChat);
+      window.removeEventListener('storage', refreshChat);
+    };
+  }, []);
 
   useEffect(() => {
     endOfChatRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -190,6 +231,7 @@ export const GhostAIApp: React.FC = () => {
   const submitPrompt = async (value = prompt) => {
     const content = value.trim();
     if (!content || isThinking) return;
+    const requestDetective = routeGhostRequest(content, selectedDetective);
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -240,23 +282,8 @@ export const GhostAIApp: React.FC = () => {
           }
           return `Created ${type} "${safeName}" on the desktop.`;
         },
-        renameDesktopItem: (name, newName) => {
-          const target = vfs.getFiles('/Users/abhishek/Desktop')
-            .find(file => file.name.toLocaleLowerCase() === name.toLocaleLowerCase());
-          if (!target) return null;
-          if (!newName.trim() || newName.length > 100 || /[\\/]/.test(newName)) {
-            throw new Error('Desktop names must be 1–100 characters and cannot contain slashes.');
-          }
-          if (!vfs.rename(target.id, newName)) throw new Error(`Could not rename "${name}".`);
-          return `Renamed "${name}" to "${newName}".`;
-        },
-        deleteDesktopItem: name => {
-          const target = vfs.getFiles('/Users/abhishek/Desktop')
-            .find(file => file.name.toLocaleLowerCase() === name.toLocaleLowerCase());
-          if (!target) return null;
-          if (!vfs.moveToTrash(target.id)) throw new Error(`Could not move "${name}" to Trash.`);
-          return `Moved "${name}" to Trash.`;
-        },
+        renameDesktopItem: renameGhostDesktopItem,
+        deleteDesktopItem: deleteGhostDesktopItem,
         updateSettings,
         getBatteryStatus: () => ({
           available: settings.batteryAvailable,
@@ -264,7 +291,7 @@ export const GhostAIApp: React.FC = () => {
           charging: settings.batteryCharging,
           plugged: settings.batteryPlugged,
         }),
-      });
+      }, undefined, undefined, requestDetective.permittedTools);
       if (commandReply) {
         setMessages(current => [
           ...current,
@@ -292,6 +319,8 @@ export const GhostAIApp: React.FC = () => {
           return true;
         },
         createDesktopItem: createGhostDesktopItem,
+        renameDesktopItem: renameGhostDesktopItem,
+        deleteDesktopItem: deleteGhostDesktopItem,
         showDesktop,
         getLocalTime: getGhostLocalTime,
         getBatteryStatus: () => ({
@@ -301,11 +330,45 @@ export const GhostAIApp: React.FC = () => {
           plugged: settings.batteryPlugged,
         }),
         setFocusMode: enabled => updateSettings({ doNotDisturb: enabled }),
+        requestCameraCapture: requestNotchCameraCapture,
+        searchAuthorizedFiles: searchGhostAuthorizedFiles,
+        getSystemInfo: async () => {
+          if (!window.electronAPI?.getResourceUsage) throw new Error('System resource information is unavailable.');
+          const usage = await window.electronAPI.getResourceUsage();
+          const cpu = usage.cpuPercent === null ? 'unavailable' : `${Math.round(usage.cpuPercent)}%`;
+          const memory = usage.memoryUsedBytes === null || usage.memoryTotalBytes === null
+            ? 'unavailable'
+            : `${(usage.memoryUsedBytes / 1024 ** 3).toFixed(1)} GB of ${(usage.memoryTotalBytes / 1024 ** 3).toFixed(1)} GB`;
+          return `CPU usage: ${cpu}. Memory: ${memory}.`;
+        },
+        arrangeWindow: (appId, position) => {
+          const candidates = windows.filter(win => win.appId === appId && !win.isMinimized);
+          const focused = candidates.filter(win => win.isFocused);
+          const target = focused.length === 1 ? focused[0] : candidates.length === 1 ? candidates[0] : null;
+          if (!target) {
+            return {
+              success: false,
+              result: candidates.length
+                ? `There are multiple open ${APP_REGISTRY[appId as keyof typeof APP_REGISTRY]?.name ?? 'app'} windows. Specify which one to arrange.`
+                : 'That app does not have an open window.',
+            };
+          }
+          snapWindow(target.id, position);
+          return { success: true, result: `${APP_REGISTRY[appId as keyof typeof APP_REGISTRY].name} moved to ${position}.` };
+        },
       };
       const answer = await runGhostChat(nextMessages.map(message => ({
           role: message.role,
           content: message.content,
-        })), user.displayName, toolHost, requestId);
+        })), user.displayName, toolHost, {
+          name: requestDetective.name,
+          role: requestDetective.role,
+          personality: requestDetective.personality,
+          description: requestDetective.description,
+          skills: [...requestDetective.skills],
+          instructions: 'instructions' in requestDetective ? requestDetective.instructions : '',
+          permittedTools: [...requestDetective.permittedTools],
+        }, requestId);
 
       setMessages(current => [
         ...current,
@@ -512,6 +575,7 @@ export const GhostAIApp: React.FC = () => {
         </header>
 
         <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <GhostActivityFeed />
           {messages.length === 0 ? (
             <div className="relative flex flex-1 flex-col items-center justify-center overflow-auto px-5 py-10">
               <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(ellipse_at_top,rgba(14,165,233,.12),transparent_68%)]" />

@@ -257,4 +257,4 @@ export const WALLPAPERS: Wallpaper[] = [
   }
 ];
 
-export const DEFAULT_WALLPAPER = WALLPAPERS[0]; // canyon silk from reference #1!
+export const DEFAULT_WALLPAPER = WALLPAPERS.find(wallpaper => wallpaper.id === 'abhishek-big-sur') ?? WALLPAPERS[0];

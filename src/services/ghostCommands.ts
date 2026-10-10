@@ -26,6 +26,9 @@ export interface GhostCommandResult {
   pendingCreate?: PendingCreateType;
 }
 
+const unavailableToolReply = (tool: string) =>
+  `This detective does not have the ${tool.replaceAll('_', ' ')} capability. Select a detective with that capability to continue.`;
+
 const APP_ALIASES: Record<string, string> = {
   'code studio': 'codestudio',
   'development workspace': 'codestudio',
@@ -171,11 +174,14 @@ export const executeGhostCommand = async (
   host: GhostCommandHost,
   pendingCreate?: PendingCreateType,
   detectedLanguage?: string,
+  permittedTools?: readonly string[],
 ): Promise<GhostCommandResult | null> => {
   const language = detectGhostCommandLanguage(rawCommand, detectedLanguage);
   const command = normalize(cleanAddressing(rawCommand));
+  const canUse = (tool: string) => !permittedTools || permittedTools.includes(tool);
 
   if (pendingCreate) {
+    if (!canUse('create_desktop_item')) return { reply: unavailableToolReply('create_desktop_item') };
     const name = command.replace(/^(?:call it|name it|named|it is|it's|is|नाम|नाव)\s+/i, '').trim();
     if (!name) return { reply: `Tell me the name for the ${pendingCreate}.`, pendingCreate };
     return { reply: host.createDesktopItem(pendingCreate, name) };
@@ -193,30 +199,36 @@ export const executeGhostCommand = async (
   }
 
   if (/(?:what(?:'s| is) the time|what time is it|current time|tell me the time|what day is it|what(?:'s| is) today'?s date|today'?s date|समय क्या हुआ|अभी कितने बजे|आज कौन सा दिन|आज की तारीख क्या|samay kya hua|abhi kitne baje|aaj kaun sa din|aaj ki tareekh kya|आत्ता किती वाजले|आज कोणता वार|आजची तारीख काय|atta kiti vajle|aaj konta vaar|aajchi tarikh kay)/i.test(command)) {
+    if (!canUse('get_local_time')) return { reply: unavailableToolReply('get_local_time') };
     return { reply: readClock(language, new Date()) };
   }
 
   if (/(?:battery|charging|charge status|बैटरी|चार्ज|चार्जिंग|battery kitni|battery kiti|charge aahe ka|charging ahe ka|charging hai kya)/i.test(command)) {
+    if (!canUse('get_battery_status')) return { reply: unavailableToolReply('get_battery_status') };
     return { reply: readBattery(language, host.getBatteryStatus?.()) };
   }
 
   if (/^(?:show|reveal) (?:the )?desktop$/.test(command) || /^(?:डेस्कटॉप दिखाओ|डेस्कटॉप दाखव|desktop dikhाओ)$/i.test(command)) {
+    if (!canUse('show_desktop')) return { reply: unavailableToolReply('show_desktop') };
     await host.showDesktop();
     return { reply: localized(language, 'Showing the desktop.', 'डेस्कटॉप दिखा रही हूँ।', 'डेस्कटॉप दाखवत आहे.') };
   }
 
-  if (/^(?:enable|turn on|start) focus(?: mode)?$/.test(command)) {
+  if (/^(?:enable|turn on|start) (?:the )?focus(?: mode)?$/.test(command)) {
+    if (!canUse('set_focus_mode')) return { reply: unavailableToolReply('set_focus_mode') };
     host.updateSettings({ doNotDisturb: true });
     return { reply: localized(language, 'Focus Mode is on.', 'फोकस मोड चालू है।', 'फोकस मोड सुरू आहे.') };
   }
 
-  if (/^(?:disable|turn off|stop) focus(?: mode)?$/.test(command)) {
+  if (/^(?:disable|turn off|stop) (?:the )?focus(?: mode)?$/.test(command)) {
+    if (!canUse('set_focus_mode')) return { reply: unavailableToolReply('set_focus_mode') };
     host.updateSettings({ doNotDisturb: false });
     return { reply: localized(language, 'Focus Mode is off.', 'फोकस मोड बंद है।', 'फोकस मोड बंद आहे.') };
   }
 
   const createMatch = getCreateCommand(command);
   if (createMatch) {
+    if (!canUse('create_desktop_item')) return { reply: unavailableToolReply('create_desktop_item') };
     const { type, name } = createMatch;
     if (!name) {
       return {
@@ -234,12 +246,14 @@ export const executeGhostCommand = async (
 
   const renameMatch = command.match(/^rename (.+?) to (.+)$/);
   if (renameMatch) {
+    if (!canUse('rename_desktop_item')) return { reply: unavailableToolReply('rename_desktop_item') };
     const result = host.renameDesktopItem(renameMatch[1], renameMatch[2]);
     return { reply: result ?? `I couldn't find "${renameMatch[1]}" on the desktop.` };
   }
 
   const deleteMatch = command.match(/^(?:delete|remove|move to trash) (.+)$/);
   if (deleteMatch) {
+    if (!canUse('delete_desktop_item')) return { reply: unavailableToolReply('delete_desktop_item') };
     if (/^(?:all|all files|all folders|everything|everything on (?:the )?desktop|the desktop)$/i.test(deleteMatch[1])) {
       return { reply: 'I won’t move everything at once. Tell me the exact desktop item you want moved to Trash.' };
     }
@@ -250,6 +264,7 @@ export const executeGhostCommand = async (
   const politePrefix = String.raw`(?:(?:please|can you|could you|would you|will you)\s+)*`;
   const closeMatch = command.match(new RegExp(`^${politePrefix}(?:close|quit|exit|बंद करो|बंद करें|बंद करा|बंद कर|band kara)\\s+(?:the |my )?(.+)$`, 'i'));
   if (closeMatch) {
+    if (!canUse('close_app')) return { reply: unavailableToolReply('close_app') };
     const target = normalize(closeMatch[1]);
     const appId = ['it', 'this', 'app', 'window', 'current app', 'this window'].includes(target)
       ? ''
@@ -275,6 +290,7 @@ export const executeGhostCommand = async (
   const appId = appIdFor(requestedApp);
   if (!appId || appId === 'trash') return null;
 
+  if (!canUse('open_app')) return { reply: unavailableToolReply('open_app') };
   return {
     reply: host.openApp(appId)
       ? localized(

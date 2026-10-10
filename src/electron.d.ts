@@ -78,6 +78,21 @@ declare global {
     plugged: boolean;
   }
 
+  interface SystemMediaState {
+    brightness: number | null;
+    volume: number | null;
+  }
+
+  interface NotchDeviceActivity {
+    kind: 'power' | 'usb' | 'display' | 'headphones' | 'controller' | 'storage' | 'bluetooth';
+    deviceName: string;
+    connected: boolean;
+  }
+
+  interface NotchClipboardActivity {
+    preview: string;
+  }
+
   interface CodeExecutionRequest {
     language: 'javascript' | 'python' | 'c' | 'cpp' | 'java';
     code: string;
@@ -106,12 +121,22 @@ declare global {
   interface GhostAIContext {
     displayName: string;
     availableApps: Array<{ id: string; name: string }>;
+    detective: {
+      name: string;
+      role: string;
+      personality: string;
+      description: string;
+      skills: string[];
+      instructions: string;
+      permittedTools: string[];
+    };
   }
 
   interface GhostAIToolCall {
     id: string;
     name: string;
     args: Record<string, unknown>;
+    thoughtSignature?: string;
   }
 
   interface GhostAIToolResult {
@@ -153,6 +178,13 @@ declare global {
       }) => void) => () => void;
       getConnectivityState: () => Promise<ConnectivityState>;
       getBatteryStatus: () => Promise<SystemBatteryStatus>;
+      getSystemMediaState: () => Promise<SystemMediaState>;
+      sendWindowsMediaCommand: (command: 'previous' | 'playPause' | 'next') => Promise<void>;
+      onSystemMediaState: (callback: (state: SystemMediaState) => void) => () => void;
+      setNotchClipboardMonitoring: (enabled: boolean) => Promise<void>;
+      setNotchDeviceMonitoring: (enabled: boolean) => Promise<void>;
+      onNotchClipboardActivity: (callback: (activity: NotchClipboardActivity) => void) => () => void;
+      onNotchDeviceActivity: (callback: (activity: NotchDeviceActivity) => void) => () => void;
       setWifiEnabled: (enabled: boolean) => Promise<ConnectivityState>;
       setBluetoothEnabled: (enabled: boolean) => Promise<ConnectivityState>;
       scanWifiNetworks: () => Promise<NearbyWifiNetwork[]>;
@@ -162,6 +194,7 @@ declare global {
       onBluetoothDevices: (callback: (devices: NearbyBluetoothDevice[]) => void) => () => void;
       onBrowserOpenUrl: (callback: (url: string) => void) => () => void;
       chooseLocalFolders: () => Promise<{ canceled: boolean; folders: LocalFolderGrant[] }>;
+      chooseLocalApplication: () => Promise<{ canceled: boolean; application?: { name: string; path: string; iconUrl?: string } }>;
       getLocalFolders: () => Promise<LocalFolderGrant[]>;
       grantAllDrives: () => Promise<LocalFolderGrant[]>;
       revokeAllDrives: () => Promise<LocalFolderGrant[]>;

@@ -24,6 +24,13 @@ import {
   type WeatherLocation,
 } from '../../services/weatherService';
 import { sound } from '../../services/soundService';
+import {
+  pauseStopwatch,
+  recordStopwatchLap,
+  resetStopwatch,
+  startStopwatch,
+  useStopwatch,
+} from '../../services/stopwatch';
 import { AppIcon } from '../system/AppIcon';
 
 type ClockTab = 'world' | 'alarms' | 'stopwatch' | 'timer';
@@ -132,11 +139,10 @@ export const ClockApp: React.FC = () => {
   const [searchError, setSearchError] = useState('');
   const [alarmTime, setAlarmTime] = useState('07:00');
   const [alarmLabel, setAlarmLabel] = useState('');
-  const [stopwatchElapsed, setStopwatchElapsed] = useState(0);
-  const [stopwatchRunning, setStopwatchRunning] = useState(false);
-  const [laps, setLaps] = useState<number[]>([]);
-  const stopwatchStartedAt = useRef<number | null>(null);
-  const stopwatchBase = useRef(0);
+  const stopwatch = useStopwatch();
+  const stopwatchElapsed = stopwatch.elapsedMs;
+  const stopwatchRunning = stopwatch.startedAt !== null;
+  const laps = stopwatch.laps;
   const [timerMinutes, setTimerMinutes] = useState('5');
   const [timerSeconds, setTimerSeconds] = useState('00');
   const [timerRemaining, setTimerRemaining] = useState(300000);
@@ -191,16 +197,6 @@ export const ClockApp: React.FC = () => {
 
     return () => window.clearInterval(interval);
   }, [alarms, addNotification, settings.clock24h]);
-
-  useEffect(() => {
-    if (!stopwatchRunning) return;
-    const interval = window.setInterval(() => {
-      if (stopwatchStartedAt.current !== null) {
-        setStopwatchElapsed(stopwatchBase.current + Date.now() - stopwatchStartedAt.current);
-      }
-    }, 30);
-    return () => window.clearInterval(interval);
-  }, [stopwatchRunning]);
 
   useEffect(() => {
     if (!timerRunning || timerDeadline.current === null) return;
@@ -293,31 +289,15 @@ export const ClockApp: React.FC = () => {
     sound.playClick();
   };
 
-  const startStopwatch = () => {
-    stopwatchStartedAt.current = Date.now();
-    stopwatchBase.current = stopwatchElapsed;
-    setStopwatchRunning(true);
+  const toggleStopwatch = () => {
+    if (stopwatchRunning) pauseStopwatch();
+    else startStopwatch();
     sound.playClick();
   };
 
-  const pauseStopwatch = () => {
-    let elapsed = stopwatchElapsed;
-    if (stopwatchStartedAt.current !== null) {
-      elapsed = stopwatchBase.current + Date.now() - stopwatchStartedAt.current;
-    }
-    stopwatchBase.current = elapsed;
-    stopwatchStartedAt.current = null;
-    setStopwatchElapsed(elapsed);
-    setStopwatchRunning(false);
-    sound.playClick();
-  };
-
-  const resetStopwatch = () => {
-    stopwatchStartedAt.current = null;
-    stopwatchBase.current = 0;
-    setStopwatchRunning(false);
-    setStopwatchElapsed(0);
-    setLaps([]);
+  const handleStopwatchLapOrReset = () => {
+    if (stopwatchRunning) recordStopwatchLap();
+    else resetStopwatch();
     sound.playClick();
   };
 
@@ -743,7 +723,7 @@ export const ClockApp: React.FC = () => {
                   <div className="relative mt-8 flex justify-center gap-3">
                     <button
                       type="button"
-                      onClick={stopwatchRunning ? pauseStopwatch : startStopwatch}
+                      onClick={toggleStopwatch}
                       className={`flex h-12 min-w-32 items-center justify-center gap-2 rounded-2xl px-5 text-xs font-bold shadow-lg transition ${
                         stopwatchRunning ? 'bg-amber-400/15 text-amber-200 hover:bg-amber-400/20' : 'bg-violet-500 text-white shadow-violet-900/30 hover:bg-violet-400'
                       }`}
@@ -752,15 +732,7 @@ export const ClockApp: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        if (stopwatchRunning) {
-                          setLaps(previous => [
-                            stopwatchElapsed - previous.reduce((total, lap) => total + lap, 0),
-                            ...previous,
-                          ]);
-                        }
-                        else resetStopwatch();
-                      }}
+                      onClick={handleStopwatchLapOrReset}
                       className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-xs font-semibold text-slate-300 hover:bg-white/[0.09]"
                     >
                       {stopwatchRunning ? <><Plus className="h-4 w-4" /> Lap</> : <><RotateCcw className="h-4 w-4" /> Reset</>}

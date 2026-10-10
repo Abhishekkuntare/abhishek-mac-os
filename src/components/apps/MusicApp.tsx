@@ -38,12 +38,15 @@ import {
   Maximize2,
   Minimize2,
   Check,
+  ExternalLink,
 } from 'lucide-react';
 
 import { useOS } from '../../context/OSContext';
 import { AUDIO_TRACKS } from '../../data/sampleData';
 import { sound } from '../../services/soundService';
 import { musicEngine } from '../../services/musicEngine';
+import { searchJamendoTracks } from '../../services/jamendoMusic';
+import type { AudioTrack } from '../../types/desktop';
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */
@@ -90,6 +93,43 @@ const LOCAL_COVERS = [
   'https://images.unsplash.com/photo-1521337581100-8ca9a73a5f79?q=80&w=800&auto=format&fit=crop',
 ];
 const FAVORITES_STORAGE_KEY = 'abhishek_os_music_favorites_v1';
+
+const EXTERNAL_MEDIA_PLAYERS = [
+  { id: 'spotify', name: 'Spotify', subtitle: 'Listen on Spotify', mark: 'S', color: 'from-emerald-400 to-green-700' },
+  { id: 'gaana', name: 'Gaana', subtitle: 'Listen on Gaana', mark: 'G', color: 'from-rose-400 to-red-700' },
+  { id: 'youtubeMusic', name: 'YouTube Music', subtitle: 'Open YouTube Music', mark: 'YT', color: 'from-red-400 to-rose-700' },
+  { id: 'jioSaavn', name: 'JioSaavn', subtitle: 'Listen on JioSaavn', mark: 'J', color: 'from-orange-300 to-amber-700' },
+  { id: 'amazonMusic', name: 'Amazon Music', subtitle: 'Open Amazon Music', mark: 'a', color: 'from-sky-300 to-blue-700' },
+  { id: 'vlc', name: 'VLC', subtitle: 'Open VLC player website', mark: 'V', color: 'from-orange-300 to-orange-700' },
+] as const;
+
+const EXTERNAL_MEDIA_URLS: Record<typeof EXTERNAL_MEDIA_PLAYERS[number]['id'], string> = {
+  spotify: 'https://open.spotify.com/',
+  gaana: 'https://gaana.com/',
+  youtubeMusic: 'https://music.youtube.com/',
+  jioSaavn: 'https://www.jiosaavn.com/',
+  amazonMusic: 'https://music.amazon.com/',
+  vlc: 'https://www.videolan.org/vlc/',
+};
+
+const getMediaSearchUrl = (player: typeof EXTERNAL_MEDIA_PLAYERS[number]['id'], query: string) => {
+  const encodedQuery = encodeURIComponent(query.trim());
+  if (!encodedQuery) return EXTERNAL_MEDIA_URLS[player];
+  switch (player) {
+    case 'spotify':
+      return `https://open.spotify.com/search/${encodedQuery}`;
+    case 'gaana':
+      return `https://gaana.com/search/${encodedQuery}`;
+    case 'youtubeMusic':
+      return `https://music.youtube.com/search?q=${encodedQuery}`;
+    case 'jioSaavn':
+      return `https://www.jiosaavn.com/search/song/${encodedQuery}`;
+    case 'amazonMusic':
+      return `https://music.amazon.com/search/${encodedQuery}`;
+    case 'vlc':
+      return EXTERNAL_MEDIA_URLS.vlc;
+  }
+};
 
 /* -------------------------------------------------------------------------- */
 /* IndexedDB                                                                  */
@@ -234,6 +274,130 @@ const getAudioDuration = (file: File): Promise<number> => {
   });
 };
 
+const JamendoCatalog: React.FC = () => {
+  const { settings, playCustomTrack, openApp } = useOS();
+  const [query, setQuery] = useState('');
+  const [tracks, setTracks] = useState<AudioTrack[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const requestRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => requestRef.current?.abort(), []);
+
+  const searchCatalog = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    requestRef.current?.abort();
+    const request = new AbortController();
+    requestRef.current = request;
+    setLoading(true);
+    setError('');
+    try {
+      setTracks(await searchJamendoTracks(settings.jamendoClientId, query, request.signal));
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === 'AbortError') return;
+      setError(caught instanceof Error ? caught.message : 'Jamendo search failed. Please try again.');
+      setTracks([]);
+    } finally {
+      if (requestRef.current === request) {
+        requestRef.current = null;
+        setLoading(false);
+      }
+    }
+  };
+
+  const openMediaSettings = () => {
+    openApp('settings');
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('arlo:open-settings-section', { detail: { tab: 'media' } }));
+    }, 120);
+  };
+
+  return (
+    <motion.div
+      key="catalog"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -12 }}
+      transition={{ duration: 0.22 }}
+      className="h-full overflow-y-auto p-5 md:p-8"
+    >
+      <div className="mx-auto max-w-5xl">
+        <div className="relative overflow-hidden rounded-[28px] border border-emerald-200/10 bg-gradient-to-br from-emerald-400/[0.1] via-sky-500/[0.06] to-violet-500/[0.08] p-5 md:p-7">
+          <div className="pointer-events-none absolute -right-12 -top-20 h-56 w-56 rounded-full bg-emerald-300/[0.12] blur-3xl" />
+          <div className="relative">
+            <div className="flex items-center gap-2 text-emerald-200">
+              <Radio className="h-4 w-4" />
+              <span className="text-[10px] font-black uppercase tracking-[0.22em]">Jamendo · free licensed music</span>
+            </div>
+            <h2 className="mt-3 text-xl font-black tracking-tight text-white md:text-2xl">Discover independent music</h2>
+            <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-slate-300/75">
+              Search and stream tracks from Jamendo’s catalog. Tracks retain their artist, source and license links; commercial streaming catalogs are not included.
+            </p>
+            <form onSubmit={event => void searchCatalog(event)} className="mt-5 flex gap-2">
+              <input
+                value={query}
+                onChange={event => setQuery(event.currentTarget.value)}
+                placeholder="Search a song, artist, or genre"
+                aria-label="Search Jamendo music"
+                className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-950/45 px-3 text-xs text-white outline-none placeholder:text-slate-500 focus:border-emerald-200/35"
+              />
+              <button
+                type="submit"
+                disabled={loading || !query.trim() || !settings.jamendoClientId.trim()}
+                className="flex h-11 shrink-0 items-center gap-2 rounded-xl border border-emerald-200/20 bg-emerald-300/10 px-4 text-[11px] font-bold text-emerald-100 transition hover:bg-emerald-300/20 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {loading ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-100/30 border-t-emerald-100" /> : <Search className="h-3.5 w-3.5" />}
+                {loading ? 'Searching' : 'Search'}
+              </button>
+            </form>
+            {!settings.jamendoClientId.trim() && (
+              <button type="button" onClick={openMediaSettings} className="mt-3 text-left text-[10px] font-semibold text-amber-200 transition hover:text-amber-100">
+                Add your Jamendo client ID in Settings → Media to enable catalog search.
+              </button>
+            )}
+          </div>
+        </div>
+
+        {error && <p role="alert" className="mt-4 rounded-xl border border-rose-300/15 bg-rose-300/[0.06] px-4 py-3 text-[11px] text-rose-200">{error}</p>}
+
+        <div className="mt-5 space-y-2">
+          {tracks.map(track => (
+            <motion.article
+              key={track.id}
+              layout
+              whileHover={{ y: -1 }}
+              className="flex items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-3 transition-colors hover:border-emerald-200/20 hover:bg-white/[0.045]"
+            >
+              <img src={track.coverUrl || DEFAULT_COVER} alt="" className="h-12 w-12 shrink-0 rounded-xl object-cover shadow-lg" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[12px] font-bold text-white">{track.title}</div>
+                <div className="mt-0.5 truncate text-[10px] text-slate-400">{track.artist}{track.album ? ` · ${track.album}` : ''}</div>
+                <div className="mt-1 flex items-center gap-2 text-[9px]">
+                  {track.sourceUrl && <a href={track.sourceUrl} target="_blank" rel="noreferrer" className="text-emerald-200/80 transition hover:text-emerald-100">Jamendo source</a>}
+                  {track.licenseUrl && <a href={track.licenseUrl} target="_blank" rel="noreferrer" className="text-slate-500 transition hover:text-slate-300">License</a>}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => playCustomTrack(track)}
+                aria-label={`Play ${track.title} by ${track.artist}`}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-slate-950 shadow-lg shadow-emerald-400/10 transition hover:scale-105 hover:bg-emerald-100 active:scale-95"
+              >
+                <Play className="ml-0.5 h-4 w-4 fill-current" />
+              </button>
+            </motion.article>
+          ))}
+          {!loading && !error && tracks.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-white/10 px-5 py-10 text-center text-[11px] text-slate-500">
+              Search Jamendo for music cleared for streaming and sharing.
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
 /* -------------------------------------------------------------------------- */
 /* Component                                                                  */
 /* -------------------------------------------------------------------------- */
@@ -267,9 +431,8 @@ export const MusicApp: React.FC = () => {
     () => Array.from({ length: 36 }, () => 5)
   );
 
-  const [activeTab, setActiveTab] = useState<
-    'nowPlaying' | 'library'
-  >('nowPlaying');
+  const [activeTab, setActiveTab] = useState<'nowPlaying' | 'library' | 'catalog' | 'players'>('nowPlaying');
+  const [playerSearch, setPlayerSearch] = useState('');
 
   const [search, setSearch] = useState('');
   const [libraryFilter, setLibraryFilter] = useState<'all' | 'favorites' | 'imported'>('all');
@@ -343,6 +506,25 @@ export const MusicApp: React.FC = () => {
       setToast(null);
     }, 2200);
   }, []);
+
+  const openExternalPlayer = useCallback(async (player: typeof EXTERNAL_MEDIA_PLAYERS[number]['id']) => {
+    try {
+      if (!window.electronAPI) throw new Error('Opening music services is only available in the desktop app.');
+      await window.electronAPI.openExternal(getMediaSearchUrl(player, playerSearch));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : `Could not open ${player}.`);
+    }
+  }, [playerSearch, showToast]);
+
+  const sendWindowsMediaCommand = useCallback(async (command: 'previous' | 'playPause' | 'next') => {
+    try {
+      if (!window.electronAPI) throw new Error('Windows media controls are only available in the desktop app.');
+      await window.electronAPI.sendWindowsMediaCommand(command);
+      showToast('Media command sent to the active Windows player.');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not send a command to the Windows media player.');
+    }
+  }, [showToast]);
 
   useEffect(() => {
     try {
@@ -837,6 +1019,28 @@ export const MusicApp: React.FC = () => {
             }`}
           >
             Library
+          </button>
+
+          <button
+            onClick={() => setActiveTab('catalog')}
+            className={`px-4 py-1.5 rounded-xl text-[11px] font-bold transition-all ${
+              activeTab === 'catalog'
+                ? 'bg-white/10 text-white shadow-lg'
+                : 'text-slate-500 hover:text-white'
+            }`}
+          >
+            Explore
+          </button>
+
+          <button
+            onClick={() => setActiveTab('players')}
+            className={`px-4 py-1.5 rounded-xl text-[11px] font-bold transition-all ${
+              activeTab === 'players'
+                ? 'bg-white/10 text-white shadow-lg'
+                : 'text-slate-500 hover:text-white'
+            }`}
+          >
+            Players
           </button>
         </div>
 
@@ -1354,6 +1558,107 @@ export const MusicApp: React.FC = () => {
                     </AnimatePresence>
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          ) : activeTab === 'catalog' ? (
+            <JamendoCatalog />
+          ) : activeTab === 'players' ? (
+            <motion.div
+              key="players"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.22 }}
+              className="h-full overflow-y-auto p-5 md:p-8"
+            >
+              <div className="mx-auto max-w-4xl">
+                <div className="mb-5">
+                  <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-violet-300">Streaming & players</div>
+                  <h2 className="mt-1 text-xl font-black tracking-tight text-white">Jump in and listen</h2>
+                  <p className="mt-1 max-w-xl text-[10px] leading-relaxed text-slate-400">
+                    Search a song and open its results on a music service. Availability and playback are handled by each provider.
+                  </p>
+                </div>
+
+                <label className="mb-4 flex h-11 items-center gap-2.5 rounded-xl border border-violet-200/[0.12] bg-gradient-to-r from-violet-300/[0.07] via-white/[0.035] to-cyan-300/[0.045] px-3.5 shadow-[0_8px_24px_rgba(0,0,0,.12)] transition focus-within:border-violet-200/35 focus-within:shadow-[0_0_24px_rgba(167,139,250,.1)]">
+                  <Search className="h-4 w-4 shrink-0 text-violet-200/75" />
+                  <input
+                    type="search"
+                    value={playerSearch}
+                    onChange={event => setPlayerSearch(event.currentTarget.value)}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter') void openExternalPlayer('spotify');
+                    }}
+                    placeholder="Search songs across services..."
+                    aria-label="Search songs across streaming services"
+                    className="h-full min-w-0 flex-1 bg-transparent text-[11px] text-white outline-none placeholder:text-slate-500"
+                  />
+                  {playerSearch && (
+                    <button
+                      type="button"
+                      aria-label="Clear song search"
+                      onClick={() => setPlayerSearch('')}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/[0.08] hover:text-white"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </label>
+
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {EXTERNAL_MEDIA_PLAYERS.map((player, index) => (
+                    <motion.button
+                      key={player.id}
+                      type="button"
+                      onClick={() => void openExternalPlayer(player.id)}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.035, duration: 0.18 }}
+                      whileHover={{ y: -3, scale: 1.015 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="group relative flex min-h-[112px] items-center gap-3 overflow-hidden rounded-2xl border border-violet-100/[0.1] bg-gradient-to-br from-[#29213b]/80 via-[#1a1728]/90 to-[#10111c]/95 p-4 text-left shadow-[0_12px_30px_rgba(0,0,0,.16)] transition-colors hover:border-violet-200/30 hover:from-[#39244b]/85 hover:via-[#201a34]/95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-200/70"
+                    >
+                      <span aria-hidden="true" className="pointer-events-none absolute -right-7 -top-9 h-24 w-24 rounded-full bg-violet-300/[0.07] blur-2xl transition duration-300 group-hover:bg-fuchsia-300/[0.14]" />
+                      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-gradient-to-br ${player.color} text-sm font-black text-white shadow-lg transition-transform duration-200 group-hover:rotate-[-5deg] group-hover:scale-110`}>
+                        {player.mark}
+                      </span>
+                      <span className="relative min-w-0">
+                        <span className="block truncate text-[11px] font-bold text-slate-100">{player.name}</span>
+                        <span className="mt-1 block truncate text-[9px] text-slate-400">{player.id === 'vlc' ? player.subtitle : playerSearch.trim() ? `Search “${playerSearch.trim()}”` : player.subtitle}</span>
+                      </span>
+                      <ExternalLink className="relative ml-auto h-3.5 w-3.5 shrink-0 text-slate-500 transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-violet-200" />
+                    </motion.button>
+                  ))}
+                </div>
+
+                <section className="mt-5 rounded-2xl border border-violet-200/[0.12] bg-gradient-to-br from-[#29213b]/75 via-[#171522]/90 to-[#10111c]/95 p-4 shadow-[0_12px_30px_rgba(0,0,0,.14)]">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <div className="text-[10px] font-bold text-white">Windows media controls</div>
+                      <p className="mt-1 max-w-lg text-[9px] leading-relaxed text-slate-400">
+                        Sends Previous, Play/Pause, or Next media keys to the active Windows player. Apps that do not respond to Windows media keys may ignore them.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {([
+                        { command: 'previous', label: 'Previous', Icon: SkipBack },
+                        { command: 'playPause', label: 'Play or pause', Icon: Play },
+                        { command: 'next', label: 'Next', Icon: SkipForward },
+                      ] as const).map(({ command, label, Icon }) => (
+                        <button
+                          key={command}
+                          type="button"
+                          aria-label={label}
+                          title={label}
+                          onClick={() => void sendWindowsMediaCommand(command)}
+                          className={`flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.055] text-slate-200 transition duration-200 hover:scale-110 hover:border-violet-200/30 hover:bg-violet-200/[0.12] hover:text-white active:scale-95 ${command === 'playPause' ? 'h-10 w-10 bg-white text-slate-950 hover:bg-violet-100 hover:text-slate-950' : ''}`}
+                        >
+                          <Icon className="h-4 w-4" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </section>
               </div>
             </motion.div>
           ) : (

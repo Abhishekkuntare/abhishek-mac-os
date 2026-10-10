@@ -63,6 +63,7 @@ import { sound } from '../../services/soundService';
 import { vfs } from '../../services/virtualFileSystem';
 import { AppFeaturesModal } from '../system/AppFeaturesModal';
 import { AppIcon, getAppIconAsset } from '../system/AppIcon';
+import { MascotMark } from '../system/MascotMark';
 import { VirtualFile } from '../../types/desktop';
 import {
   DESKTOP_ICON_SHAPE_EVENT,
@@ -1564,6 +1565,7 @@ export const Dock: React.FC = () => {
 
   const dockRef =
     useRef<HTMLDivElement | null>(null);
+  const [isDockRevealed, setIsDockRevealed] = useState(true);
 
   const [dockFileIds, setDockFileIds] = useState<string[]>(() => {
     try {
@@ -1707,6 +1709,34 @@ export const Dock: React.FC = () => {
 
   const isLight = resolvedTheme === 'light';
   const dockSharesMenuBarEdge = settings.dockPosition === settings.menuBarPosition;
+  const isDockHidden = settings.dockAutoHide && !isDockRevealed;
+
+  useEffect(() => {
+    if (!settings.dockAutoHide) {
+      setIsDockRevealed(true);
+      return;
+    }
+    setIsDockRevealed(false);
+    const handlePointerMove = (event: PointerEvent) => {
+      const edgeDistance = 18;
+      const nearDockEdge = settings.dockPosition === 'top'
+        ? event.clientY <= edgeDistance
+        : settings.dockPosition === 'left'
+          ? event.clientX <= edgeDistance
+          : settings.dockPosition === 'right'
+            ? event.clientX >= window.innerWidth - edgeDistance
+            : event.clientY >= window.innerHeight - edgeDistance;
+      const dockBounds = dockRef.current?.getBoundingClientRect();
+      const pointerOverDock = !!dockBounds &&
+        event.clientX >= dockBounds.left &&
+        event.clientX <= dockBounds.right &&
+        event.clientY >= dockBounds.top &&
+        event.clientY <= dockBounds.bottom;
+      setIsDockRevealed(nearDockEdge || pointerOverDock);
+    };
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
+    return () => window.removeEventListener('pointermove', handlePointerMove);
+  }, [settings.dockAutoHide, settings.dockPosition]);
 
   /* ============================================================
      DOCK MAGNIFICATION
@@ -1723,6 +1753,7 @@ export const Dock: React.FC = () => {
       ?.querySelectorAll<HTMLElement>('[data-dock-icon="true"]')
       .forEach(icon => {
         icon.style.scale = '1';
+        icon.style.translate = '0 0';
       });
   };
 
@@ -1751,7 +1782,7 @@ export const Dock: React.FC = () => {
       const icons = dock.querySelectorAll<HTMLElement>('[data-dock-icon="true"]');
       const vertical = settings.dockPosition === 'left' || settings.dockPosition === 'right';
       const pointerAxis = vertical ? pointer.y : pointer.x;
-      const radius = 58;
+      const radius = 92;
 
       icons.forEach(icon => {
         const bounds = (icon.parentElement ?? icon).getBoundingClientRect();
@@ -1760,10 +1791,14 @@ export const Dock: React.FC = () => {
           : bounds.left + bounds.width / 2;
         const distance = Math.abs(pointerAxis - center);
         const scale = settings.dockMagnification && !settings.lowPowerMode && draggedAppId === null
-          ? 1 + 0.18 * Math.exp(-(distance * distance) / (2 * radius * radius))
+          ? 1 + 0.52 * Math.exp(-(distance * distance) / (2 * radius * radius))
           : 1;
 
         icon.style.scale = scale.toFixed(3);
+        const lift = (scale - 1) * 22;
+        icon.style.translate = vertical
+          ? `${settings.dockPosition === 'left' ? lift : -lift}px 0`
+          : `0 ${settings.dockPosition === 'top' ? lift : -lift}px`;
       });
     });
   };
@@ -2075,6 +2110,19 @@ export const Dock: React.FC = () => {
   const handleOpenApp = (
     appId: string,
   ) => {
+    if (appId === 'mascot') {
+      const dockIcon = document.querySelector<HTMLElement>(`[data-dock-app-id="${appId}"]`);
+      const bounds = dockIcon?.getBoundingClientRect();
+      window.dispatchEvent(new CustomEvent('arlo:mascot-context', {
+        detail: {
+          x: bounds ? bounds.left + bounds.width / 2 : window.innerWidth / 2,
+          y: bounds ? bounds.top - 12 : window.innerHeight / 2,
+        },
+      }));
+      sound.playClick();
+      closeContextMenu();
+      return;
+    }
     openApp(appId);
     sound.playClick();
     closeContextMenu();
@@ -2258,8 +2306,13 @@ export const Dock: React.FC = () => {
             opacity: 0,
           }}
           animate={{
-            y: 0,
-            opacity: 1,
+            y: isDockHidden
+              ? settings.dockPosition === 'top' ? -120 : settings.dockPosition === 'bottom' ? 120 : 0
+              : 0,
+            x: isDockHidden
+              ? settings.dockPosition === 'left' ? -120 : settings.dockPosition === 'right' ? 120 : 0
+              : 0,
+            opacity: isDockHidden ? 0 : 1,
           }}
           transition={{
             type: 'spring',
@@ -2267,6 +2320,7 @@ export const Dock: React.FC = () => {
             damping: 25,
           }}
           onPointerMove={handleDockPointerMove}
+          style={{ pointerEvents: isDockHidden ? 'none' : 'auto' }}
           onMouseLeave={() => {
             resetDockMagnification();
             setTooltipApp(null);
@@ -2308,6 +2362,9 @@ export const Dock: React.FC = () => {
                 APP_REGISTRY[appId];
 
               if (!app) {
+                return null;
+              }
+              if (appId === 'mascot' && !settings.jellyNotchEnabled) {
                 return null;
               }
 
@@ -2653,7 +2710,7 @@ export const Dock: React.FC = () => {
                         ? 'transparent'
                         : app.iconBg,
                       transformOrigin: getDockIconOrigin(),
-                      transition: 'scale 90ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                      transition: 'scale 180ms cubic-bezier(0.22, 1, 0.36, 1), translate 180ms cubic-bezier(0.22, 1, 0.36, 1)',
                     }}
                     data-dock-icon="true"
                   >
@@ -2671,22 +2728,30 @@ export const Dock: React.FC = () => {
                       />
                     )}
 
-                    <AppIcon
-                      appId={appId}
-                      className="relative z-10 h-full w-full object-contain"
-                      style={getDesktopIconShapeStyle(desktopIconShape)}
-                      fallback={
-                        <IconComp
-                          className="
-                            relative
-                            z-10
-                            w-6
-                            h-6
-                            drop-shadow-md
-                          "
-                        />
-                      }
-                    />
+                    {appId === 'mascot' ? (
+                      <MascotMark
+                        className="relative z-10 h-full w-full"
+                        interactive={false}
+                        showTileBackground={false}
+                      />
+                    ) : (
+                      <AppIcon
+                        appId={appId}
+                        className="relative z-10 h-full w-full object-contain"
+                        style={getDesktopIconShapeStyle(desktopIconShape)}
+                        fallback={
+                          <IconComp
+                            className="
+                              relative
+                              z-10
+                              w-6
+                              h-6
+                              drop-shadow-md
+                            "
+                          />
+                        }
+                      />
+                    )}
                   </motion.div>
 
                   {/* RUNNING DOT */}
@@ -2917,11 +2982,14 @@ export const Dock: React.FC = () => {
               style={{
                 ...getDesktopIconShapeStyle(desktopIconShape),
                 transformOrigin: getDockIconOrigin(),
-                transition: 'scale 90ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                transition: 'scale 180ms cubic-bezier(0.22, 1, 0.36, 1), translate 180ms cubic-bezier(0.22, 1, 0.36, 1)',
               }}
               data-dock-icon="true"
             >
-              <AppIcon appId="trash" className="relative z-10 h-full w-full object-contain" style={getDesktopIconShapeStyle(desktopIconShape)} />
+              <AppIcon appId="trash" className="relative z-10 h-full w-full object-contain"               style={{
+                ...getDesktopIconShapeStyle(desktopIconShape),
+                transition: 'scale 180ms cubic-bezier(0.22, 1, 0.36, 1), translate 180ms cubic-bezier(0.22, 1, 0.36, 1)',
+              }} />
             </motion.div>
 
             <div className="h-1.5 mt-1" />

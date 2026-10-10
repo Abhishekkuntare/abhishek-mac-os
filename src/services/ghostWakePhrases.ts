@@ -9,8 +9,9 @@ const ASSISTANT_NAMES = ['lily', 'lilli', 'ghost', 'gost', 'goast', 'लिल�
 
 export const matchGhostWakePhrase = (
   transcript: string,
+  detectiveNames: string[] = [],
 ): GhostWakeMatch | null => {
-  const name = ASSISTANT_NAMES
+  const name = [...ASSISTANT_NAMES, ...detectiveNames.filter(value => value.trim())]
     .map(value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|');
   const greetings = [

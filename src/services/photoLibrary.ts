@@ -84,26 +84,80 @@ const putMedia = async (
   return item;
 };
 
-export const addPhotoToLibrary = (
+export const addPhotoToLibrary = async (
   blob: Blob,
   meta: { width?: number; height?: number; facingMode?: 'user' | 'environment'; source?: string } = {},
-) => putMedia(blob, {
-  kind: 'photo',
-  source: meta.source || 'Camera',
-  width: meta.width,
-  height: meta.height,
-  facingMode: meta.facingMode,
-});
+) => {
+  const id = `camera-${Date.now()}-${crypto.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+  const kind = 'photo' as const;
+  const createdAt = Date.now();
 
-export const addVideoToLibrary = (
+  // Save to IndexedDB using the photo library database
+  const item: PhotoLibraryItem = {
+    id,
+    kind,
+    url: URL.createObjectURL(blob),
+    createdAt,
+    width: meta.width,
+    height: meta.height,
+    facingMode: meta.facingMode || 'user',
+    source: meta.source || 'Dynamic Workspace camera',
+  };
+
+  const db = await openDB();
+  const thumbnailBlob = await createThumbnail(blob, kind);
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put({
+      ...item,
+      blob,
+      thumbnailBlob,
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+
+  // Dispatch event for real-time UI updates
+  window.dispatchEvent(new CustomEvent('abhishek-os-photo-added', { detail: item }));
+  return item;
+};
+
+export const addVideoToLibrary = async (
   blob: Blob,
   meta: { duration?: number; facingMode?: 'user' | 'environment'; source?: string } = {},
-) => putMedia(blob, {
-  kind: 'video',
-  source: meta.source || 'Camera',
-  duration: meta.duration,
-  facingMode: meta.facingMode,
-});
+) => {
+  const id = `camera-video-${Date.now()}-${crypto.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+  const kind = 'video' as const;
+  const createdAt = Date.now();
+
+  // Save to IndexedDB using the photo library database
+  const item: PhotoLibraryItem = {
+    id,
+    kind,
+    url: URL.createObjectURL(blob),
+    createdAt,
+    duration: meta.duration,
+    facingMode: meta.facingMode || 'user',
+    source: meta.source || 'Dynamic Workspace camera',
+  };
+
+  const db = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put({
+      ...item,
+      blob,
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+
+  // Dispatch event for real-time UI updates
+  window.dispatchEvent(new CustomEvent('abhishek-os-photo-added', { detail: item }));
+  return item;
+};
 
 export const getPhotoLibraryItem = async (id: string): Promise<PhotoLibraryItem | null> => {
   const db = await openDB();
@@ -123,6 +177,23 @@ export const getPhotoLibraryItem = async (id: string): Promise<PhotoLibraryItem 
   };
 };
 
+export const getPhotoLibraryBlob = async (id: string): Promise<Blob | null> => {
+  const db = await openDB();
+  try {
+    return await new Promise<Blob | null>((resolve, reject) => {
+      const transaction = db.transaction(STORE, 'readonly');
+      const request = transaction.objectStore(STORE).get(id);
+      request.onsuccess = () => {
+        const record = request.result as { kind?: PhotoLibraryKind; blob?: Blob } | undefined;
+        resolve(record?.kind === 'video' && record.blob instanceof Blob ? record.blob : null);
+      };
+      request.onerror = () => reject(request.error ?? new Error('Could not load video from Photos.'));
+    });
+  } finally {
+    db.close();
+  }
+};
+
 export const getPhotoLibraryItems = async (): Promise<PhotoLibraryItem[]> => {
   const db = await openDB();
   const rawItems: any[] = await new Promise((resolve, reject) => {
@@ -140,13 +211,46 @@ export const getPhotoLibraryItems = async (): Promise<PhotoLibraryItem[]> => {
   }));
 };
 
-export const deletePhotoLibraryItem = async (id: string) => {
+export const updatePhotoLibraryMedia = async (id: string, blob: Blob): Promise<PhotoLibraryItem> => {
   const db = await openDB();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  const raw = await new Promise<Record<string, unknown> | null>((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const request = tx.objectStore(STORE).get(id);
+    request.onsuccess = () => resolve((request.result as Record<string, unknown> | undefined) ?? null);
+    request.onerror = () => reject(request.error);
   });
   db.close();
+  if (!raw) throw new Error('This camera item is no longer in Photos.');
+
+  const thumbnailBlob = raw.kind === 'photo' ? await createThumbnail(blob, 'photo') : undefined;
+  const writeDb = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const tx = writeDb.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put({ ...raw, blob, thumbnailBlob });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Could not update the camera photo.'));
+  });
+  writeDb.close();
+
+  const item = await getPhotoLibraryItem(id);
+  if (!item) throw new Error('Could not reload the edited camera photo.');
+  window.dispatchEvent(new CustomEvent('abhishek-os-photo-added', { detail: item }));
+  return item;
+};
+
+export const deletePhotoLibraryItem = async (id: string) => {
+  const db = await openDB();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('Could not delete saved media.'));
+    });
+  } finally {
+    db.close();
+  }
+  window.dispatchEvent(new Event('abhishek-os-photo-added'));
 };

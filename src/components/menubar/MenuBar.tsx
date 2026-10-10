@@ -17,23 +17,20 @@ import {
   Folder,
   Terminal,
   Code2,
-  Undo2,
-  Redo2,
-  Scissors,
-  Copy,
-  Clipboard,
-  ListChecks,
   LayoutGrid,
   Maximize2,
   Minimize2,
+  X,
   HardDrive,
+  Coffee,
+  Timer,
 } from 'lucide-react';
 import { useOS } from '../../context/OSContext';
 import { sound } from '../../services/soundService';
-import { redo, undo } from '../../services/undoManager';
 import { ArloLogo } from '../system/ArloLogo';
 import { MascotMark } from '../system/MascotMark';
 import { BatteryStatusIcon } from '../system/BatteryStatusIcon';
+import { OPEN_POMODORO_EVENT, POMODORO_UPDATED_EVENT, readPomodoroStatus, type PomodoroStatus } from '../../services/pomodoroService';
 
 export const MenuBar: React.FC = () => {
   const {
@@ -62,6 +59,7 @@ export const MenuBar: React.FC = () => {
 
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  const [pomodoroStatus, setPomodoroStatus] = useState<PomodoroStatus | null>(readPomodoroStatus);
   const [localAccessResponse, setLocalAccessResponse] = useState(
     () => localStorage.getItem('abhishek_os_local_access_response_v2'),
   );
@@ -89,6 +87,16 @@ export const MenuBar: React.FC = () => {
 
     window.addEventListener('local-access-changed', syncLocalAccessResponse);
     return () => window.removeEventListener('local-access-changed', syncLocalAccessResponse);
+  }, []);
+
+  useEffect(() => {
+    const syncPomodoro = () => setPomodoroStatus(readPomodoroStatus());
+    window.addEventListener(POMODORO_UPDATED_EVENT, syncPomodoro);
+    window.addEventListener('storage', syncPomodoro);
+    return () => {
+      window.removeEventListener(POMODORO_UPDATED_EVENT, syncPomodoro);
+      window.removeEventListener('storage', syncPomodoro);
+    };
   }, []);
 
   // Live time ticker
@@ -153,6 +161,18 @@ export const MenuBar: React.FC = () => {
   };
 
   const unreadNotifs = notifications.filter((n) => !n.read).length;
+  const pomodoroRemainingSeconds = pomodoroStatus?.endAt
+    ? Math.max(0, Math.ceil((pomodoroStatus.endAt - currentTime.getTime()) / 1000))
+    : 0;
+  const pomodoroIsRunning = pomodoroStatus?.endAt !== null
+    && pomodoroStatus?.endAt !== undefined
+    && pomodoroStatus.endAt > currentTime.getTime();
+  const pomodoroPhaseLabel = pomodoroStatus?.phase === 'shortBreak'
+    ? 'Short break'
+    : pomodoroStatus?.phase === 'longBreak'
+      ? 'Long break'
+      : 'Work';
+  const pomodoroTimeLabel = `${String(Math.floor(pomodoroRemainingSeconds / 60)).padStart(2, '0')}:${String(pomodoroRemainingSeconds % 60).padStart(2, '0')}`;
   const verticalMenuBar = settings.menuBarPosition === 'left' || settings.menuBarPosition === 'right';
   const menuBarPositionClass = settings.menuBarPosition === 'bottom'
     ? 'bottom-0 left-0 right-0 h-8'
@@ -161,49 +181,6 @@ export const MenuBar: React.FC = () => {
       : settings.menuBarPosition === 'right'
         ? 'right-0 top-0 bottom-0 w-12 flex-col justify-start gap-3 px-1 py-2'
         : 'top-0 left-0 right-0 h-8';
-
-  // ---------------------------------------------------------
-  // EDIT ACTIONS
-  // ---------------------------------------------------------
-
-  const handleEditAction = (
-    action: 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll'
-  ) => {
-    sound.playClick();
-
-    if (action === 'undo') {
-      if (!document.execCommand('undo')) undo();
-      return;
-    }
-    if (action === 'redo') {
-      if (!document.execCommand('redo')) redo();
-      return;
-    }
-
-    try {
-      switch (action) {
-        case 'cut':
-          document.execCommand('cut');
-          break;
-
-        case 'copy':
-          document.execCommand('copy');
-          break;
-
-        case 'paste':
-          document.execCommand('paste');
-          break;
-
-        case 'selectAll':
-          document.execCommand('selectAll');
-          break;
-      }
-    } catch {
-      // Editing commands should never break the desktop.
-    }
-
-    setActiveMenu(null);
-  };
 
   // ---------------------------------------------------------
   // WINDOW ACTIONS
@@ -551,138 +528,6 @@ export const MenuBar: React.FC = () => {
             EDIT
         ====================================================== */}
 
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => toggleMenu('edit')}
-            className={`electron-no-drag px-2 py-0.5 rounded-md transition-colors ${
-              activeMenu === 'edit'
-                ? 'bg-white/20'
-                : 'hover:bg-white/10'
-            }`}
-          >
-            Edit
-          </button>
-
-          <AnimatePresence>
-            {activeMenu === 'edit' && (
-              <motion.div
-                initial={{
-                  opacity: 0,
-                  y: 4,
-                  scale: 0.98,
-                }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                  scale: 1,
-                }}
-                exit={{
-                  opacity: 0,
-                  y: 4,
-                  scale: 0.98,
-                }}
-                transition={{ duration: 0.1 }}
-                className="absolute left-0 top-8 w-52 rounded-xl glass-panel text-white py-1 shadow-2xl border border-white/15 backdrop-blur-2xl z-50"
-              >
-                <button
-                  type="button"
-                  className="electron-no-drag w-full px-3 py-1.5 flex items-center justify-between hover:bg-white/15 transition-colors"
-                  onClick={() => handleEditAction('undo')}
-                >
-                  <div className="flex items-center gap-2">
-                    <Undo2 className="w-3.5 h-3.5 text-slate-300" />
-                    <span>Undo</span>
-                  </div>
-
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    ⌘Z
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  className="electron-no-drag w-full px-3 py-1.5 flex items-center justify-between hover:bg-white/15 transition-colors"
-                  onClick={() => handleEditAction('redo')}
-                >
-                  <div className="flex items-center gap-2">
-                    <Redo2 className="w-3.5 h-3.5 text-slate-300" />
-                    <span>Redo</span>
-                  </div>
-
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    ⇧⌘Z
-                  </span>
-                </button>
-
-                <div className="h-px bg-white/10 my-1 mx-2" />
-
-                <button
-                  type="button"
-                  className="electron-no-drag w-full px-3 py-1.5 flex items-center justify-between hover:bg-white/15 transition-colors"
-                  onClick={() => handleEditAction('cut')}
-                >
-                  <div className="flex items-center gap-2">
-                    <Scissors className="w-3.5 h-3.5 text-slate-300" />
-                    <span>Cut</span>
-                  </div>
-
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    ⌘X
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  className="electron-no-drag w-full px-3 py-1.5 flex items-center justify-between hover:bg-white/15 transition-colors"
-                  onClick={() => handleEditAction('copy')}
-                >
-                  <div className="flex items-center gap-2">
-                    <Copy className="w-3.5 h-3.5 text-slate-300" />
-                    <span>Copy</span>
-                  </div>
-
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    ⌘C
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  className="electron-no-drag w-full px-3 py-1.5 flex items-center justify-between hover:bg-white/15 transition-colors"
-                  onClick={() => handleEditAction('paste')}
-                >
-                  <div className="flex items-center gap-2">
-                    <Clipboard className="w-3.5 h-3.5 text-slate-300" />
-                    <span>Paste</span>
-                  </div>
-
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    ⌘V
-                  </span>
-                </button>
-
-                <div className="h-px bg-white/10 my-1 mx-2" />
-
-                <button
-                  type="button"
-                  className="electron-no-drag w-full px-3 py-1.5 flex items-center justify-between hover:bg-white/15 transition-colors"
-                  onClick={() => handleEditAction('selectAll')}
-                >
-                  <div className="flex items-center gap-2">
-                    <ListChecks className="w-3.5 h-3.5 text-slate-300" />
-                    <span>Select All</span>
-                  </div>
-
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    ⌘A
-                  </span>
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
         {/* =====================================================
             VIEW
         ====================================================== */}
@@ -1007,29 +852,6 @@ export const MenuBar: React.FC = () => {
           RIGHT STATUS CONTROLS
       ====================================================== */}
 
-      <motion.button
-        type="button"
-        aria-label="Activity History"
-        title="Activity History"
-        draggable
-        onClick={openActivityHistory}
-        onContextMenu={event => {
-          event.preventDefault();
-          openMascotOptions(event.clientX, event.clientY);
-        }}
-        onDragStartCapture={event => {
-          event.dataTransfer.effectAllowed = 'copy';
-          event.dataTransfer.setData('text/plain', 'arlo-mascot-companion');
-        }}
-        onDragEndCapture={handleMascotDrop}
-        whileHover={{ scale: 1.12, y: -1 }}
-        whileTap={{ scale: 0.92 }}
-        transition={{ type: 'spring', stiffness: 420, damping: 24 }}
-        className="electron-no-drag absolute left-1/2 top-1/2 hidden h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition-colors hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60 min-[900px]:flex"
-      >
-        <MascotMark className="h-8 w-8" />
-      </motion.button>
-
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -1046,7 +868,7 @@ export const MenuBar: React.FC = () => {
             event.dataTransfer.setData('text/plain', 'arlo-mascot-companion');
           }}
           onDragEndCapture={handleMascotDrop}
-          className="electron-no-drag flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60 min-[900px]:hidden"
+          className="electron-no-drag flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
         >
           <MascotMark className="h-7 w-7" />
         </button>
@@ -1128,6 +950,24 @@ export const MenuBar: React.FC = () => {
             className="h-[17px] w-[22px]"
           />
         </button>
+
+        {pomodoroIsRunning && pomodoroStatus && (
+          <button
+            type="button"
+            aria-label={`Open Pomodoro, ${pomodoroPhaseLabel}, ${pomodoroTimeLabel} remaining`}
+            title={`Pomodoro · ${pomodoroPhaseLabel} · ${pomodoroTimeLabel} remaining`}
+            onClick={() => {
+              window.dispatchEvent(new Event(OPEN_POMODORO_EVENT));
+              sound.playClick();
+            }}
+            className="electron-no-drag flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[10px] transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-200/60"
+          >
+            {pomodoroStatus.phase === 'work' ? <Timer className="h-3 w-3 text-amber-200" /> : <Coffee className="h-3 w-3 text-emerald-200" />}
+            <span className="font-semibold text-slate-100">Pomodoro</span>
+            <span className="hidden text-slate-400 sm:inline">{pomodoroPhaseLabel}</span>
+            <span className="font-mono tabular-nums text-amber-100">{pomodoroTimeLabel}</span>
+          </button>
+        )}
 
         {/* Live Date & Time */}
         <button
@@ -1216,6 +1056,25 @@ export const MenuBar: React.FC = () => {
             <span>{user.fullName.charAt(0)}</span>
           )}
         </button>
+        <motion.button
+          type="button"
+          aria-label="Close ARLO OS"
+          title="Close ARLO OS"
+          onClick={() => {
+            sound.playClick();
+            window.setTimeout(() => {
+              window.electronAPI?.close().catch(error => {
+                console.error('[Menu Bar] Could not close ARLO OS:', error);
+              });
+            }, 120);
+          }}
+          whileHover={{ scale: 1.12, rotate: 90 }}
+          whileTap={{ scale: 0.84 }}
+          transition={{ type: 'spring', stiffness: 420, damping: 20 }}
+          className="electron-no-drag ml-1 flex h-5 w-5 items-center justify-center rounded-full text-white/65 transition-colors duration-200 hover:text-red-400 focus-visible:outline-none focus-visible:text-red-400"
+        >
+          <X className="h-3.5 w-3.5" />
+        </motion.button>
       </div>
         </>
       )}
